@@ -101,10 +101,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         
         # Add custom claims
         data['user'] = {
-            'id': self.user.id,
+            'id': str(self.user.id),
             'username': self.user.username,
             'email': self.user.email,
-            'phone': self.user.phone,
+            'phone': str(self.user.phone) if self.user.phone else None,
             'role': self.user.role,
             'full_name': self.user.get_full_name(),
         }

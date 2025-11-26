@@ -392,16 +392,86 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
 
 
 # =============================================================================
+# SUBSCRIPTION SETTINGS
+# =============================================================================
+
+# Marketplace subscription pricing (all farmers pay same price)
+MARKETPLACE_SUBSCRIPTION_PRICE = float(os.getenv('MARKETPLACE_SUBSCRIPTION_PRICE', 100.00))
+
+# Trial and grace periods
+MARKETPLACE_TRIAL_DAYS = int(os.getenv('MARKETPLACE_TRIAL_DAYS', 14))
+SUBSCRIPTION_GRACE_PERIOD_DAYS = int(os.getenv('SUBSCRIPTION_GRACE_PERIOD_DAYS', 5))
+
+
+# =============================================================================
+# LOGGING SETTINGS
+# =============================================================================
+
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+LOG_TO_FILE = os.getenv('LOG_TO_FILE', 'False') == 'True'
+LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/django.log')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_FILE_PATH,
+            'maxBytes': 1024 * 1024 * 10,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        } if LOG_TO_FILE else {
+            'class': 'logging.NullHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console', 'file'] if LOG_TO_FILE else ['console'],
+        'level': LOG_LEVEL,
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file'] if LOG_TO_FILE else ['console'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
+
+
+# =============================================================================
 # SECURITY SETTINGS (Production)
 # =============================================================================
 
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
+    SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'True') == 'True'
+    CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'True') == 'True'
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', 31536000))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'True') == 'True'
+    SECURE_HSTS_PRELOAD = os.getenv('SECURE_HSTS_PRELOAD', 'True') == 'True'
 
 
 # =============================================================================
