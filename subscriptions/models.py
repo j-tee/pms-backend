@@ -6,102 +6,12 @@ from django.core.validators import MinValueValidator
 from django.utils import timezone
 
 
-class GovernmentSubsidyProgram(models.Model):
-    """
-    Government subsidy programs (YEA) that provide 100% marketplace subscription coverage.
-    Government-registered farmers get FREE marketplace access through these programs.
-    """
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
-    # Program Details
-    program_name = models.CharField(
-        max_length=200,
-        unique=True,
-        help_text="Name of the government program (e.g., 'YEA Poultry Module 2025')"
-    )
-    program_code = models.CharField(
-        max_length=50,
-        unique=True,
-        help_text="Short code for the program (e.g., 'YEA-2025')"
-    )
-    description = models.TextField(help_text="Program description and objectives")
-    
-    # Program Period
-    start_date = models.DateField(help_text="Program start date")
-    end_date = models.DateField(help_text="Program end date")
-    
-    # Subsidy Details
-    subsidy_percentage = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        default=Decimal('100.00'),
-        validators=[MinValueValidator(Decimal('0.00'))],
-        help_text="Percentage of subscription cost covered (100% for government programs)"
-    )
-    max_farmers = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="Maximum number of farmers covered by program (null = unlimited)"
-    )
-    current_farmers_count = models.PositiveIntegerField(
-        default=0,
-        help_text="Current number of farmers enrolled"
-    )
-    
-    # Administering Organization
-    implementing_agency = models.CharField(
-        max_length=200,
-        help_text="Agency implementing the program (e.g., 'Ministry of Youth and Sports')"
-    )
-    contact_person = models.CharField(max_length=200, blank=True)
-    contact_email = models.EmailField(blank=True)
-    contact_phone = models.CharField(max_length=20, blank=True)
-    
-    # Status
-    is_active = models.BooleanField(
-        default=True,
-        help_text="Whether program is currently accepting new farmers"
-    )
-    
-    # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    class Meta:
-        db_table = 'government_subsidy_programs'
-        ordering = ['-start_date']
-        indexes = [
-            models.Index(fields=['is_active', 'start_date']),
-            models.Index(fields=['program_code']),
-        ]
-    
-    def __str__(self):
-        return f"{self.program_name} ({self.program_code})"
-    
-    @property
-    def is_currently_active(self):
-        """Check if program is within active date range"""
-        today = timezone.now().date()
-        return self.is_active and self.start_date <= today <= self.end_date
-    
-    @property
-    def has_capacity(self):
-        """Check if program can accept more farmers"""
-        if self.max_farmers is None:
-            return True
-        return self.current_farmers_count < self.max_farmers
-    
-    def can_enroll_farmer(self):
-        """Check if program can currently enroll new farmers"""
-        return self.is_currently_active and self.has_capacity
-
-
 class SubscriptionPlan(models.Model):
     """
     OPTIONAL subscription plans for marketplace & sales features.
     Core farm management is FREE for all farmers.
     Currently: GHS 100/month for marketplace access.
-    Government farmers get this subsidized through GovernmentSubsidyProgram.
+    ALL farmers (government and independent) pay the same price for marketplace features.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
@@ -170,7 +80,7 @@ class Subscription(models.Model):
     OPTIONAL subscription for marketplace & sales features.
     Farmers without subscription can still use core farm management (FREE).
     Only subscribed farms appear on public marketplace.
-    Government farmers have is_subsidized=True with subsidy_program FK.
+    ALL farmers (government and independent) pay GHS 100/month for marketplace access.
     """
     STATUS_CHOICES = [
         ('trial', 'Trial Period'),
@@ -193,20 +103,6 @@ class Subscription(models.Model):
         SubscriptionPlan,
         on_delete=models.PROTECT,
         related_name='subscriptions'
-    )
-    
-    # Government Subsidy Support
-    is_subsidized = models.BooleanField(
-        default=False,
-        help_text="True if subscription cost is subsidized by government program"
-    )
-    subsidy_program = models.ForeignKey(
-        GovernmentSubsidyProgram,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='subsidized_subscriptions',
-        help_text="Government program covering subscription costs"
     )
     
     # Status
@@ -284,13 +180,10 @@ class Subscription(models.Model):
         indexes = [
             models.Index(fields=['status', 'next_billing_date']),
             models.Index(fields=['farm']),
-            models.Index(fields=['is_subsidized']),
-            models.Index(fields=['subsidy_program']),
         ]
     
     def __str__(self):
-        subsidy_tag = " [GOVERNMENT SUBSIDIZED]" if self.is_subsidized else ""
-        return f"{self.farm.farm_name} - {self.plan.name} ({self.status}){subsidy_tag}"
+        return f"{self.farm.farm_name} - {self.plan.name} ({self.status})"
     
     @property
     def is_active(self):
@@ -311,11 +204,6 @@ class Subscription(models.Model):
         grace_end = self.next_billing_date + timedelta(days=self.grace_period_days)
         delta = grace_end - timezone.now().date()
         return max(0, delta.days)
-    
-    @property
-    def requires_payment(self):
-        """Check if subscription requires farmer to make payment (not subsidized)"""
-        return not self.is_subsidized
     
     def suspend(self, reason="Non-payment"):
         """Suspend subscription due to non-payment"""
@@ -345,14 +233,13 @@ class Subscription(models.Model):
 class SubscriptionPayment(models.Model):
     """
     Record of subscription payments (manual or automated).
-    Government-subsidized subscriptions don't require farmer payments.
+    All farmers pay the same price for marketplace access.
     """
     PAYMENT_METHOD_CHOICES = [
         ('mobile_money', 'Mobile Money'),
         ('bank_transfer', 'Bank Transfer'),
         ('cash', 'Cash'),
         ('card', 'Card Payment'),
-        ('government_subsidy', 'Government Subsidy (No Farmer Payment)'),
     ]
     
     STATUS_CHOICES = [
@@ -434,7 +321,7 @@ class SubscriptionPayment(models.Model):
 class SubscriptionInvoice(models.Model):
     """
     Monthly invoices generated for subscriptions.
-    Government-subsidized subscriptions generate invoices but marked as PAID automatically.
+    All farmers receive invoices for marketplace subscription payments.
     """
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -442,7 +329,6 @@ class SubscriptionInvoice(models.Model):
         ('paid', 'Paid'),
         ('overdue', 'Overdue'),
         ('cancelled', 'Cancelled'),
-        ('government_covered', 'Government Subsidy - No Payment Required'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -496,5 +382,4 @@ class SubscriptionInvoice(models.Model):
         ordering = ['-issue_date']
     
     def __str__(self):
-        subsidy_tag = " [GOVERNMENT]" if self.status == 'government_covered' else ""
-        return f"{self.invoice_number} - GHS {self.amount}{subsidy_tag}"
+        return f"{self.invoice_number} - GHS {self.amount}"

@@ -1,63 +1,11 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
-    GovernmentSubsidyProgram,
     SubscriptionPlan,
     Subscription,
     SubscriptionPayment,
     SubscriptionInvoice,
 )
-
-
-@admin.register(GovernmentSubsidyProgram)
-class GovernmentSubsidyProgramAdmin(admin.ModelAdmin):
-    list_display = [
-        'program_name',
-        'program_code',
-        'start_date',
-        'end_date',
-        'current_farmers_count',
-        'max_farmers',
-        'subsidy_percentage',
-        'is_active_display',
-    ]
-    list_filter = ['is_active', 'start_date', 'end_date']
-    search_fields = ['program_name', 'program_code', 'implementing_agency']
-    readonly_fields = ['current_farmers_count', 'created_at', 'updated_at']
-    
-    fieldsets = (
-        ('Program Information', {
-            'fields': ('program_name', 'program_code', 'description')
-        }),
-        ('Program Period', {
-            'fields': ('start_date', 'end_date', 'is_active')
-        }),
-        ('Subsidy Details', {
-            'fields': (
-                'subsidy_percentage',
-                'max_farmers',
-                'current_farmers_count',
-            )
-        }),
-        ('Administering Organization', {
-            'fields': (
-                'implementing_agency',
-                'contact_person',
-                'contact_email',
-                'contact_phone',
-            )
-        }),
-        ('Timestamps', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def is_active_display(self, obj):
-        if obj.is_currently_active:
-            return format_html('<span style="color: green;">✓ Active</span>')
-        return format_html('<span style="color: red;">✗ Inactive</span>')
-    is_active_display.short_description = 'Status'
 
 
 @admin.register(SubscriptionPlan)
@@ -100,13 +48,11 @@ class SubscriptionAdmin(admin.ModelAdmin):
         'farm',
         'plan',
         'status',
-        'is_subsidized_display',
         'next_billing_date',
         'created_at',
     ]
     list_filter = [
         'status',
-        'is_subsidized',
         'auto_renew',
         'plan',
     ]
@@ -115,16 +61,11 @@ class SubscriptionAdmin(admin.ModelAdmin):
         'created_at',
         'updated_at',
         'days_until_suspension',
-        'requires_payment',
     ]
     
     fieldsets = (
         ('Subscription Details', {
             'fields': ('farm', 'plan', 'status')
-        }),
-        ('Government Subsidy', {
-            'fields': ('is_subsidized', 'subsidy_program'),
-            'classes': ('collapse',)
         }),
         ('Billing Cycle', {
             'fields': (
@@ -162,21 +103,13 @@ class SubscriptionAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
         ('Settings', {
-            'fields': ('auto_renew', 'requires_payment')
+            'fields': ('auto_renew',)
         }),
         ('Timestamps', {
             'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
         }),
     )
-    
-    def is_subsidized_display(self, obj):
-        if obj.is_subsidized:
-            return format_html(
-                '<span style="color: blue;">✓ Government Subsidized</span>'
-            )
-        return format_html('<span style="color: gray;">Self-Paid</span>')
-    is_subsidized_display.short_description = 'Subsidy Status'
     
     actions = ['suspend_subscriptions', 'reactivate_subscriptions']
     
