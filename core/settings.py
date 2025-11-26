@@ -1,0 +1,436 @@
+"""
+Django settings for YEA Poultry Management System.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/5.2/topics/settings/
+
+For the full list of settings and their values, see
+https://docs.djangoproject.com/en/5.2/ref/settings/
+"""
+
+import os
+from pathlib import Path
+from datetime import timedelta
+from dotenv import load_dotenv
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+env_file = os.path.join(BASE_DIR, '.env.development')
+if os.path.exists(env_file):
+    load_dotenv(env_file)
+else:
+    load_dotenv()  # Try default .env
+
+
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-$sndye)!a@mj0pz6@=z78-+@b^x7^$@amxmnf%s2z8fq=_+7@3')
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = os.getenv('DEBUG', 'True') == 'True'
+
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+
+# Frontend URL for email/sms links
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+
+
+# Application definition
+
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'django.contrib.sites',  # Required for allauth
+    'django.contrib.gis',  # PostGIS support for geospatial data
+    
+    # Third-party apps
+    'rest_framework',
+    'rest_framework.authtoken',  # Required for dj-rest-auth
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
+    'corsheaders',
+    'django_filters',
+    
+    # Authentication & Social Auth
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.facebook',
+    'allauth.socialaccount.providers.github',
+    'dj_rest_auth',
+    'dj_rest_auth.registration',
+    
+    # Phone number field
+    'phonenumber_field',
+    
+    # Permissions
+    'guardian',
+    
+    # Local apps
+    'accounts',
+    'farms',
+    'procurement',
+    'dashboards',
+    'flock_management',
+    'feed_inventory',
+    'medication_management',
+    'sales_revenue',
+]
+
+SITE_ID = 1  # Required for django.contrib.sites
+
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # CORS before CommonMiddleware
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',  # Required for allauth
+]
+
+ROOT_URLCONF = 'core.urls'
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = 'core.wsgi.application'
+
+
+# Database
+# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.contrib.gis.db.backends.postgis',  # PostGIS backend for geospatial support
+        'NAME': os.getenv('DB_NAME', 'poultry_db'),
+        'USER': os.getenv('DB_USER', 'teejay'),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
+    }
+}
+
+
+# Password validation
+# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
+
+
+# Internationalization
+# https://docs.djangoproject.com/en/5.2/topics/i18n/
+
+LANGUAGE_CODE = 'en-us'
+
+TIME_ZONE = 'Africa/Accra'  # Ghana timezone
+
+USE_I18N = True
+
+USE_TZ = True
+
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/5.2/howto/static-files/
+
+STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / os.getenv('STATIC_ROOT', 'staticfiles')
+
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / os.getenv('MEDIA_ROOT', 'media')
+
+# Default primary key field type
+# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# =============================================================================
+# AUTHENTICATION SETTINGS
+# =============================================================================
+
+AUTH_USER_MODEL = 'accounts.User'
+
+AUTHENTICATION_BACKENDS = (
+    # Django Admin Backend
+    'django.contrib.auth.backends.ModelBackend',
+    
+    # Guardian object permissions backend
+    'guardian.backends.ObjectPermissionBackend',
+    
+    # Allauth social authentication backend
+    'allauth.account.auth_backends.AuthenticationBackend',
+)
+
+# Phone Number Field Settings
+PHONENUMBER_DEFAULT_REGION = 'GH'  # Ghana
+PHONENUMBER_DB_FORMAT = 'INTERNATIONAL'  # Store as +233XXXXXXXXX
+
+
+# =============================================================================
+# DJANGO-ALLAUTH SETTINGS
+# =============================================================================
+
+ACCOUNT_AUTHENTICATION_METHOD = 'email'  # Use email for login
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = True
+ACCOUNT_EMAIL_VERIFICATION = 'mandatory'  # Require email verification
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
+ACCOUNT_USER_MODEL_EMAIL_FIELD = 'email'
+
+# Email verification settings
+ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
+ACCOUNT_EMAIL_CONFIRMATION_COOLDOWN = 180  # 3 minutes between resends
+
+# Login settings
+ACCOUNT_LOGIN_ATTEMPTS_LIMIT = 5
+ACCOUNT_LOGIN_ATTEMPTS_TIMEOUT = 900  # 15 minutes lockout
+
+# Social account settings
+SOCIALACCOUNT_AUTO_SIGNUP = True
+SOCIALACCOUNT_EMAIL_VERIFICATION = 'optional'
+SOCIALACCOUNT_QUERY_EMAIL = True
+
+# Social Auth Providers (Add keys in .env file)
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        },
+        'APP': {
+            'client_id': os.getenv('GOOGLE_CLIENT_ID', ''),
+            'secret': os.getenv('GOOGLE_CLIENT_SECRET', ''),
+            'key': ''
+        }
+    },
+    'facebook': {
+        'METHOD': 'oauth2',
+        'SCOPE': ['email', 'public_profile'],
+        'AUTH_PARAMS': {'auth_type': 'reauthenticate'},
+        'FIELDS': [
+            'id',
+            'email',
+            'name',
+            'first_name',
+            'last_name',
+        ],
+        'VERIFIED_EMAIL': False,
+        'APP': {
+            'client_id': os.getenv('FACEBOOK_CLIENT_ID', ''),
+            'secret': os.getenv('FACEBOOK_CLIENT_SECRET', ''),
+            'key': ''
+        }
+    },
+    'github': {
+        'SCOPE': [
+            'user',
+            'repo',
+            'read:org',
+        ],
+        'APP': {
+            'client_id': os.getenv('GITHUB_CLIENT_ID', ''),
+            'secret': os.getenv('GITHUB_CLIENT_SECRET', ''),
+            'key': ''
+        }
+    }
+}
+
+
+# =============================================================================
+# DJ-REST-AUTH SETTINGS
+# =============================================================================
+
+REST_AUTH = {
+    'USE_JWT': True,
+    'JWT_AUTH_COOKIE': 'jwt-auth',
+    'JWT_AUTH_REFRESH_COOKIE': 'jwt-refresh-token',
+    'JWT_AUTH_HTTPONLY': True,
+    'USER_DETAILS_SERIALIZER': 'accounts.serializers.UserSerializer',
+    'REGISTER_SERIALIZER': 'accounts.serializers.UserRegistrationSerializer',
+}
+
+
+# =============================================================================
+# GUARDIAN (OBJECT-LEVEL PERMISSIONS) SETTINGS
+# =============================================================================
+
+ANONYMOUS_USER_NAME = None  # Don't create anonymous user
+GUARDIAN_RAISE_403 = True  # Raise exception on permission denied
+
+
+# =============================================================================
+# REST FRAMEWORK SETTINGS
+# =============================================================================
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
+    ),
+}
+
+
+# =============================================================================
+# JWT SETTINGS
+# =============================================================================
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_TOKEN_LIFETIME', 60))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_REFRESH_TOKEN_LIFETIME', 10080))),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'ALGORITHM': os.getenv('JWT_ALGORITHM', 'HS256'),
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+}
+
+
+# =============================================================================
+# CORS SETTINGS
+# =============================================================================
+
+CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
+CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000').split(',')
+
+
+# =============================================================================
+# EMAIL SETTINGS
+# =============================================================================
+
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@yea-pms.gov.gh')
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', 60))
+
+
+# =============================================================================
+# SMS SETTINGS (Hubtel)
+# =============================================================================
+
+# Enable/disable SMS notifications
+SMS_ENABLED = os.getenv('SMS_ENABLED', 'False') == 'True'
+
+# Hubtel API credentials
+# Get these from: https://developers.hubtel.com/
+HUBTEL_CLIENT_ID = os.getenv('HUBTEL_CLIENT_ID', '')
+HUBTEL_CLIENT_SECRET = os.getenv('HUBTEL_CLIENT_SECRET', '')
+HUBTEL_SENDER_ID = os.getenv('HUBTEL_SENDER_ID', 'YEA-PMS')
+
+# SMS provider (for backwards compatibility)
+SMS_PROVIDER = os.getenv('SMS_PROVIDER', 'console')  # Options: 'console', 'hubtel'
+
+
+# =============================================================================
+# FILE UPLOAD SETTINGS
+# =============================================================================
+
+MAX_UPLOAD_SIZE = int(os.getenv('MAX_UPLOAD_SIZE', 5242880))  # 5MB default
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
+FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
+
+
+# =============================================================================
+# SECURITY SETTINGS (Production)
+# =============================================================================
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+
+
+# =============================================================================
+# PAYSTACK PAYMENT SETTINGS
+# =============================================================================
+
+PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', '')
+PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', '')
+PAYSTACK_BASE_URL = os.getenv('PAYSTACK_BASE_URL', 'https://api.paystack.co')
+PAYSTACK_WEBHOOK_SECRET = os.getenv('PAYSTACK_WEBHOOK_SECRET', '')
+
+# Paystack Configuration
+PAYSTACK_FEE_BEARER = os.getenv('PAYSTACK_FEE_BEARER', 'account')  # Platform pays fees
+PAYSTACK_SETTLEMENT_SCHEDULE = os.getenv('PAYSTACK_SETTLEMENT_SCHEDULE', 'auto')  # auto or instant
+PAYSTACK_CURRENCY = os.getenv('PAYSTACK_CURRENCY', 'GHS')
+
+# Payment Processing
+PAYMENT_RETRY_MAX_ATTEMPTS = int(os.getenv('PAYMENT_RETRY_MAX_ATTEMPTS', 3))
+PAYMENT_RETRY_DELAY_SECONDS = int(os.getenv('PAYMENT_RETRY_DELAY_SECONDS', 300))
+PAYMENT_AUTO_REFUND_HOURS = int(os.getenv('PAYMENT_AUTO_REFUND_HOURS', 72))
+REFUND_ELIGIBILITY_HOURS = int(os.getenv('REFUND_ELIGIBILITY_HOURS', 48))
+
+# Commission Structure (Tiered Percentage)
+COMMISSION_TIER_1_PERCENTAGE = float(os.getenv('COMMISSION_TIER_1_PERCENTAGE', 5.0))  # < GHS 100
+COMMISSION_TIER_2_PERCENTAGE = float(os.getenv('COMMISSION_TIER_2_PERCENTAGE', 3.0))  # GHS 100-500
+COMMISSION_TIER_3_PERCENTAGE = float(os.getenv('COMMISSION_TIER_3_PERCENTAGE', 2.0))  # > GHS 500
+COMMISSION_MINIMUM_AMOUNT = float(os.getenv('COMMISSION_MINIMUM_AMOUNT', 2.00))
+
+# Mobile Money Providers
+MTN_MOBILE_MONEY_ENABLED = os.getenv('MTN_MOBILE_MONEY_ENABLED', 'True') == 'True'
+VODAFONE_CASH_ENABLED = os.getenv('VODAFONE_CASH_ENABLED', 'True') == 'True'
+AIRTELTIGO_MONEY_ENABLED = os.getenv('AIRTELTIGO_MONEY_ENABLED', 'True') == 'True'
+

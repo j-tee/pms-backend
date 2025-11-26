@@ -1,0 +1,53 @@
+# Django Core
+Django==5.2.7
+python-dotenv==1.0.0
+
+# Database
+psycopg[binary]>=3.2.12  # PostgreSQL adapter for Python 3.13+
+
+# Django REST Framework & Authentication
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.0
+
+# Social Authentication
+dj-rest-auth==5.0.2  # REST authentication with social auth support
+django-allauth==0.57.0  # Social authentication (Google, Facebook, GitHub, etc.)
+
+# Email & Phone Verification
+django-phonenumber-field==7.2.0  # Phone number validation
+phonenumbers==8.13.26  # Phone number parsing library
+
+# Role & Permissions Management
+django-guardian==2.4.0  # Object-level permissions (Rolify equivalent)
+rules==3.3  # Rule-based permissions
+
+# CORS & Security
+django-cors-headers==4.3.1
+
+# Filtering & Search
+django-filter==23.5
+
+# Image Processing
+Pillow==10.4.0
+
+# Geospatial (PostGIS)
+# Will add after PostgreSQL is set up
+
+# Background Tasks (Celery)
+celery==5.3.4
+redis==5.0.1
+
+# SMS (Hubtel for Ghana)
+requests==2.31.0  # HTTP library for API calls
+
+# Testing
+pytest==7.4.3
+pytest-django==4.7.0
+pytest-cov==4.1.0
+
+# Code Quality
+flake8==6.1.0
+black==23.12.1
+
+# Utilities
+python-decouple==3.8
