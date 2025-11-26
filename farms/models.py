@@ -437,6 +437,166 @@ class Farm(models.Model):
     # Benefit Package (JSON)
     benefit_package_assigned = models.JSONField(null=True, blank=True)
     
+    # ============================================================================
+    # SECTION 9B: DUAL FARMER ONBOARDING (Government vs Independent)
+    # ============================================================================
+    
+    REGISTRATION_SOURCE_CHOICES = [
+        ('government_initiative', 'YEA Government Initiative'),
+        ('self_registered', 'Self-Registered/Independent'),
+        ('migrated', 'Migrated from External System'),
+    ]
+    
+    registration_source = models.CharField(
+        max_length=30,
+        choices=REGISTRATION_SOURCE_CHOICES,
+        default='self_registered',
+        db_index=True,
+        help_text="How the farmer joined the platform"
+    )
+    
+    # Government Initiative Specific Fields
+    yea_program_batch = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="YEA batch/cohort (e.g., 'YEA-2025-Q1')"
+    )
+    yea_program_start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When farmer joined government program"
+    )
+    yea_program_end_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Expected program completion date"
+    )
+    government_support_package = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="""
+        Details of government support received:
+        {
+            'day_old_chicks': 500,
+            'feed_bags': 100,
+            'training_sessions': 5,
+            'extension_visits': 12,
+            'subsidy_amount': 5000.00
+        }
+        """
+    )
+    extension_officer = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='supervised_farms',
+        help_text="Primary extension officer for government program farmers"
+    )
+    
+    # Independent Farmer Specific Fields
+    established_since = models.DateField(
+        null=True,
+        blank=True,
+        help_text="For established farmers: when farm was originally established"
+    )
+    previous_management_system = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Manual/Excel/Other system used before joining platform"
+    )
+    referral_source = models.CharField(
+        max_length=100,
+        blank=True,
+        choices=[
+            ('search_engine', 'Google/Search Engine'),
+            ('social_media', 'Facebook/Instagram/Twitter'),
+            ('farmer_referral', 'Referred by Another Farmer'),
+            ('industry_event', 'Agricultural Fair/Conference'),
+            ('advertisement', 'Advertisement'),
+            ('other', 'Other'),
+        ],
+        help_text="How independent farmer heard about platform"
+    )
+    
+    # Fast-Track Approval for Established Farmers
+    fast_track_eligible = models.BooleanField(
+        default=False,
+        help_text="Eligible for simplified approval (established farmers with documentation)"
+    )
+    fast_track_criteria_met = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="""
+        Criteria for fast-track approval:
+        {
+            'business_registered': True,
+            'tin_verified': True,
+            'existing_operations': True,
+            'documentation_complete': True,
+            'references_provided': True
+        }
+        """
+    )
+    
+    # Approval Workflow Type
+    APPROVAL_WORKFLOW_CHOICES = [
+        ('full_government', 'Full 3-Tier Government Review'),
+        ('simplified', 'Simplified Verification'),
+        ('auto_approve', 'Auto-Approve with Basic Checks'),
+    ]
+    
+    approval_workflow = models.CharField(
+        max_length=30,
+        choices=APPROVAL_WORKFLOW_CHOICES,
+        blank=True,
+        help_text="Auto-set based on registration_source and fast_track_eligible"
+    )
+    
+    # ============================================================================
+    # SECTION 9C: MARKETPLACE SUBSCRIPTION (OPTIONAL)
+    # ============================================================================
+    
+    SUBSCRIPTION_TYPE_CHOICES = [
+        ('none', 'No Subscription (Free Core Platform)'),
+        ('government_subsidized', 'Government-Subsidized Marketplace (Free/Reduced)'),
+        ('standard', 'Standard Marketplace Subscription (GHS 100/month)'),
+        ('premium', 'Premium Subscription (Future)'),
+    ]
+    
+    subscription_type = models.CharField(
+        max_length=30,
+        choices=SUBSCRIPTION_TYPE_CHOICES,
+        default='none',
+        help_text="Type of marketplace subscription"
+    )
+    
+    marketplace_enabled = models.BooleanField(
+        default=False,
+        help_text="Is marketplace access enabled (requires subscription)"
+    )
+    
+    product_images_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Current number of product images (max 20 with subscription)"
+    )
+    
+    # Government Subsidy Tracking
+    government_subsidy_active = models.BooleanField(
+        default=False,
+        help_text="Is farmer receiving government marketplace subscription subsidy"
+    )
+    government_subsidy_start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When government marketplace subsidy started"
+    )
+    government_subsidy_end_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When government marketplace subsidy expires"
+    )
+    
     # SECTION 10: CALCULATED METRICS
     farm_readiness_score = models.DecimalField(
         max_digits=5,
@@ -505,6 +665,13 @@ class Farm(models.Model):
             models.Index(fields=['tin']),
             models.Index(fields=['application_status']),
             models.Index(fields=['farm_status']),
+            # New indexes for dual farmer onboarding
+            models.Index(fields=['registration_source']),
+            models.Index(fields=['approval_workflow']),
+            models.Index(fields=['subscription_type']),
+            models.Index(fields=['marketplace_enabled']),
+            models.Index(fields=['extension_officer']),
+            models.Index(fields=['fast_track_eligible']),
         ]
     
     def __str__(self):
@@ -527,6 +694,14 @@ class Farm(models.Model):
                 new_num = 1
             
             self.application_id = f'APP-{year}-{new_num:05d}'
+        
+        # Auto-determine approval workflow based on farmer type
+        if not self.approval_workflow:
+            self.approval_workflow = self._determine_approval_workflow()
+        
+        # Auto-determine subscription type based on farmer type
+        if not self.subscription_type or self.subscription_type == 'none':
+            self.subscription_type = self._determine_subscription_type()
         
         # Auto-calculate capacity utilization
         if self.total_bird_capacity > 0:
@@ -573,6 +748,103 @@ class Farm(models.Model):
         
         if errors:
             raise ValidationError(errors)
+    
+    # ============================================================================
+    # DUAL FARMER ONBOARDING METHODS
+    # ============================================================================
+    
+    def _determine_approval_workflow(self):
+        """
+        Auto-determine approval workflow based on registration source and eligibility.
+        Called automatically in save() method.
+        """
+        if self.registration_source == 'government_initiative':
+            return 'full_government'
+        
+        elif self.registration_source == 'self_registered':
+            if self.fast_track_eligible:
+                return 'simplified'
+            elif self._meets_auto_approve_criteria():
+                return 'auto_approve'
+            else:
+                return 'simplified'
+        
+        return 'simplified'  # Default for migrated farms
+    
+    def _meets_auto_approve_criteria(self):
+        """
+        Check if independent farmer meets auto-approve criteria:
+        - TIN provided and valid
+        - Business registration provided
+        - Bank account information provided
+        - No prior rejections
+        """
+        criteria = [
+            bool(self.tin),
+            bool(self.business_registration_number),
+            bool(self.bank_name and self.account_number),
+            not bool(self.rejection_reason),
+        ]
+        return all(criteria)
+    
+    def _determine_subscription_type(self):
+        """
+        Auto-determine subscription type based on registration source.
+        Called automatically in save() method.
+        """
+        if self.registration_source == 'government_initiative':
+            # Government farmers get subsidized marketplace if they opt in
+            if self.government_subsidy_active:
+                return 'government_subsidized'
+            return 'none'  # Core platform only until they opt into marketplace
+        
+        elif self.registration_source == 'self_registered':
+            # Independent farmers default to no subscription (free core)
+            # They can upgrade to marketplace subscription later
+            return self.subscription_type if self.subscription_type else 'none'
+        
+        return 'none'
+    
+    @property
+    def is_government_farmer(self):
+        """Check if farmer is part of government initiative"""
+        return self.registration_source == 'government_initiative'
+    
+    @property
+    def is_independent_farmer(self):
+        """Check if farmer is independent/self-registered"""
+        return self.registration_source == 'self_registered'
+    
+    @property
+    def requires_extension_officer(self):
+        """Check if farmer requires extension officer supervision"""
+        return self.is_government_farmer
+    
+    @property
+    def has_marketplace_access(self):
+        """Check if farmer has active marketplace access"""
+        return self.marketplace_enabled and self.subscription_type in [
+            'government_subsidized',
+            'standard',
+            'premium'
+        ]
+    
+    @property
+    def eligible_for_government_procurement(self):
+        """Check if eligible for government bulk orders"""
+        return (
+            self.application_status == 'Approved' and
+            self.farm_status == 'Active' and
+            (self.is_government_farmer or bool(self.business_registration_number))
+        )
+    
+    @property
+    def core_platform_accessible(self):
+        """
+        Core farm management is ALWAYS accessible regardless of subscription.
+        Returns True for all approved farmers.
+        """
+        return self.application_status == 'Approved'
 
 
 # =============================================================================
