@@ -188,3 +188,13 @@ class User(AbstractUser, RoleMixin):
         self.account_locked_until = None
         self.last_login_at = timezone.now()
         self.save(update_fields=['failed_login_attempts', 'account_locked_until', 'last_login_at'])
+
+
+# Import MFA models to register them with Django
+from .mfa_models import (
+    MFAMethod,
+    MFABackupCode,
+    MFAVerificationCode,
+    TrustedDevice,
+    MFASettings
+)

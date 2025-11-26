@@ -12,6 +12,7 @@ Implements multi-model structure for farm registration with:
 - Document management
 - Financial tracking
 - Application workflow
+- Invitation system and spam prevention
 """
 
 from django.db import models
@@ -25,6 +26,29 @@ from phonenumber_field.modelfields import PhoneNumberField
 from accounts.models import User
 import uuid
 import re
+
+# Import invitation and spam prevention models
+from .invitation_models import (
+    FarmInvitation,
+    RegistrationApproval,
+    VerificationToken,
+    RegistrationRateLimit
+)
+
+# Import application models (apply-first workflow)
+from .application_models import (
+    FarmApplication,
+    ApplicationReviewAction,
+    ApplicationQueue
+)
+
+# Import program enrollment models (existing farmers joining government programs)
+from .program_enrollment_models import (
+    GovernmentProgram,
+    ProgramEnrollmentApplication,
+    ProgramEnrollmentReview,
+    ProgramEnrollmentQueue
+)
 
 
 # =============================================================================
@@ -144,6 +168,13 @@ class Farm(models.Model):
         default='Phone Call'
     )
     residential_address = models.TextField()
+    
+    # Constituency (UNIVERSAL REQUIREMENT for all farmers)
+    primary_constituency = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="Constituency where farm is located - REQUIRED for ALL farmers (government and independent)"
+    )
     
     # SECTION 1.3: NEXT OF KIN
     nok_full_name = models.CharField(max_length=200, verbose_name="Next of Kin Full Name")
@@ -491,7 +522,7 @@ class Farm(models.Model):
         null=True,
         blank=True,
         related_name='supervised_farms',
-        help_text="Primary extension officer for government program farmers"
+        help_text="Extension officer assigned to farmer. REQUIRED for government farmers, OPTIONAL (but recommended) for independent farmers based on constituency."
     )
     
     # Independent Farmer Specific Fields
@@ -672,6 +703,8 @@ class Farm(models.Model):
             models.Index(fields=['marketplace_enabled']),
             models.Index(fields=['extension_officer']),
             models.Index(fields=['fast_track_eligible']),
+            models.Index(fields=['primary_constituency']),
+            models.Index(fields=['registration_source', 'primary_constituency']),
         ]
     
     def __str__(self):
@@ -746,6 +779,17 @@ class Farm(models.Model):
         if self.has_outstanding_debt and not self.debt_amount:
             errors['debt_amount'] = 'Debt amount is required when outstanding debt exists'
         
+        # Validate government farmers have required fields
+        if self.registration_source == 'government_initiative':
+            if not self.extension_officer:
+                errors['extension_officer'] = 'Extension officer is REQUIRED for government initiative farmers'
+            if not self.yea_program_batch:
+                errors['yea_program_batch'] = 'YEA program batch is required for government farmers'
+        
+        # Validate constituency is provided (universal requirement)
+        if not self.primary_constituency:
+            errors['primary_constituency'] = 'Constituency is REQUIRED for all farmers'
+        
         if errors:
             raise ValidationError(errors)
     
@@ -755,25 +799,32 @@ class Farm(models.Model):
     
     def _determine_approval_workflow(self):
         """
-        Auto-determine approval workflow based on registration source and eligibility.
+        Auto-determine approval workflow based on registration source.
         Called automatically in save() method.
+        
+        Rules:
+        - Government farmers → full_government (3-tier review)
+        - Independent farmers → auto_approve (instant access)
+        - Migrated farms → simplified (single verification)
         """
         if self.registration_source == 'government_initiative':
+            # Government farmers always get full 3-tier review
             return 'full_government'
         
         elif self.registration_source == 'self_registered':
-            if self.fast_track_eligible:
-                return 'simplified'
-            elif self._meets_auto_approve_criteria():
-                return 'auto_approve'
-            else:
-                return 'simplified'
+            # ALL independent farmers get automatic approval
+            return 'auto_approve'
         
-        return 'simplified'  # Default for migrated farms
+        # Migrated farms from external systems get simplified review
+        return 'simplified'
     
     def _meets_auto_approve_criteria(self):
         """
-        Check if independent farmer meets auto-approve criteria:
+        Check if farmer meets enhanced verification criteria.
+        Currently not used for workflow determination (all independent farmers auto-approved),
+        but kept for potential fast-track marketplace access or priority support.
+        
+        Criteria:
         - TIN provided and valid
         - Business registration provided
         - Bank account information provided
@@ -817,7 +868,16 @@ class Farm(models.Model):
     
     @property
     def requires_extension_officer(self):
-        """Check if farmer requires extension officer supervision"""
+        """
+        Check if farmer REQUIRES extension officer supervision.
+        
+        Returns:
+        - True: Government farmers (mandatory supervision)
+        - False: Independent farmers (optional but recommended)
+        
+        Note: Independent farmers CAN have extension officers assigned based on
+        constituency, but it's not mandatory for their registration.
+        """
         return self.is_government_farmer
     
     @property
