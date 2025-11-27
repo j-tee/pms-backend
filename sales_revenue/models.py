@@ -200,13 +200,13 @@ class PlatformSettings(models.Model):
         
         # Tier 1: Below first threshold
         if amount < self.commission_tier_1_threshold:
-            commission = amount * (self.commission_tier_1_percentage / 100)
+            commission = amount * (Decimal(str(self.commission_tier_1_percentage)) / Decimal('100'))
         # Tier 2: Between first and second threshold
         elif amount < self.commission_tier_2_threshold:
-            commission = amount * (self.commission_tier_2_percentage / 100)
+            commission = amount * (Decimal(str(self.commission_tier_2_percentage)) / Decimal('100'))
         # Tier 3: Above second threshold
         else:
-            commission = amount * (self.commission_tier_3_percentage / 100)
+            commission = amount * (Decimal(str(self.commission_tier_3_percentage)) / Decimal('100'))
         
         # Apply minimum commission
         return max(commission, self.commission_minimum_amount)

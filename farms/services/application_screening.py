@@ -451,10 +451,12 @@ Poultry Management System Team
     @staticmethod
     def _validate_reviewer_role(user, review_level):
         """Validate user has appropriate role"""
+        from accounts.models import User
+        
         role_mapping = {
-            'constituency': [UserRole.EXTENSION_OFFICER, UserRole.CONSTITUENCY_COORDINATOR],
-            'regional': [UserRole.REGIONAL_COORDINATOR, UserRole.REGIONAL_ADMIN],
-            'national': [UserRole.NATIONAL_ADMIN, UserRole.SYSTEM_ADMIN],
+            'constituency': [User.UserRole.CONSTITUENCY_OFFICIAL],
+            'regional': [User.UserRole.CONSTITUENCY_OFFICIAL, User.UserRole.NATIONAL_ADMIN],
+            'national': [User.UserRole.NATIONAL_ADMIN],
         }
         required_roles = role_mapping.get(review_level, [])
         return user.role in required_roles or user.is_superuser
@@ -465,9 +467,9 @@ Poultry Management System Team
         from accounts.models import User
         
         role_mapping = {
-            'constituency': UserRole.EXTENSION_OFFICER,
-            'regional': UserRole.REGIONAL_COORDINATOR,
-            'national': UserRole.NATIONAL_ADMIN,
+            'constituency': User.UserRole.CONSTITUENCY_OFFICIAL,
+            'regional': User.UserRole.CONSTITUENCY_OFFICIAL,
+            'national': User.UserRole.NATIONAL_ADMIN,
         }
         
         target_role = role_mapping.get(queue_item.review_level)

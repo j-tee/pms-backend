@@ -10,6 +10,10 @@ from .views import (
     user_list,
 )
 
+from .admin_views import (
+    AdminStaffInvitationAcceptView,
+)
+
 from .mfa_views import (
     mfa_status,
     enable_totp,
@@ -31,6 +35,9 @@ urlpatterns = [
     path('login/', CustomTokenObtainPairView.as_view(), name='login'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    
+    # Staff invitation (public endpoint)
+    path('staff/accept-invitation/', AdminStaffInvitationAcceptView.as_view(), name='staff-accept-invitation'),
     
     # User profile endpoints
     path('profile/', UserProfileView.as_view(), name='profile'),

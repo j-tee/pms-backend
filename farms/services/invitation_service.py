@@ -9,7 +9,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from datetime import timedelta
 from farms.invitation_models import FarmInvitation
-from core.sms_service import send_sms
+from core.sms_service import SMSService
 
 
 class InvitationService:
@@ -152,12 +152,12 @@ Poultry Management System Team
             message = custom_message or f"You're invited to join PMS! Code: {invitation.invitation_code}. Register at: {registration_url}"
             
             # Send SMS
-            success, result = send_sms(
+            result = SMSService.send_sms(
                 phone_number=str(invitation.recipient_phone),
                 message=message
             )
             
-            if success:
+            if result.get('success'):
                 # Update invitation status
                 invitation.sent_via_sms = True
                 invitation.sms_sent_at = timezone.now()

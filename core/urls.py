@@ -23,5 +23,7 @@ urlpatterns = [
     path('admin/', yea_admin_site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/dashboards/', include('dashboards.urls')),
+    path('api/admin/', include('accounts.admin_urls')),
+    path('api/', include('farms.urls')),  # Public farm application endpoints
 ]
 

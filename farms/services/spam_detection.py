@@ -209,10 +209,10 @@ class RateLimitService:
             hours_remaining = int(time_remaining.total_seconds() / 3600)
             return False, f"Too many registration attempts. Please try again in {hours_remaining} hours."
         
-        # Check daily limit
-        if rate_limit.registration_attempts >= 3:
+        # Check daily limit (increased to 50 for development)
+        if rate_limit.registration_attempts >= 50:
             rate_limit.increment_attempts()
-            return False, "Daily registration limit reached (3 registrations per day). Please try again tomorrow."
+            return False, "Daily registration limit reached (50 registrations per day). Please try again tomorrow."
         
         return True, "Rate limit check passed"
     

@@ -43,11 +43,11 @@ from .application_models import (
 )
 
 # Import program enrollment models (existing farmers joining government programs)
-from .program_enrollment_models import (
-    GovernmentProgram,
-    ProgramEnrollmentApplication,
-    ProgramEnrollmentReview,
-    ProgramEnrollmentQueue
+from .batch_enrollment_models import (
+    Batch,
+    BatchEnrollmentApplication,
+    BatchEnrollmentReview,
+    BatchEnrollmentQueue
 )
 
 

@@ -84,20 +84,92 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'phone', 'first_name', 'last_name',
             'full_name', 'role', 'role_display', 'preferred_contact_method',
             'region', 'constituency', 'is_verified', 'is_active',
-            'date_joined', 'last_login_at'
+            'phone_verified', 'email_verified', 'failed_login_attempts',
+            'created_at', 'date_joined', 'last_login_at'
         )
         read_only_fields = (
             'id', 'full_name', 'role_display', 'is_verified',
-            'date_joined', 'last_login_at'
+            'phone_verified', 'email_verified', 'failed_login_attempts',
+            'created_at', 'date_joined', 'last_login_at'
         )
+
+
+class UserDetailSerializer(serializers.ModelSerializer):
+    """
+    Detailed serializer for admin user management.
+    Includes all user fields for admin operations.
+    """
+    full_name = serializers.CharField(source='get_full_name', read_only=True)
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+    password = serializers.CharField(write_only=True, required=False)
+    
+    class Meta:
+        model = User
+        fields = (
+            'id', 'username', 'email', 'phone', 'first_name', 'last_name',
+            'full_name', 'role', 'role_display', 'preferred_contact_method',
+            'region', 'constituency', 'is_verified', 'is_active', 'phone_verified',
+            'email_verified', 'is_staff', 'date_joined', 'last_login_at',
+            'created_at', 'updated_at', 'failed_login_attempts',
+            'account_locked_until', 'password'
+        )
+        read_only_fields = (
+            'id', 'full_name', 'role_display', 'date_joined', 'last_login_at',
+            'created_at', 'updated_at'
+        )
+    
+    def create(self, validated_data):
+        """Create a new user with encrypted password."""
+        password = validated_data.pop('password', None)
+        user = User.objects.create(**validated_data)
+        if password:
+            user.set_password(password)
+            user.save()
+        return user
+    
+    def update(self, instance, validated_data):
+        """Update user, handling password separately."""
+        password = validated_data.pop('password', None)
+        
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        if password:
+            instance.set_password(password)
+        
+        instance.save()
+        return instance
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
-    Custom JWT token serializer that includes additional user information.
+    Custom JWT token serializer that includes additional user information
+    and automatic routing based on user role.
     """
     def validate(self, attrs):
         data = super().validate(attrs)
+        
+        # Determine user type and dashboard route
+        admin_roles = [
+            'SUPER_ADMIN',
+            'NATIONAL_ADMIN',
+            'REGIONAL_COORDINATOR',
+            'CONSTITUENCY_OFFICIAL',
+            'EXTENSION_OFFICER',
+            'VETERINARY_OFFICER',
+            'PROCUREMENT_OFFICER',
+            'AUDITOR'
+        ]
+        
+        is_admin = self.user.role in admin_roles
+        
+        # Determine redirect path
+        if is_admin:
+            redirect_to = '/admin/dashboard'
+            dashboard_type = 'admin'
+        else:
+            redirect_to = '/farmer/dashboard'
+            dashboard_type = 'farmer'
         
         # Add custom claims
         data['user'] = {
@@ -105,8 +177,23 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'username': self.user.username,
             'email': self.user.email,
             'phone': str(self.user.phone) if self.user.phone else None,
+            'first_name': self.user.first_name,
+            'last_name': self.user.last_name,
             'role': self.user.role,
+            'role_display': self.user.get_role_display(),
             'full_name': self.user.get_full_name(),
+            'region': self.user.region,
+            'constituency': self.user.constituency,
+            'is_verified': self.user.is_verified,
+            'is_active': self.user.is_active,
+        }
+        
+        # Add routing information
+        data['routing'] = {
+            'dashboard_type': dashboard_type,
+            'redirect_to': redirect_to,
+            'is_admin': is_admin,
+            'is_farmer': not is_admin
         }
         
         # Update last login

@@ -14,10 +14,10 @@ from django.core.exceptions import ValidationError
 from accounts.models import User
 from accounts.roles import UserRole
 from farms.models import Farm
-from farms.program_enrollment_models import (
-    GovernmentProgram,
-    ProgramEnrollmentApplication,
-    ProgramEnrollmentReview,
+from farms.batch_enrollment_models import (
+    Batch,
+    BatchEnrollmentApplication,
+    BatchEnrollmentReview,
     ProgramEnrollmentQueue
 )
 from datetime import timedelta, date
@@ -44,21 +44,21 @@ class ProgramEnrollmentService:
         
         Args:
             farm: Farm instance (existing farm)
-            program: GovernmentProgram instance
+            program: Batch instance
             application_data: Dict with application details
             applicant: User (farm owner submitting application)
         
         Returns:
-            ProgramEnrollmentApplication instance
+            BatchEnrollmentApplication instance
         """
         # Validate program is accepting applications
         if not program.is_accepting_applications:
             raise ValidationError(
-                f"Program {program.program_name} is not currently accepting applications."
+                f"Program {program.batch_name} is not currently accepting applications."
             )
         
         # Check if farm already enrolled in this program
-        existing = ProgramEnrollmentApplication.objects.filter(
+        existing = BatchEnrollmentApplication.objects.filter(
             farm=farm,
             program=program,
             status__in=['submitted', 'constituency_review', 'regional_review', 
@@ -77,7 +77,7 @@ class ProgramEnrollmentService:
             )
         
         # Create application
-        application = ProgramEnrollmentApplication.objects.create(
+        application = BatchEnrollmentApplication.objects.create(
             farm=farm,
             program=program,
             applicant=applicant,
@@ -109,7 +109,7 @@ class ProgramEnrollmentService:
             application.save()
             
             # Log rejection
-            ProgramEnrollmentReview.objects.create(
+            BatchEnrollmentReview.objects.create(
                 application=application,
                 reviewer=None,  # Automated
                 review_level='eligibility',
@@ -124,7 +124,7 @@ class ProgramEnrollmentService:
         """
         Run automated eligibility checks against program criteria.
         """
-        program = application.program
+        program = application.program_batch
         farm = application.farm
         farmer = application.applicant
         
@@ -213,7 +213,7 @@ class ProgramEnrollmentService:
         application.save()
         
         # Log eligibility check
-        ProgramEnrollmentReview.objects.create(
+        BatchEnrollmentReview.objects.create(
             application=application,
             reviewer=None,  # Automated
             review_level='eligibility',
@@ -244,7 +244,7 @@ class ProgramEnrollmentService:
         )
         
         # Log workflow start
-        ProgramEnrollmentReview.objects.create(
+        BatchEnrollmentReview.objects.create(
             application=application,
             reviewer=None,
             review_level='constituency',
@@ -277,7 +277,7 @@ class ProgramEnrollmentService:
             queue_entry.save()
         
         # Log approval at this level
-        ProgramEnrollmentReview.objects.create(
+        BatchEnrollmentReview.objects.create(
             application=application,
             reviewer=reviewer,
             review_level=current_level,
@@ -335,11 +335,11 @@ class ProgramEnrollmentService:
         Updates farm to government-sponsored status.
         """
         farm = application.farm
-        program = application.program
+        program = application.program_batch
         
         # Update farm to government-sponsored
         farm.registration_source = 'government_initiative'
-        farm.yea_program_batch = program.program_code
+        farm.yea_program_batch = program.batch_code
         farm.yea_program_start_date = timezone.now().date()
         
         # Calculate program end date based on program duration
@@ -371,12 +371,12 @@ class ProgramEnrollmentService:
         program.save()  # Auto-calculates slots_available
         
         # Log enrollment completion
-        ProgramEnrollmentReview.objects.create(
+        BatchEnrollmentReview.objects.create(
             application=application,
             reviewer=approver,
             review_level='national',
             action='enrolled',
-            notes=notes or f"Enrollment completed. Farm {farm.farm_id} now in {program.program_code}"
+            notes=notes or f"Enrollment completed. Farm {farm.farm_id} now in {program.batch_code}"
         )
         
         # TODO: Send notification to farmer
@@ -416,7 +416,7 @@ class ProgramEnrollmentService:
         application.save()
         
         # Log rejection
-        ProgramEnrollmentReview.objects.create(
+        BatchEnrollmentReview.objects.create(
             application=application,
             reviewer=reviewer,
             review_level=current_level,
@@ -457,7 +457,7 @@ class ProgramEnrollmentService:
             queue_entry.save()
         
         # Log changes request
-        ProgramEnrollmentReview.objects.create(
+        BatchEnrollmentReview.objects.create(
             application=application,
             reviewer=reviewer,
             review_level=current_level,
@@ -498,7 +498,7 @@ class ProgramEnrollmentService:
         )
         
         # Log resubmission
-        ProgramEnrollmentReview.objects.create(
+        BatchEnrollmentReview.objects.create(
             application=application,
             reviewer=None,
             review_level=level,
@@ -559,7 +559,7 @@ class ProgramEnrollmentService:
         queue_entry.claim(officer)
         
         # Log claim
-        ProgramEnrollmentReview.objects.create(
+        BatchEnrollmentReview.objects.create(
             application=application,
             reviewer=officer,
             review_level=current_level,
@@ -593,7 +593,7 @@ class ProgramEnrollmentService:
         Get all program applications for a farmer.
         """
         farms = Farm.objects.filter(farmer=farmer)
-        return ProgramEnrollmentApplication.objects.filter(
+        return BatchEnrollmentApplication.objects.filter(
             farm__in=farms
         ).select_related('farm', 'program').order_by('-created_at')
     
@@ -602,7 +602,7 @@ class ProgramEnrollmentService:
         """
         Get statistics for a program.
         """
-        applications = ProgramEnrollmentApplication.objects.filter(program=program)
+        applications = BatchEnrollmentApplication.objects.filter(batch=program)
         
         return {
             'total_applications': applications.count(),

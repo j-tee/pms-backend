@@ -1,23 +1,31 @@
 """
-Government Program Enrollment Models
+YEA Poultry Program Batch/Cohort Management Models
 
-Handles applications from EXISTING farmers who want to join YEA or other
-government support programs.
+Manages batches, cohorts, and intakes of the YEA Poultry Development Program.
+Each batch represents a recruitment cycle where existing farmers apply to join
+the YEA Poultry Program.
+
+Key Concepts:
+- **Batch**: A recruitment cycle (e.g., "2025 Q1 Batch - Greater Accra")
+- **Batch**: Group of farmers enrolled together, trained together, receive support together
+- **Cohort**: Same as batch, used interchangeably
+- **Intake**: The application/enrollment period for a batch
 
 Scenarios:
-1. Independent farmer (already on platform) wants to join YEA
-2. Private farmer wants to access government subsidies/support
-3. Government farmer wants to join additional programs
+1. Independent farmer (already on platform) applies to join YEA Batch
+2. Private farmer applies for government support in active intake
+3. Farmer enrolled in previous batch can apply to new regional batch
 
 Flow:
-1. Farmer submits program enrollment application
-2. Application goes through screening (similar to new farmer screening)
-3. Upon approval:
-   - Farm registration_source updated to 'government_initiative'
+1. Admin creates new batch (e.g., "2025 Q1 Greater Accra Intake")
+2. Existing farmers submit applications to join the batch
+3. Applications screened through constituency → regional → national review
+4. Approved farmers enrolled in batch:
+   - Farm status updated to 'government_initiative'
    - Extension officer assigned
-   - YEA program details added
    - Support package allocated
-   - Government subsidies activated
+   - Training scheduled with cohort
+   - Chicks/feed distribution coordinated
 """
 
 from django.db import models
@@ -29,13 +37,25 @@ import uuid
 from datetime import timedelta
 
 
-class GovernmentProgram(models.Model):
+class Batch(models.Model):
     """
-    Master list of available government support programs.
-    YEA, PLANTING FOR FOOD AND JOBS (Poultry), etc.
+    YEA Poultry Program Batches/Cohorts/Intakes.
+    
+    Represents a recruitment cycle where farmers apply to join the YEA Poultry Program.
+    Examples:
+    - "2025 Q1 Batch - Greater Accra"
+    - "2025 Northern Region Cohort"
+    - "January 2025 National Intake"
+    
+    Each batch has:
+    - Limited slots (e.g., 100 farmers)
+    - Application period (e.g., Jan 1 - Mar 31)
+    - Regional/constituency focus
+    - Shared training schedule
+    - Coordinated chick distribution
     """
     
-    PROGRAM_STATUS_CHOICES = [
+    BATCH_STATUS_CHOICES = [
         ('active', 'Active - Accepting Applications'),
         ('full', 'Full - Applications Closed'),
         ('inactive', 'Inactive/Ended'),
@@ -43,30 +63,37 @@ class GovernmentProgram(models.Model):
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
-    program_name = models.CharField(
+    batch_name = models.CharField(
         max_length=200,
         unique=True,
-        help_text="E.g., 'YEA Poultry Support Program 2025'"
+        help_text="E.g., '2025 Q1 Batch - Greater Accra', '2025 Northern Cohort'"
     )
-    program_code = models.CharField(
+    batch_code = models.CharField(
         max_length=50,
         unique=True,
-        help_text="E.g., 'YEA-2025-Q1'"
+        help_text="E.g., 'YEA-2025-Q1-ACCRA', '2025-BATCH-01'"
     )
-    program_type = models.CharField(
-        max_length=50,
-        choices=[
-            ('training_support', 'Training & Extension Support'),
-            ('input_subsidy', 'Input Subsidy (Feed, Chicks, etc.)'),
-            ('financial_grant', 'Financial Grant/Loan'),
-            ('infrastructure', 'Infrastructure Development'),
-            ('comprehensive', 'Comprehensive Support Package'),
-        ],
-        db_index=True
+    
+    # Regional Targeting (Optional)
+    target_region = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Primary target region (e.g., 'Greater Accra', 'Ashanti'). Leave empty for national batches."
+    )
+    target_constituencies = ArrayField(
+        models.CharField(max_length=100),
+        default=list,
+        blank=True,
+        help_text="Specific target constituencies. Leave empty if targeting entire region or national."
     )
     
     # Program Details
     description = models.TextField()
+    long_description = models.TextField(
+        blank=True,
+        help_text="Detailed program description with objectives, implementation plan"
+    )
     implementing_agency = models.CharField(
         max_length=200,
         help_text="E.g., 'Youth Employment Agency'"
@@ -78,8 +105,13 @@ class GovernmentProgram(models.Model):
         blank=True,
         help_text="Last date to accept new applications"
     )
+    early_application_deadline = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Early application deadline for priority processing"
+    )
     
-    # Eligibility Criteria
+    # Eligibility Criteria (Basic)
     min_farm_age_months = models.PositiveIntegerField(
         default=0,
         help_text="Minimum months farm must be operational (0 for new farms)"
@@ -109,6 +141,22 @@ class GovernmentProgram(models.Model):
     )
     requires_extension_officer = models.BooleanField(default=True)
     
+    # Eligibility Criteria (Extended - JSON for flexibility)
+    eligibility_criteria = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="""
+        Extended eligibility criteria:
+        {
+            'citizenship': 'Ghanaian',
+            'educational_level': 'Any',
+            'employment_status': ['Unemployed', 'Underemployed'],
+            'restrictions': ['No prior government support'],
+            'preferred_qualifications': ['Prior poultry experience']
+        }
+        """
+    )
+    
     # Support Package Details
     support_package_details = models.JSONField(
         default=dict,
@@ -125,6 +173,61 @@ class GovernmentProgram(models.Model):
         }
         """
     )
+    support_package_value_ghs = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total value of support package in GHS"
+    )
+    beneficiary_contribution_ghs = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Amount beneficiary must contribute"
+    )
+    
+    # Document Requirements
+    document_requirements = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="""
+        Required documents for application:
+        [
+            {'document_type': 'Ghana Card', 'is_mandatory': true, 'description': '...'},
+            {'document_type': 'Land proof', 'is_mandatory': true, 'description': '...'}
+        ]
+        """
+    )
+    
+    # Batch Information
+    batch_info = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="""
+        Batch/cohort information:
+        {
+            'batch_code': '2025-Batch-01',
+            'cohort_number': 1,
+            'orientation_date': '2025-01-15',
+            'distribution_dates': ['2025-02-01', '2025-03-01']
+        }
+        """
+    )
+    
+    # Regional Allocation
+    regional_allocation = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="""
+        Slot allocation by region:
+        [
+            {'region': 'Greater Accra', 'allocated_slots': 20},
+            {'region': 'Ashanti', 'allocated_slots': 15}
+        ]
+        """
+    )
     
     # Program Capacity
     total_slots = models.PositiveIntegerField(
@@ -135,13 +238,79 @@ class GovernmentProgram(models.Model):
         editable=False,
         help_text="Auto-calculated"
     )
+    allow_overbooking = models.BooleanField(
+        default=False,
+        help_text="Allow applications beyond total_slots"
+    )
+    overbooking_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Percentage overbooking allowed (e.g., 10 for 10%)"
+    )
+    
+    # Approval Workflow
+    requires_constituency_approval = models.BooleanField(
+        default=True,
+        help_text="Applications need constituency review"
+    )
+    requires_regional_approval = models.BooleanField(
+        default=True,
+        help_text="Applications need regional review"
+    )
+    requires_national_approval = models.BooleanField(
+        default=True,
+        help_text="Applications need national review"
+    )
+    approval_sla_days = models.PositiveIntegerField(
+        default=30,
+        help_text="Target days for application review"
+    )
+    
+    # Funding
+    funding_source = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="E.g., 'Government of Ghana - YEA'"
+    )
+    budget_code = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="E.g., 'YEA-2025-POULTRY'"
+    )
+    total_budget_ghs = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total budget for program in GHS"
+    )
     
     # Status
     status = models.CharField(
         max_length=20,
-        choices=PROGRAM_STATUS_CHOICES,
+        choices=BATCH_STATUS_CHOICES,
         default='active',
         db_index=True
+    )
+    is_active = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Program is active and visible"
+    )
+    is_accepting_applications_override = models.BooleanField(
+        default=True,
+        help_text="Manual override for accepting applications"
+    )
+    is_published = models.BooleanField(
+        default=False,
+        help_text="Program is published and visible to farmers"
+    )
+    archived = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Program is archived (soft delete)"
     )
     
     # Metadata
@@ -153,16 +322,26 @@ class GovernmentProgram(models.Model):
         null=True,
         related_name='programs_created'
     )
+    last_modified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='programs_modified'
+    )
     
     class Meta:
+        db_table = 'farms_batch'  # Keep existing table name for backward compatibility
         ordering = ['-start_date']
         indexes = [
             models.Index(fields=['status', 'application_deadline']),
-            models.Index(fields=['program_code']),
+            models.Index(fields=['batch_code']),
         ]
+        verbose_name = 'Batch'
+        verbose_name_plural = 'Batches'
     
     def __str__(self):
-        return f"{self.program_name} ({self.program_code})"
+        return f"{self.batch_name} ({self.batch_code})"
     
     def save(self, *args, **kwargs):
         """Auto-calculate available slots"""
@@ -177,9 +356,13 @@ class GovernmentProgram(models.Model):
     @property
     def is_accepting_applications(self):
         """Check if program is currently accepting applications"""
+        if not self.is_active:
+            return False
+        if not self.is_accepting_applications_override:
+            return False
         if self.status != 'active':
             return False
-        if self.slots_available <= 0:
+        if not self.allow_overbooking and self.slots_available <= 0:
             return False
         if self.application_deadline and timezone.now().date() > self.application_deadline:
             return False
@@ -192,9 +375,19 @@ class GovernmentProgram(models.Model):
             return None
         delta = self.application_deadline - timezone.now().date()
         return max(0, delta.days)
+    
+    @property
+    def application_window_is_open(self):
+        """Check if application window is currently open"""
+        today = timezone.now().date()
+        if self.start_date > today:
+            return False
+        if self.application_deadline and today > self.application_deadline:
+            return False
+        return True
 
 
-class ProgramEnrollmentApplication(models.Model):
+class BatchEnrollmentApplication(models.Model):
     """
     Application from EXISTING farmer to join a government program.
     Different from FarmApplication (which is for NEW farmers).
@@ -242,18 +435,19 @@ class ProgramEnrollmentApplication(models.Model):
     farm = models.ForeignKey(
         'farms.Farm',
         on_delete=models.CASCADE,
-        related_name='program_applications',
-        help_text="Existing farm applying to program"
+        related_name='batch_applications',
+        help_text="Existing farm applying to batch"
     )
-    program = models.ForeignKey(
-        GovernmentProgram,
+    batch = models.ForeignKey(
+        Batch,
         on_delete=models.CASCADE,
-        related_name='applications'
+        related_name='applications',
+        help_text="YEA Poultry Batch/cohort farmer is applying to"
     )
     applicant = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name='program_applications',
+        related_name='batch_applications',
         help_text="Farmer submitting application"
     )
     
@@ -393,22 +587,22 @@ class ProgramEnrollmentApplication(models.Model):
     
     class Meta:
         ordering = ['-created_at']
-        unique_together = [['farm', 'program']]  # One application per farm per program
+        unique_together = [['farm', 'batch']]  # One application per farm per batch
         indexes = [
             models.Index(fields=['status', 'priority_score']),
-            models.Index(fields=['program', 'status']),
+            models.Index(fields=['batch', 'status']),
             models.Index(fields=['applicant', 'status']),
             models.Index(fields=['current_review_level', 'submitted_at']),
         ]
     
     def __str__(self):
-        return f"{self.application_number} - {self.farm.farm_name} → {self.program.program_code}"
+        return f"{self.application_number} - {self.farm.farm_name} → {self.batch.batch_code}"
     
     def save(self, *args, **kwargs):
         """Generate application number on first save"""
         if not self.application_number:
             year = timezone.now().year
-            count = ProgramEnrollmentApplication.objects.filter(
+            count = BatchEnrollmentApplication.objects.filter(
                 created_at__year=year
             ).count() + 1
             self.application_number = f"PROG-{year}-{count:05d}"
@@ -444,10 +638,10 @@ class ProgramEnrollmentApplication(models.Model):
                 score += 10
         
         # Program deadline approaching
-        if self.program.days_until_deadline:
-            if self.program.days_until_deadline < 7:
+        if self.batch.days_until_deadline:
+            if self.batch.days_until_deadline < 7:
                 score += 30
-            elif self.program.days_until_deadline < 30:
+            elif self.batch.days_until_deadline < 30:
                 score += 15
         
         self.priority_score = min(score, 100)
@@ -472,7 +666,7 @@ class ProgramEnrollmentApplication(models.Model):
         return (timezone.now() - self.submitted_at).days
 
 
-class ProgramEnrollmentReview(models.Model):
+class BatchEnrollmentReview(models.Model):
     """
     Audit trail for program enrollment application reviews.
     Tracks all actions taken during screening.
@@ -494,7 +688,7 @@ class ProgramEnrollmentReview(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     application = models.ForeignKey(
-        ProgramEnrollmentApplication,
+        BatchEnrollmentApplication,
         on_delete=models.CASCADE,
         related_name='reviews'
     )
@@ -527,7 +721,7 @@ class ProgramEnrollmentReview(models.Model):
         return f"{self.action} - {self.application.application_number} ({self.review_level})"
 
 
-class ProgramEnrollmentQueue(models.Model):
+class BatchEnrollmentQueue(models.Model):
     """
     Queue management for program enrollment screening.
     Similar to ApplicationQueue but for existing farmer program enrollment.
@@ -536,7 +730,7 @@ class ProgramEnrollmentQueue(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     application = models.ForeignKey(
-        ProgramEnrollmentApplication,
+        BatchEnrollmentApplication,
         on_delete=models.CASCADE,
         related_name='queue_entries'
     )
@@ -567,7 +761,7 @@ class ProgramEnrollmentQueue(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='assigned_program_applications'
+        related_name='assigned_batch_applications'
     )
     assigned_at = models.DateTimeField(null=True, blank=True)
     
@@ -604,3 +798,4 @@ class ProgramEnrollmentQueue(models.Model):
         self.assigned_at = timezone.now()
         self.status = 'in_review'
         self.save()
+
