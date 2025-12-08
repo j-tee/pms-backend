@@ -24,6 +24,7 @@ urlpatterns = [
     path('api/auth/', include('accounts.urls')),
     path('api/dashboards/', include('dashboards.urls')),
     path('api/admin/', include('accounts.admin_urls')),
+    path('api/farms/', include('farms.management_urls')),  # Authenticated farm management
     path('api/', include('farms.urls')),  # Public farm application endpoints
 ]
 

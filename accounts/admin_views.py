@@ -75,8 +75,9 @@ class AdminDashboardOverviewView(APIView):
         
         # Application metrics
         total_applications = applications_qs.count()
+        pending_statuses = ['constituency_review', 'regional_review', 'national_review']
         pending_applications = applications_qs.filter(
-            status__in=['submitted', 'constituency_review', 'regional_review', 'national_review']
+            status__in=pending_statuses
         ).count()
         approved_applications = applications_qs.filter(
             status='approved'
@@ -100,10 +101,10 @@ class AdminDashboardOverviewView(APIView):
         pending_screening = 0
         pending_regional = 0
         pending_national = 0
-        
+
         if UserPolicy.is_constituency_official(user):
             pending_screening = applications_qs.filter(
-                status__in=['submitted', 'constituency_review'],
+                status__in=pending_statuses,
                 current_review_level='constituency'
             ).count()
         
@@ -119,6 +120,44 @@ class AdminDashboardOverviewView(APIView):
                 current_review_level='national'
             ).count()
         
+        # Pending applications list (for dashboard table)
+        pending_list = list(
+            applications_qs.filter(status__in=pending_statuses)
+            .order_by('submitted_at')[:20]
+            .values(
+                'id',
+                'application_number',
+                'first_name',
+                'middle_name',
+                'last_name',
+                'status',
+                'submitted_at',
+                'primary_constituency',
+                'region',
+                'primary_production_type',
+                'planned_bird_capacity',
+            )
+        )
+
+        approved_list = list(
+            applications_qs.filter(status='approved')
+            .order_by('-final_approved_at', '-submitted_at')[:20]
+            .values(
+                'id',
+                'application_number',
+                'first_name',
+                'middle_name',
+                'last_name',
+                'status',
+                'submitted_at',
+                'final_approved_at',
+                'primary_constituency',
+                'region',
+                'primary_production_type',
+                'planned_bird_capacity',
+            )
+        )
+
         return Response({
             'farms': {
                 'total': total_farms,
@@ -145,11 +184,206 @@ class AdminDashboardOverviewView(APIView):
                 'national_approval': pending_national,
                 'total': pending_screening + pending_regional + pending_national
             },
+            'pending_applications': pending_list,
+            'approved_applications': approved_list,
             'jurisdiction': {
                 'level': user.role,
                 'region': user.region if user.region else 'All Regions',
                 'constituency': user.constituency if user.constituency else 'All Constituencies'
             }
+        })
+
+
+def _can_user_approve(user, application):
+    if UserPolicy.is_super_admin(user) or UserPolicy.is_national_admin(user):
+        return True
+    if application.status == 'regional_review' and UserPolicy.is_regional_coordinator(user):
+        return application.region == user.region
+    if application.status == 'constituency_review' and UserPolicy.is_constituency_official(user):
+        return application.primary_constituency == user.constituency
+    return False
+
+
+def _create_farm_profile(application):
+    """
+    Create farm profile from approved application.
+    Returns True if created successfully, False otherwise.
+    """
+    from datetime import date
+    
+    # Skip if farm already exists
+    if hasattr(application, 'farm_profile') and application.farm_profile:
+        return False
+    
+    # Skip if user account not created yet
+    if not application.user_account:
+        return False
+    
+    try:
+        farm = Farm.objects.create(
+            user=application.user_account,
+            # Section 1: Personal Identity
+            first_name=application.first_name,
+            middle_name=application.middle_name or '',
+            last_name=application.last_name,
+            date_of_birth=application.date_of_birth,
+            gender=application.gender,
+            ghana_card_number=application.ghana_card_number,
+            marital_status='Single',
+            number_of_dependents=0,
+            # Section 1.2: Contact
+            primary_phone=application.primary_phone,
+            alternate_phone=application.alternate_phone or '',
+            email=application.email,
+            preferred_contact_method='Phone Call',
+            residential_address=application.residential_address or '',
+            primary_constituency=application.primary_constituency,
+            # Section 1.3: Next of Kin (required)
+            nok_full_name='To be provided',
+            nok_relationship='To be provided',
+            nok_phone=application.primary_phone,
+            # Section 1.4: Education & Experience
+            education_level='JHS',
+            literacy_level='Can Read & Write',
+            years_in_poultry=application.years_in_poultry or 0,
+            farming_full_time=True,
+            # Section 2: Business Information
+            farm_name=application.proposed_farm_name,
+            ownership_type='Sole Proprietorship',
+            tin=f'{application.id.int % 10000000000:010d}',  # 10 digit numeric TIN from UUID
+            # Section 4: Infrastructure
+            number_of_poultry_houses=1,
+            total_bird_capacity=application.planned_bird_capacity,
+            current_bird_count=0,
+            housing_type='Deep Litter',
+            total_infrastructure_value_ghs=0,
+            # Section 5: Production Planning
+            primary_production_type=application.primary_production_type,
+            planned_production_start_date=date.today(),
+            # Section 7: Financial Information (required)
+            initial_investment_amount=0,
+            funding_source=['YEA Program'],
+            monthly_operating_budget=0,
+            expected_monthly_revenue=0,
+            has_outstanding_debt=False,
+            # Section 9: Application Workflow
+            application_status='Approved',
+            farm_status='Pending Setup',
+            approval_date=application.final_approved_at,
+            approved_by=application.final_approved_by,
+            activation_date=timezone.now(),
+            registration_source='government_initiative' if application.application_type == 'government_program' else 'self_registered',
+            yea_program_batch=application.yea_program_batch or '',
+            referral_source=application.referral_source or 'Direct Application',
+        )
+        
+        # Link farm to application
+        application.farm_profile = farm
+        application.farm_created_at = timezone.now()
+        application.save()
+        
+        return True
+    except Exception as e:
+        # Log error but don't fail the approval
+        print(f"Error creating farm profile: {e}")
+        return False
+
+
+class AdminApplicationApproveView(APIView):
+    """
+    POST /api/admin/applications/<uuid>/approve/
+    Advances application to next review level or final approval.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, application_id):
+        try:
+            application = FarmApplication.objects.get(id=application_id)
+        except FarmApplication.DoesNotExist:
+            return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not _can_user_approve(request.user, application):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        now = timezone.now()
+        next_level = None
+
+        if application.status == 'constituency_review':
+            application.status = 'regional_review'
+            application.constituency_approved_at = now
+            application.constituency_approved_by = request.user
+            application.current_review_level = 'regional'
+            next_level = 'regional'
+        elif application.status == 'regional_review':
+            application.status = 'national_review'
+            application.regional_approved_at = now
+            application.regional_approved_by = request.user
+            application.current_review_level = 'national'
+            next_level = 'national'
+        elif application.status == 'national_review':
+            application.status = 'approved'
+            application.final_approved_at = now
+            application.final_approved_by = request.user
+            application.current_review_level = None
+            next_level = 'final'
+            
+            # Create farm profile immediately upon final approval
+            farm_created = _create_farm_profile(application)
+        else:
+            return Response({'error': f'Cannot approve application in status {application.status}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        comments = request.data.get('comments')
+        if comments:
+            application.approval_comments = comments
+
+        application.save()
+
+        response_data = {
+            'success': True,
+            'application_number': application.application_number,
+            'new_status': application.status,
+            'next_level': next_level,
+        }
+        
+        if next_level == 'final' and farm_created:
+            response_data['farm_created'] = True
+            response_data['message'] = 'Application approved and farm profile created'
+
+        return Response(response_data)
+
+
+class AdminApplicationRejectView(APIView):
+    """
+    POST /api/admin/applications/<uuid>/reject/
+    Rejects application with a reason.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, application_id):
+        try:
+            application = FarmApplication.objects.get(id=application_id)
+        except FarmApplication.DoesNotExist:
+            return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not _can_user_approve(request.user, application):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        reason = request.data.get('reason')
+        if not reason:
+            return Response({'error': 'Rejection reason is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        application.status = 'rejected'
+        application.rejected_at = timezone.now()
+        application.rejected_by = request.user
+        application.rejection_reason = reason
+        application.rejection_details = request.data.get('details', '')
+        application.current_review_level = None
+        application.save()
+
+        return Response({
+            'success': True,
+            'application_number': application.application_number,
+            'new_status': 'rejected'
         })
 
 

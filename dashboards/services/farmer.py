@@ -15,6 +15,7 @@ from decimal import Decimal
 
 from farms.models import Farm
 from procurement.models import OrderAssignment, DeliveryConfirmation, ProcurementInvoice
+from flock_management.models import Flock, DailyProduction
 
 
 class FarmerDashboardService:
@@ -37,6 +38,8 @@ class FarmerDashboardService:
         if not self.farm:
             return {
                 'error': 'No farm found for this user',
+                'farm': {},
+                'production': {},
                 'assignments': {},
                 'earnings': {},
                 'deliveries': {},
@@ -94,7 +97,67 @@ class FarmerDashboardService:
             ).count()
             quality_pass_rate = round((passed / total_deliveries * 100), 2)
         
+        # Farm statistics
+        total_bird_count = Flock.objects.filter(
+            farm=self.farm,
+            status='active'
+        ).aggregate(total=Sum('current_count'))['total'] or 0
+        
+        total_capacity = self.farm.total_bird_capacity
+        capacity_utilization = round((total_bird_count / total_capacity * 100), 2) if total_capacity > 0 else 0
+        
+        active_flocks_count = Flock.objects.filter(
+            farm=self.farm,
+            status='active'
+        ).count()
+        
+        # Recent production metrics (last 30 days)
+        last_30_days = now - timedelta(days=30)
+        recent_production = DailyProduction.objects.filter(
+            farm=self.farm,
+            production_date__gte=last_30_days
+        )
+        
+        total_eggs_30d = recent_production.aggregate(
+            total=Sum('eggs_collected')
+        )['total'] or 0
+        
+        total_mortality_30d = recent_production.aggregate(
+            total=Sum('birds_died')
+        )['total'] or 0
+        
+        avg_daily_eggs = round(total_eggs_30d / 30, 2) if total_eggs_30d > 0 else 0
+        
+        # Mortality rate (last 30 days)
+        mortality_rate_30d = 0
+        if total_bird_count > 0 and total_mortality_30d > 0:
+            mortality_rate_30d = round((total_mortality_30d / total_bird_count) * 100, 2)
+        
+        # Feed consumption (last 30 days)
+        total_feed_consumed_30d = recent_production.aggregate(
+            total=Sum('feed_consumed_kg')
+        )['total'] or Decimal('0.00')
+        
+        avg_daily_feed = round(float(total_feed_consumed_30d) / 30, 2) if total_feed_consumed_30d > 0 else 0
+        
         return {
+            'farm': {
+                'farm_name': self.farm.farm_name,
+                'farm_id': self.farm.farm_id,
+                'primary_production_type': self.farm.primary_production_type,
+                'total_bird_capacity': total_capacity,
+                'current_bird_count': total_bird_count,
+                'capacity_utilization': capacity_utilization,
+                'active_flocks': active_flocks_count,
+            },
+            'production': {
+                'total_eggs_last_30_days': total_eggs_30d,
+                'avg_daily_eggs': avg_daily_eggs,
+                'total_mortality_last_30_days': total_mortality_30d,
+                'mortality_rate_percent': mortality_rate_30d,
+                'total_feed_consumed_kg': float(total_feed_consumed_30d),
+                'avg_daily_feed_kg': avg_daily_feed,
+            },
             'assignments': {
                 'total': total_assignments,
                 'pending': pending_assignments,

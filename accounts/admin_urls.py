@@ -5,6 +5,8 @@ Admin Dashboard URL Configuration
 from django.urls import path
 from .admin_views import (
     AdminDashboardOverviewView,
+    AdminApplicationApproveView,
+    AdminApplicationRejectView,
     AdminUserListView,
     AdminUserDetailView,
     AdminUserCreateView,
@@ -52,6 +54,8 @@ urlpatterns = [
     
     # Application Management
     path('applications/', AdminApplicationListView.as_view(), name='admin-application-list'),
+    path('applications/<uuid:application_id>/approve/', AdminApplicationApproveView.as_view(), name='admin-application-approve'),
+    path('applications/<uuid:application_id>/reject/', AdminApplicationRejectView.as_view(), name='admin-application-reject'),
     
     # ========================================
     # Batch/Program Management (Backward Compatible)

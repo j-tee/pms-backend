@@ -8,6 +8,8 @@ from .views import (
     ChangePasswordView,
     LogoutView,
     user_list,
+    PasswordResetRequestView,
+    PasswordResetConfirmView,
 )
 
 from .admin_views import (
@@ -42,6 +44,8 @@ urlpatterns = [
     # User profile endpoints
     path('profile/', UserProfileView.as_view(), name='profile'),
     path('change-password/', ChangePasswordView.as_view(), name='change_password'),
+    path('password-reset/request/', PasswordResetRequestView.as_view(), name='password_reset_request'),
+    path('password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     
     # User management endpoints
     path('users/', user_list, name='user_list'),

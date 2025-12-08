@@ -149,27 +149,16 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
         
-        # Determine user type and dashboard route
-        admin_roles = [
-            'SUPER_ADMIN',
-            'NATIONAL_ADMIN',
-            'REGIONAL_COORDINATOR',
-            'CONSTITUENCY_OFFICIAL',
-            'EXTENSION_OFFICER',
-            'VETERINARY_OFFICER',
-            'PROCUREMENT_OFFICER',
-            'AUDITOR'
-        ]
-        
-        is_admin = self.user.role in admin_roles
+        # Determine if user is a farmer or staff member
+        is_farmer = self.user.role == 'FARMER'
         
         # Determine redirect path
-        if is_admin:
-            redirect_to = '/admin/dashboard'
-            dashboard_type = 'admin'
-        else:
+        if is_farmer:
             redirect_to = '/farmer/dashboard'
             dashboard_type = 'farmer'
+        else:
+            redirect_to = '/staff/dashboard'
+            dashboard_type = 'staff'
         
         # Add custom claims
         data['user'] = {
@@ -192,8 +181,8 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['routing'] = {
             'dashboard_type': dashboard_type,
             'redirect_to': redirect_to,
-            'is_admin': is_admin,
-            'is_farmer': not is_admin
+            'is_staff': not is_farmer,
+            'is_farmer': is_farmer
         }
         
         # Update last login
@@ -227,3 +216,27 @@ class ChangePasswordSerializer(serializers.Serializer):
         if not user.check_password(value):
             raise serializers.ValidationError("Old password is incorrect.")
         return value
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """Serializer for requesting a password reset."""
+    email = serializers.EmailField(required=True)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Serializer for confirming password reset."""
+    token = serializers.CharField(required=True)
+    new_password = serializers.CharField(
+        required=True,
+        write_only=True,
+        validators=[validate_password]
+    )
+    new_password_confirm = serializers.CharField(required=True, write_only=True)
+
+    def validate(self, attrs):
+        """Validate that new passwords match."""
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError(
+                {"new_password": "New password fields didn't match."}
+            )
+        return attrs

@@ -10,8 +10,12 @@ from .serializers import (
     UserRegistrationSerializer,
     UserSerializer,
     CustomTokenObtainPairSerializer,
-    ChangePasswordSerializer
+    CustomTokenObtainPairSerializer,
+    ChangePasswordSerializer,
+    PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer
 )
+from .auth_services import PasswordResetService
 
 User = get_user_model()
 
@@ -156,4 +160,53 @@ def user_list(request):
     
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
+
+
+class PasswordResetRequestView(APIView):
+    """
+    API endpoint for requesting a password reset.
+    Sends an email with a reset token.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data['email']
+        try:
+            user = User.objects.get(email=email)
+            PasswordResetService.send_password_reset_email(user)
+        except User.DoesNotExist:
+            # Silently fail to prevent email enumeration
+            pass
+
+        return Response({
+            'message': 'If an account exists with this email, a password reset link has been sent.'
+        }, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmView(APIView):
+    """
+    API endpoint for confirming password reset.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        token = serializer.validated_data['token']
+        new_password = serializer.validated_data['new_password']
+
+        success, error = PasswordResetService.reset_password(token, new_password)
+
+        if success:
+            return Response({
+                'message': 'Password reset successfully'
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': error
+            }, status=status.HTTP_400_BAD_REQUEST)
 

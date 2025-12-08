@@ -10,10 +10,14 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from django.utils import timezone
+from django.contrib.auth import get_user_model
 
 from farms.services.application_screening import ApplicationScreeningService
 from farms.application_models import FarmApplication
 from farms.batch_enrollment_models import Batch
+
+
+User = get_user_model()
 
 
 class SubmitFarmApplicationView(APIView):
@@ -33,6 +37,16 @@ class SubmitFarmApplicationView(APIView):
         else:
             ip_address = request.META.get('REMOTE_ADDR')
         
+        # Resolve user account if available
+        user_account = None
+        if request.user and request.user.is_authenticated:
+            user_account = request.user
+        elif request.data.get('email'):
+            try:
+                user_account = User.objects.filter(email=request.data.get('email').strip()).first()
+            except Exception:
+                user_account = None
+
         # Extract application data
         application_data = {
             'application_type': request.data.get('application_type', 'government_program'),
@@ -58,6 +72,7 @@ class SubmitFarmApplicationView(APIView):
             'has_existing_farm': request.data.get('has_existing_farm', False),
             'yea_program_batch': request.data.get('yea_program_batch', ''),
             'referral_source': request.data.get('referral_source', ''),
+            'user_account': user_account,
         }
         
         # Validate required fields
@@ -74,6 +89,14 @@ class SubmitFarmApplicationView(APIView):
             return Response({
                 'error': 'Missing required fields',
                 'missing_fields': missing_fields
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Enforce single application per Ghana Card
+        ghana_card = application_data.get('ghana_card_number')
+        if ghana_card and FarmApplication.objects.filter(ghana_card_number=ghana_card).exists():
+            return Response({
+                'error': 'An application with this Ghana Card number already exists',
+                'application_number': FarmApplication.objects.filter(ghana_card_number=ghana_card).first().application_number
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Submit application
@@ -157,9 +180,32 @@ class TrackApplicationView(APIView):
                 }, status=status.HTTP_404_NOT_FOUND)
             
             return Response({
+                'success': True,
                 'application_number': application.application_number,
+                'application_type': application.application_type,
                 'full_name': application.full_name,
+                'first_name': application.first_name,
+                'middle_name': application.middle_name,
+                'last_name': application.last_name,
+                'date_of_birth': str(application.date_of_birth) if application.date_of_birth else None,
+                'gender': application.gender,
+                'ghana_card_number': application.ghana_card_number,
+                'primary_phone': str(application.primary_phone) if application.primary_phone else None,
+                'alternate_phone': str(application.alternate_phone) if application.alternate_phone else None,
+                'email': application.email,
+                'residential_address': application.residential_address,
+                'primary_constituency': application.primary_constituency,
+                'region': application.region,
+                'district': application.district,
                 'proposed_farm_name': application.proposed_farm_name,
+                'farm_location_description': application.farm_location_description,
+                'land_size_acres': str(application.land_size_acres) if application.land_size_acres else None,
+                'primary_production_type': application.primary_production_type,
+                'planned_bird_capacity': application.planned_bird_capacity,
+                'years_in_poultry': str(application.years_in_poultry),
+                'has_existing_farm': application.has_existing_farm,
+                'yea_program_batch': application.yea_program_batch,
+                'referral_source': application.referral_source,
                 'status': application.status,
                 'current_review_level': application.current_review_level,
                 'submitted_at': application.submitted_at.isoformat() if application.submitted_at else None,
@@ -168,6 +214,12 @@ class TrackApplicationView(APIView):
                 'final_approved_at': application.final_approved_at.isoformat() if application.final_approved_at else None,
                 'rejection_reason': application.rejection_reason if application.status == 'rejected' else None,
                 'changes_requested': application.changes_requested if application.status == 'changes_requested' else None,
+                'track_url': f'/api/applications/track/{application.ghana_card_number}/',
+                'next_steps': {
+                    'constituency_review': '7 days',
+                    'regional_review': '5 days',
+                    'national_review': '3 days'
+                }
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
