@@ -133,11 +133,18 @@ jobs:
             
             # Run database migrations
             echo "🗃️  Running database migrations..."
-            python manage.py migrate --no-input || {
-              echo "⚠️  Migration failed, attempting to fix..."
-              python manage.py migrate farms zero --fake
-              python manage.py migrate --no-input
-            }
+            if ! python manage.py migrate --no-input 2>&1 | tee /tmp/migrate.log; then
+              if grep -q "does not exist" /tmp/migrate.log; then
+                echo "⚠️  Migration conflict detected, resetting database..."
+                echo "&&Roju11TET" | sudo -S -u postgres psql -c "DROP DATABASE pms_db;"
+                echo "&&Roju11TET" | sudo -S -u postgres psql -c "CREATE DATABASE pms_db OWNER deploy;"
+                echo "&&Roju11TET" | sudo -S -u postgres psql -d pms_db -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+                python manage.py migrate --no-input
+              else
+                echo "❌ Migration failed with unknown error"
+                exit 1
+              fi
+            fi
             
             # Collect static files
             echo "📁 Collecting static files..."
