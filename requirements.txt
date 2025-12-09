@@ -49,6 +49,9 @@ pytest==7.4.3
 pytest-django==4.7.0
 pytest-cov==4.1.0
 
+# Production Server
+gunicorn==21.2.0
+
 # Code Quality
 flake8==6.1.0
 black==23.12.1

@@ -4,6 +4,10 @@
 .env.production
 .env.local
 
+# Documentation (ignore all .md files except README.md)
+*.md
+!README.md
+
 # Python
 *.py[cod]
 *$py.class
