@@ -207,9 +207,16 @@ def _can_user_approve(user, application):
 def _create_farm_profile(application):
     """
     Create farm profile from approved application.
+    Also creates a primary FarmLocation based on application data.
     Returns True if created successfully, False otherwise.
     """
     from datetime import date
+    from django.contrib.gis.geos import Point
+    from farms.models import FarmLocation
+    from farms.services.gps_service import GhanaPostGPSService
+    import logging
+    
+    logger = logging.getLogger(__name__)
     
     # Skip if farm already exists
     if hasattr(application, 'farm_profile') and application.farm_profile:
@@ -276,6 +283,52 @@ def _create_farm_profile(application):
             yea_program_batch=application.yea_program_batch or '',
             referral_source=application.referral_source or 'Direct Application',
         )
+        
+        # Create primary farm location from application data
+        try:
+            # Get application data
+            gps_address = getattr(application, 'farm_gps_address', '').strip()
+            location_description = getattr(application, 'farm_location_description', 'Primary farm location')
+            land_size = getattr(application, 'land_size_acres', 0)
+            
+            # Try to decode GPS address if provided in application
+            if gps_address and gps_address != 'PENDING-GPS-UPDATE':
+                try:
+                    location_data = GhanaPostGPSService.get_coordinates(gps_address)
+                    lat = location_data['latitude']
+                    lon = location_data['longitude']
+                    logger.info(f"Used GPS address from application: {gps_address}")
+                except Exception as e:
+                    logger.warning(f"Could not decode GPS from application: {e}. Using region center.")
+                    # Fallback to region center based on application data
+                    region_code = application.region[:2].upper() if application.region else 'GA'
+                    lat, lon = GhanaPostGPSService._get_region_center(region_code)
+                    gps_address = 'PENDING-GPS-UPDATE'
+            else:
+                # No GPS address in application, use region center
+                region_code = application.region[:2].upper() if application.region else 'GA'
+                lat, lon = GhanaPostGPSService._get_region_center(region_code)
+                gps_address = 'PENDING-GPS-UPDATE'
+                logger.info(f"No GPS in application. Using {application.region} center coordinates.")
+            
+            FarmLocation.objects.create(
+                farm=farm,
+                gps_address_string=gps_address,
+                location=Point(lon, lat),
+                region=application.region or 'Greater Accra',
+                district=application.district or '',
+                constituency=application.primary_constituency,
+                community='',  # To be updated by farmer
+                land_size_acres=land_size,
+                land_ownership_status='Owned',
+                is_primary_location=True,
+                road_accessibility='All Year',
+                nearest_landmark=location_description[:200] if location_description else '',
+            )
+            logger.info(f"Primary location created for {farm.farm_name}")
+        except Exception as loc_error:
+            # Don't fail farm creation if location creation fails
+            logger.error(f"Warning: Could not create primary location: {loc_error}")
         
         # Link farm to application
         application.farm_profile = farm

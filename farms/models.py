@@ -16,6 +16,7 @@ Implements multi-model structure for farm registration with:
 """
 
 from django.db import models
+from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.gis.db import models as gis_models
@@ -1004,212 +1005,270 @@ class FarmLocation(gis_models.Model):
 
 
 # =============================================================================
-# POULTRY HOUSE MODEL
+# INFRASTRUCTURE MODEL (Unified: Housing + Support Systems)
 # =============================================================================
 
-class PoultryHouse(models.Model):
-    """Individual poultry house details"""
+class Infrastructure(models.Model):
+    """
+    Unified infrastructure model for all farm infrastructure.
+    Type 'Accommodation' = Poultry houses (bird housing)
+    Other types = Support infrastructure (water, power, ventilation, etc.)
+    """
+    
+    INFRASTRUCTURE_TYPE_CHOICES = [
+        ('Accommodation', 'Accommodation'),  # Poultry houses
+        ('Water System', 'Water System'),
+        ('Power Supply', 'Power Supply'),
+        ('Ventilation', 'Ventilation'),
+        ('Heating', 'Heating'),
+        ('Cooling', 'Cooling'),
+        ('Lighting', 'Lighting'),
+        ('Waste Management', 'Waste Management'),
+        ('Security', 'Security'),
+        ('Other', 'Other'),
+    ]
+    
+    HOUSING_SYSTEM_CHOICES = [
+        ('Battery Cage', 'Battery Cage'),
+        ('Deep Litter', 'Deep Litter'),
+        ('Free Range', 'Free Range'),
+        ('Brooder', 'Brooder'),
+        ('Layer', 'Layer'),
+        ('Grower', 'Grower'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('Operational', 'Operational'),
+        ('Under Maintenance', 'Under Maintenance'),
+        ('Non-Operational', 'Non-Operational'),
+        ('Planned', 'Planned'),
+        ('Under Construction', 'Under Construction'),
+    ]
+    
+    CONDITION_CHOICES = [
+        ('Excellent', 'Excellent'),
+        ('Good', 'Good'),
+        ('Fair', 'Fair'),
+        ('Poor', 'Poor'),
+        ('Critical', 'Critical'),
+    ]
+    
+    MAINTENANCE_FREQUENCY_CHOICES = [
+        ('Daily', 'Daily'),
+        ('Weekly', 'Weekly'),
+        ('Monthly', 'Monthly'),
+        ('Quarterly', 'Quarterly'),
+        ('Bi-Annually', 'Bi-Annually'),
+        ('Annually', 'Annually'),
+        ('As Needed', 'As Needed'),
+    ]
+    
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='infrastructure')
     
-    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='poultry_houses')
-    
-    house_number = models.CharField(max_length=50)
-    house_type = models.CharField(
+    # Primary Fields
+    infrastructure_type = models.CharField(
         max_length=50,
-        choices=[
-            ('Deep Litter', 'Deep Litter'),
-            ('Battery Cage', 'Battery Cage'),
-            ('Free Range Shelter', 'Free Range Shelter'),
-            ('Brooder House', 'Brooder House'),
-            ('Layer House', 'Layer House'),
-            ('Grower House', 'Grower House')
-        ]
+        choices=INFRASTRUCTURE_TYPE_CHOICES,
+        db_index=True,
+        help_text="Infrastructure type"
     )
-    house_capacity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
-    current_occupancy = models.PositiveIntegerField(default=0)
+    infrastructure_name = models.CharField(
+        max_length=200,
+        help_text="e.g., 'House H1', 'Main Borehole', 'Solar Panel Array'"
+    )
+    description = models.TextField(blank=True, null=True)
     
-    # Dimensions
+    # Housing System (only for Accommodation type, null for others)
+    housing_system = models.CharField(
+        max_length=50,
+        choices=HOUSING_SYSTEM_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Housing system type (only for Accommodation)"
+    )
+    
+    # Universal Fields (applicable to ALL infrastructure types)
+    bird_capacity = models.IntegerField(
+        validators=[MinValueValidator(0)],
+        blank=True,
+        null=True,
+        help_text="Number of birds this infrastructure can serve/house"
+    )
+    status = models.CharField(
+        max_length=50,
+        choices=STATUS_CHOICES,
+        default='Operational'
+    )
+    condition = models.CharField(
+        max_length=50,
+        choices=CONDITION_CHOICES,
+        default='Good'
+    )
+    
+    # ===== ACCOMMODATION-SPECIFIC FIELDS (optional for other types) =====
+    current_occupancy = models.IntegerField(
+        validators=[MinValueValidator(0)],
+        blank=True,
+        null=True,
+        help_text="Current number of birds (primarily for Accommodation)"
+    )
     length_meters = models.DecimalField(
-        max_digits=6,
+        max_digits=8,
         decimal_places=2,
-        validators=[MinValueValidator(0)]
+        blank=True,
+        null=True
     )
     width_meters = models.DecimalField(
-        max_digits=6,
+        max_digits=8,
         decimal_places=2,
-        validators=[MinValueValidator(0)]
+        blank=True,
+        null=True
     )
     height_meters = models.DecimalField(
-        max_digits=5,
+        max_digits=8,
         decimal_places=2,
-        null=True,
         blank=True,
-        validators=[MinValueValidator(0)]
+        null=True
     )
     
-    # Construction
-    construction_material = models.CharField(
+    # ===== SUPPORT INFRASTRUCTURE FIELDS (optional for Accommodation) =====
+    capacity = models.CharField(
         max_length=100,
-        help_text="e.g., Concrete blocks, Wood, Bamboo"
+        blank=True,
+        null=True,
+        help_text="General capacity description (e.g., '5000L', '50kW')"
     )
-    roofing_material = models.CharField(
-        max_length=100,
-        help_text="e.g., Aluminum sheets, Thatch"
-    )
-    flooring_type = models.CharField(max_length=100)
-    year_built = models.PositiveIntegerField(
-        validators=[MinValueValidator(1900), MaxValueValidator(2100)]
-    )
+    supplier = models.CharField(max_length=200, blank=True, null=True)
+    installation_date = models.DateField(blank=True, null=True)
+    warranty_expiry = models.DateField(blank=True, null=True)
     
-    # Ventilation
-    ventilation_system = models.CharField(
-        max_length=50,
-        choices=[
-            ('Natural', 'Natural'),
-            ('Mechanical (Fans)', 'Mechanical (Fans)'),
-            ('Both', 'Both Natural and Mechanical')
-        ]
+    # ===== MAINTENANCE FIELDS (applicable to all) =====
+    last_maintenance_date = models.DateField(blank=True, null=True)
+    next_maintenance_due = models.DateField(blank=True, null=True)
+    maintenance_frequency = models.CharField(
+        max_length=20,
+        choices=MAINTENANCE_FREQUENCY_CHOICES,
+        blank=True,
+        null=True
     )
-    number_of_fans = models.PositiveIntegerField(default=0)
+    condition_notes = models.TextField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
     
-    # Valuation
-    estimated_house_value_ghs = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        validators=[MinValueValidator(0)],
-        help_text="For investment tracking"
-    )
-    
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        db_table = 'poultry_houses'
-        ordering = ['house_number']
-        unique_together = [('farm', 'house_number')]
+        db_table = 'infrastructure'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['farm', 'infrastructure_type']),
+            models.Index(fields=['infrastructure_type']),
+        ]
     
     def __str__(self):
-        return f"{self.farm.farm_name} - House {self.house_number}"
+        return f"{self.infrastructure_name} ({self.infrastructure_type})"
+    
+    @property
+    def area_square_meters(self):
+        """Calculate area for infrastructure with dimensions"""
+        if self.length_meters and self.width_meters:
+            return float(self.length_meters) * float(self.width_meters)
+        return None
+    
+    @property
+    def is_accommodation(self):
+        """Check if this is poultry housing"""
+        return self.infrastructure_type == 'Accommodation'
+    
+    @property
+    def is_under_warranty(self):
+        """Check if infrastructure is still under warranty"""
+        if not self.warranty_expiry:
+            return False
+        return timezone.now().date() <= self.warranty_expiry
+    
+    @property
+    def is_maintenance_overdue(self):
+        """Check if maintenance is overdue"""
+        if not self.next_maintenance_due:
+            return False
+        return timezone.now().date() > self.next_maintenance_due
+    
+    @property
+    def days_until_maintenance(self):
+        """Calculate days until next maintenance"""
+        if not self.next_maintenance_due:
+            return None
+        delta = self.next_maintenance_due - timezone.now().date()
+        return delta.days
+    
+    def clean(self):
+        """Validate infrastructure business logic"""
+        from django.core.exceptions import ValidationError
+        
+        errors = {}
+        
+        # ===== ACCOMMODATION-SPECIFIC VALIDATION =====
+        if self.infrastructure_type == 'Accommodation':
+            # Accommodation must have housing_system
+            if not self.housing_system:
+                errors['housing_system'] = (
+                    'Accommodation infrastructure must specify a housing system '
+                    '(e.g., Battery Cage, Deep Litter, Free Range)'
+                )
+            
+            # Accommodation must have bird_capacity
+            if not self.bird_capacity or self.bird_capacity <= 0:
+                errors['bird_capacity'] = (
+                    'Accommodation infrastructure must have a valid bird capacity'
+                )
+        
+        # ===== OCCUPANCY VALIDATION =====
+        if self.current_occupancy and self.bird_capacity:
+            if self.current_occupancy > self.bird_capacity:
+                errors['current_occupancy'] = (
+                    f'Current occupancy ({self.current_occupancy}) cannot exceed '
+                    f'bird capacity ({self.bird_capacity})'
+                )
+        
+        # ===== DIMENSION VALIDATION =====
+        if self.length_meters and self.length_meters <= 0:
+            errors['length_meters'] = 'Length must be greater than 0'
+        
+        if self.width_meters and self.width_meters <= 0:
+            errors['width_meters'] = 'Width must be greater than 0'
+        
+        if self.height_meters and self.height_meters <= 0:
+            errors['height_meters'] = 'Height must be greater than 0'
+        
+        if errors:
+            raise ValidationError(errors)
+
+
+# =============================================================================
+# LEGACY MODEL ALIASES (for backwards compatibility)
+# =============================================================================
+
+# Backwards compatibility alias - poultry houses are now just Infrastructure
+class PoultryHouse(Infrastructure):
+    """
+    Legacy alias for backwards compatibility.
+    Poultry houses are now Infrastructure with infrastructure_type='Accommodation'.
+    """
+    class Meta:
+        proxy = True
+    
+    def save(self, *args, **kwargs):
+        # Ensure infrastructure_type is 'Accommodation' for poultry houses
+        self.infrastructure_type = 'Accommodation'
+        super().save(*args, **kwargs)
 
 
 # =============================================================================
 # EQUIPMENT MODEL
 # =============================================================================
-
-class Equipment(models.Model):
-    """Farm equipment inventory"""
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
-    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='equipment')
-    
-    # Feeders
-    manual_feeders_count = models.PositiveIntegerField(default=0)
-    manual_feeders_value_ghs = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    automatic_feeders_count = models.PositiveIntegerField(default=0)
-    automatic_feeders_value_ghs = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    
-    # Drinkers
-    manual_drinkers_count = models.PositiveIntegerField(default=0)
-    manual_drinkers_value_ghs = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    nipple_drinkers_count = models.PositiveIntegerField(default=0)
-    nipple_drinkers_value_ghs = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    
-    # Incubation
-    has_incubator = models.BooleanField(default=False)
-    incubator_capacity = models.PositiveIntegerField(default=0)
-    incubator_value_ghs = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    
-    # Power Backup
-    has_generator = models.BooleanField(default=False)
-    generator_capacity_kva = models.DecimalField(
-        max_digits=6,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    generator_value_ghs = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    
-    # Storage
-    feed_storage_capacity_kg = models.PositiveIntegerField(default=0)
-    feed_storage_value_ghs = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    cold_storage_available = models.BooleanField(default=False)
-    cold_storage_value_ghs = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    
-    # Other Equipment
-    weighing_scale = models.BooleanField(default=False)
-    egg_tray_count = models.PositiveIntegerField(default=0)
-    cages_count = models.PositiveIntegerField(default=0)
-    cages_value_ghs = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)]
-    )
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    class Meta:
-        db_table = 'farm_equipment'
-    
-    def __str__(self):
-        return f"{self.farm.farm_name} - Equipment"
-    
-    @property
-    def total_equipment_value(self):
-        """Calculate total equipment value"""
-        return (
-            self.manual_feeders_value_ghs +
-            self.automatic_feeders_value_ghs +
-            self.manual_drinkers_value_ghs +
-            self.nipple_drinkers_value_ghs +
-            self.incubator_value_ghs +
-            self.generator_value_ghs +
-            self.feed_storage_value_ghs +
-            self.cold_storage_value_ghs +
-            self.cages_value_ghs
-        )
-
 
 # =============================================================================
 # UTILITIES MODEL
@@ -1268,6 +1327,189 @@ class Utilities(models.Model):
     
     def __str__(self):
         return f"{self.farm.farm_name} - Utilities"
+
+
+# Backwards compatibility alias - farm systems are now just Infrastructure
+class FarmInfrastructure(Infrastructure):
+    """
+    Legacy alias for backwards compatibility.
+    Farm systems are now Infrastructure with infrastructure_type != 'Accommodation'.
+    """
+    class Meta:
+        proxy = True
+
+
+# =============================================================================
+# FARM EQUIPMENT MODEL (Movable Equipment)
+# =============================================================================
+
+class FarmEquipment(models.Model):
+    """
+    Movable, operational equipment used for daily farm operations.
+    Examples: feeders, drinkers, brooders, scales, tools, etc.
+    
+    Different from FarmInfrastructure (fixed installations):
+    - Movable/portable items
+    - Quantity-tracked (can have multiple units)
+    - Shorter lifespan (1-5 years vs 10+ years)
+    - Lower cost per unit
+    """
+    
+    EQUIPMENT_TYPES = [
+        ('Feeder', 'Feeder'),
+        ('Drinker', 'Drinker'),
+        ('Brooder', 'Brooder'),
+        ('Cage', 'Cage'),
+        ('Lighting', 'Lighting'),
+        ('Ventilation Fan', 'Ventilation Fan'),
+        ('Weighing Scale', 'Weighing Scale'),
+        ('Egg Collector', 'Egg Collector'),
+        ('Egg Candler', 'Egg Candler'),
+        ('Incubator', 'Incubator'),
+        ('Sprayer', 'Sprayer'),
+        ('Shovel/Rake', 'Shovel/Rake'),
+        ('Wheelbarrow', 'Wheelbarrow'),
+        ('Nesting Box', 'Nesting Box'),
+        ('Perch/Roost', 'Perch/Roost'),
+        ('Safety Equipment', 'Safety Equipment'),
+        ('Other', 'Other'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('Available', 'Available'),
+        ('In Use', 'In Use'),
+        ('Under Maintenance', 'Under Maintenance'),
+        ('Out of Service', 'Out of Service'),
+        ('Reserved', 'Reserved'),
+    ]
+    
+    CONDITION_CHOICES = [
+        ('Excellent', 'Excellent'),
+        ('Good', 'Good'),
+        ('Fair', 'Fair'),
+        ('Poor', 'Poor'),
+        ('Damaged', 'Damaged'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='equipment_items')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True,
+        related_name='created_equipment'
+    )
+    
+    # Basic Information
+    equipment_name = models.CharField(max_length=200, help_text="Name/identifier")
+    equipment_type = models.CharField(max_length=50, choices=EQUIPMENT_TYPES)
+    brand = models.CharField(max_length=100, blank=True, help_text="Brand/manufacturer")
+    model = models.CharField(max_length=100, blank=True, help_text="Model number")
+    serial_number = models.CharField(max_length=100, blank=True, help_text="Serial number")
+    
+    # Quantity and Status
+    quantity = models.PositiveIntegerField(
+        default=1,
+        validators=[MinValueValidator(1)],
+        help_text="Number of units"
+    )
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Available')
+    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='Good')
+    location = models.CharField(
+        max_length=200, 
+        blank=True, 
+        help_text="Where it's stored/used (e.g., 'Poultry House 1')"
+    )
+    
+    # Supplier Information
+    supplier = models.CharField(max_length=100, blank=True)
+    
+    # Purchase Information
+    purchase_date = models.DateField(null=True, blank=True)
+    purchase_price_ghs = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Purchase price in GHS"
+    )
+    current_value_ghs = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Current estimated value in GHS"
+    )
+    
+    # Maintenance Information
+    last_maintenance_date = models.DateField(null=True, blank=True)
+    next_maintenance_due = models.DateField(null=True, blank=True)
+    
+    # Warranty Information
+    warranty_expiry = models.DateField(null=True, blank=True)
+    
+    # Additional Information
+    notes = models.TextField(blank=True, max_length=500)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'farm_equipment'
+        ordering = ['-created_at']
+        verbose_name = 'Farm Equipment'
+        verbose_name_plural = 'Farm Equipment'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['farm', 'serial_number'],
+                condition=~models.Q(serial_number=''),
+                name='unique_serial_per_farm'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['farm', 'equipment_type']),
+            models.Index(fields=['farm', 'status']),
+            models.Index(fields=['farm', 'location']),
+            models.Index(fields=['next_maintenance_due']),
+        ]
+    
+    def __str__(self):
+        return f"{self.equipment_name} ({self.equipment_type}) - Qty: {self.quantity}"
+    
+    @property
+    def is_under_warranty(self):
+        """Check if equipment is still under warranty"""
+        if not self.warranty_expiry:
+            return False
+        return self.warranty_expiry >= timezone.now().date()
+    
+    @property
+    def is_maintenance_overdue(self):
+        """Check if maintenance is overdue"""
+        if not self.next_maintenance_due:
+            return False
+        return self.next_maintenance_due < timezone.now().date()
+    
+    @property
+    def days_until_maintenance(self):
+        """Calculate days until next maintenance (negative if overdue)"""
+        if not self.next_maintenance_due:
+            return None
+        delta = self.next_maintenance_due - timezone.now().date()
+        return delta.days
+    
+    @property
+    def depreciation_percentage(self):
+        """Calculate depreciation percentage"""
+        if not self.purchase_price_ghs or not self.current_value_ghs:
+            return None
+        if self.purchase_price_ghs == 0:
+            return 0
+        depreciation = ((self.purchase_price_ghs - self.current_value_ghs) / self.purchase_price_ghs) * 100
+        return round(depreciation, 2)
 
 
 # =============================================================================
@@ -1487,6 +1729,7 @@ class FarmDocument(models.Model):
             ('Farm Photo - Equipment', 'Farm Photo - Equipment'),
             ('Farm Photo - Storage', 'Farm Photo - Storage Facilities'),
             ('Farm Photo - Biosecurity', 'Farm Photo - Biosecurity Measures'),
+            ('Farm Photo - Products', 'Farm Photo - Products/Marketing (Max 20)'),
             
             # Land Documents
             ('Title Deed', 'Title Deed'),

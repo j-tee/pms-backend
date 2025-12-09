@@ -102,8 +102,16 @@ class FarmApplication(models.Model):
     # ===================================================================
     
     proposed_farm_name = models.CharField(max_length=200)
+    
+    # Farm Location (GhanaPost GPS)
+    farm_gps_address = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="GhanaPost GPS digital address (e.g., GA-184-2278). Get this from GhanaPost GPS mobile app at farm location."
+    )
     farm_location_description = models.TextField(
-        help_text="Describe farm location (community, landmarks, etc.)"
+        blank=True,
+        help_text="Describe farm location (community, landmarks, etc.) - Optional if GPS address provided"
     )
     land_size_acres = models.DecimalField(
         max_digits=8,

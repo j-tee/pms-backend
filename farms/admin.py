@@ -8,7 +8,7 @@ from django.utils.html import format_html
 from django.utils import timezone
 from core.admin_site import yea_admin_site
 from .models import (
-    Farm, FarmLocation, PoultryHouse, Equipment,
+    Farm, FarmLocation, Infrastructure, PoultryHouse, FarmEquipment,
     Utilities, Biosecurity, SupportNeeds, FarmDocument,
     FarmReviewAction, FarmApprovalQueue, FarmNotification
 )
@@ -28,14 +28,13 @@ class PoultryHouseInline(admin.TabularInline):
     model = PoultryHouse
     extra = 0
     fields = (
-        'house_number', 'house_type', 'house_capacity',
-        'current_occupancy', 'estimated_house_value_ghs'
+        'infrastructure_name', 'housing_system', 'bird_capacity',
+        'current_occupancy', 'status'
     )
-
-
-class EquipmentInline(admin.StackedInline):
-    model = Equipment
-    extra = 0
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.filter(infrastructure_type='Accommodation')
 
 
 class UtilitiesInline(admin.StackedInline):
@@ -169,7 +168,7 @@ class FarmAdmin(admin.ModelAdmin):
     )
     
     inlines = [
-        FarmLocationInline, PoultryHouseInline, EquipmentInline,
+        FarmLocationInline, PoultryHouseInline,
         UtilitiesInline, BiosecurityInline, FarmDocumentInline
     ]
 
@@ -188,15 +187,19 @@ class FarmLocationAdmin(GISModelAdmin):
 
 class PoultryHouseAdmin(admin.ModelAdmin):
     list_display = [
-        'farm', 'house_number', 'house_type', 'house_capacity',
-        'current_occupancy', 'year_built', 'estimated_house_value_ghs'
+        'farm', 'infrastructure_name', 'housing_system', 'bird_capacity',
+        'current_occupancy', 'status', 'condition'
     ]
-    list_filter = ['house_type', 'ventilation_system']
-    search_fields = ['farm__farm_name', 'house_number']
+    list_filter = ['housing_system', 'status', 'condition']
+    search_fields = ['farm__farm_name', 'infrastructure_name']
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.filter(infrastructure_type='Accommodation')
 
 
 
-class EquipmentAdmin(admin.ModelAdmin):
+class LegacyEquipmentAdmin(admin.ModelAdmin):
     list_display = [
         'farm', 'has_incubator', 'has_generator', 'cold_storage_available',
         'weighing_scale', 'total_equipment_value'
@@ -580,7 +583,7 @@ class FarmNotificationAdmin(admin.ModelAdmin):
 yea_admin_site.register(Farm, FarmAdmin)
 yea_admin_site.register(FarmLocation, FarmLocationAdmin)
 yea_admin_site.register(PoultryHouse, PoultryHouseAdmin)
-yea_admin_site.register(Equipment, EquipmentAdmin)
+yea_admin_site.register(FarmEquipment)
 yea_admin_site.register(Utilities, UtilitiesAdmin)
 yea_admin_site.register(Biosecurity, BiosecurityAdmin)
 yea_admin_site.register(SupportNeeds, SupportNeedsAdmin)

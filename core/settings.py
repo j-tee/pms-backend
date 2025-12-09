@@ -545,3 +545,14 @@ MTN_MOBILE_MONEY_ENABLED = os.getenv('MTN_MOBILE_MONEY_ENABLED', 'True') == 'Tru
 VODAFONE_CASH_ENABLED = os.getenv('VODAFONE_CASH_ENABLED', 'True') == 'True'
 AIRTELTIGO_MONEY_ENABLED = os.getenv('AIRTELTIGO_MONEY_ENABLED', 'True') == 'True'
 
+
+# =============================================================================
+# GOOGLE MAPS API SETTINGS
+# =============================================================================
+
+# Google Maps Geocoding API Key (optional for GPS coordinate extraction)
+# Used as fallback when GhanaPost GPS custom decoder is not available
+# Free tier: 40,000 requests/month
+# Get your API key: https://console.cloud.google.com/google/maps-apis/credentials
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
+
