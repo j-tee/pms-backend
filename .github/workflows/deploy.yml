@@ -150,16 +150,10 @@ jobs:
             echo "📁 Collecting static files..."
             python manage.py collectstatic --no-input --clear
             
-            # Restart services
+            # Restart services using restart script
             echo "🔄 Restarting services..."
-            sudo systemctl restart pms-backend
-            sudo systemctl is-active --quiet celery-pms && sudo systemctl restart celery-pms || echo "Celery not running, skipping..."
-            sudo systemctl reload nginx
-            
-            # Check service status
-            echo "✅ Checking service status..."
-            sudo systemctl is-active --quiet pms-backend && echo "✓ Django service is running" || echo "✗ Django service failed"
-            sudo systemctl is-active --quiet nginx && echo "✓ Nginx service is running" || echo "✗ Nginx service failed"
+            export DEPLOY_PASSWORD="&&Roju11TET"
+            bash restart_services.sh
             
             echo "🎉 Deployment completed successfully!"
           ENDSSH
