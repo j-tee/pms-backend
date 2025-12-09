@@ -19,7 +19,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 django.setup()
 
 from django.conf import settings
-from accounts.services import PhoneVerificationService
+from accounts.auth_services import PhoneVerificationService
 
 
 def test_sms_configuration():

@@ -36,7 +36,7 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Frontend URL for email/sms links
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 
 
 # Application definition
@@ -84,6 +84,7 @@ INSTALLED_APPS = [
     'feed_inventory',
     'medication_management',
     'sales_revenue',
+    'subscriptions',
 ]
 
 SITE_ID = 1  # Required for django.contrib.sites
@@ -346,8 +347,48 @@ SIMPLE_JWT = {
 # CORS SETTINGS
 # =============================================================================
 
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
-CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000').split(',')
+# For development - allow all origins. In production, use specific CORS_ALLOWED_ORIGINS list
+DEBUG_MODE = os.getenv('DEBUG', 'True') == 'True'
+
+if DEBUG_MODE:
+    # Development: Allow all origins for easier testing
+    CORS_ORIGIN_ALLOW_ALL = True
+else:
+    # Production: Whitelist specific frontend origins
+    cors_origins_env = os.getenv(
+        'CORS_ALLOWED_ORIGINS', 
+        'https://yourdomain.com'
+    )
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',')]
+
+# CSRF Trusted Origins (both dev and prod)
+csrf_origins_env = os.getenv(
+    'CSRF_TRUSTED_ORIGINS', 
+    'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173'
+)
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',')]
+
+# CORS Headers Configuration
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 
 # =============================================================================
@@ -391,16 +432,86 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
 
 
 # =============================================================================
+# SUBSCRIPTION SETTINGS
+# =============================================================================
+
+# Marketplace subscription pricing (all farmers pay same price)
+MARKETPLACE_SUBSCRIPTION_PRICE = float(os.getenv('MARKETPLACE_SUBSCRIPTION_PRICE', 100.00))
+
+# Trial and grace periods
+MARKETPLACE_TRIAL_DAYS = int(os.getenv('MARKETPLACE_TRIAL_DAYS', 14))
+SUBSCRIPTION_GRACE_PERIOD_DAYS = int(os.getenv('SUBSCRIPTION_GRACE_PERIOD_DAYS', 5))
+
+
+# =============================================================================
+# LOGGING SETTINGS
+# =============================================================================
+
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+LOG_TO_FILE = os.getenv('LOG_TO_FILE', 'False') == 'True'
+LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/django.log')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_FILE_PATH,
+            'maxBytes': 1024 * 1024 * 10,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        } if LOG_TO_FILE else {
+            'class': 'logging.NullHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console', 'file'] if LOG_TO_FILE else ['console'],
+        'level': LOG_LEVEL,
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file'] if LOG_TO_FILE else ['console'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
+
+
+# =============================================================================
 # SECURITY SETTINGS (Production)
 # =============================================================================
 
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
+    SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'True') == 'True'
+    CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'True') == 'True'
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', 31536000))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'True') == 'True'
+    SECURE_HSTS_PRELOAD = os.getenv('SECURE_HSTS_PRELOAD', 'True') == 'True'
 
 
 # =============================================================================
@@ -433,4 +544,15 @@ COMMISSION_MINIMUM_AMOUNT = float(os.getenv('COMMISSION_MINIMUM_AMOUNT', 2.00))
 MTN_MOBILE_MONEY_ENABLED = os.getenv('MTN_MOBILE_MONEY_ENABLED', 'True') == 'True'
 VODAFONE_CASH_ENABLED = os.getenv('VODAFONE_CASH_ENABLED', 'True') == 'True'
 AIRTELTIGO_MONEY_ENABLED = os.getenv('AIRTELTIGO_MONEY_ENABLED', 'True') == 'True'
+
+
+# =============================================================================
+# GOOGLE MAPS API SETTINGS
+# =============================================================================
+
+# Google Maps Geocoding API Key (optional for GPS coordinate extraction)
+# Used as fallback when GhanaPost GPS custom decoder is not available
+# Free tier: 40,000 requests/month
+# Get your API key: https://console.cloud.google.com/google/maps-apis/credentials
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
 

@@ -17,6 +17,10 @@ django-allauth==0.57.0  # Social authentication (Google, Facebook, GitHub, etc.)
 django-phonenumber-field==7.2.0  # Phone number validation
 phonenumbers==8.13.26  # Phone number parsing library
 
+# Multi-Factor Authentication
+pyotp==2.9.0  # TOTP/HOTP implementation
+qrcode==7.4.2  # QR code generation for TOTP setup
+
 # Role & Permissions Management
 django-guardian==2.4.0  # Object-level permissions (Rolify equivalent)
 rules==3.3  # Rule-based permissions
@@ -44,6 +48,9 @@ requests==2.31.0  # HTTP library for API calls
 pytest==7.4.3
 pytest-django==4.7.0
 pytest-cov==4.1.0
+
+# Production Server
+gunicorn==21.2.0
 
 # Code Quality
 flake8==6.1.0

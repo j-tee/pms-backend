@@ -1,0 +1,50 @@
+[Unit]
+Description=YEA PMS Celery Worker
+After=network.target redis.service postgresql.service
+
+[Service]
+Type=forking
+User=deploy
+Group=deploy
+WorkingDirectory=/var/www/YEA/PMS/pms-backend
+Environment="PATH=/var/www/YEA/PMS/pms-backend/venv/bin"
+Environment="DJANGO_SETTINGS_MODULE=core.settings"
+
+# Load environment variables from production env file
+EnvironmentFile=/var/www/YEA/PMS/pms-backend/.env.production
+
+# Celery worker configuration
+ExecStart=/var/www/YEA/PMS/pms-backend/venv/bin/celery -A core worker \
+    --loglevel=info \
+    --logfile=/var/log/celery-pms/worker.log \
+    --pidfile=/var/run/celery-pms/worker.pid \
+    --concurrency=4 \
+    --max-tasks-per-child=1000
+
+# Celery beat (periodic tasks)
+ExecStartPost=/var/www/YEA/PMS/pms-backend/venv/bin/celery -A core beat \
+    --loglevel=info \
+    --logfile=/var/log/celery-pms/beat.log \
+    --pidfile=/var/run/celery-pms/beat.pid \
+    --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+# Graceful shutdown
+ExecStop=/bin/kill -s TERM $MAINPID
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# PID and runtime directories
+RuntimeDirectory=celery-pms
+RuntimeDirectoryMode=0755
+PIDFile=/var/run/celery-pms/worker.pid
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=celery-pms
+
+[Install]
+WantedBy=multi-user.target

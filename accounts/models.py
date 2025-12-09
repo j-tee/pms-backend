@@ -188,3 +188,31 @@ class User(AbstractUser, RoleMixin):
         self.account_locked_until = None
         self.last_login_at = timezone.now()
         self.save(update_fields=['failed_login_attempts', 'account_locked_until', 'last_login_at'])
+    
+    def has_role(self, role_name, resource=None):
+        """
+        Override has_role to check both primary role field and role system.
+        
+        Args:
+            role_name: Name of the role to check
+            resource: Optional resource object if role is scoped
+        
+        Returns:
+            Boolean indicating if user has the role
+        """
+        # First check the primary role field
+        if self.role == role_name:
+            return True
+        
+        # Then check the role system (from RoleMixin)
+        return super().has_role(role_name, resource)
+
+
+# Import MFA models to register them with Django
+from .mfa_models import (
+    MFAMethod,
+    MFABackupCode,
+    MFAVerificationCode,
+    TrustedDevice,
+    MFASettings
+)

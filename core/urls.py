@@ -23,5 +23,10 @@ urlpatterns = [
     path('admin/', yea_admin_site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/dashboards/', include('dashboards.urls')),
+    path('api/admin/', include('accounts.admin_urls')),
+    path('api/farms/', include('farms.management_urls')),  # Authenticated farm management
+    path('api/flocks/', include('flock_management.urls')),  # Flock management
+    path('api/feed/', include('feed_inventory.urls')),  # Feed inventory management
+    path('api/', include('farms.urls')),  # Public farm application endpoints
 ]
 

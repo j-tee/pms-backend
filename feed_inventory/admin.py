@@ -12,7 +12,6 @@ from django.urls import reverse
 from django.utils.safestring import mark_safe
 from .models import (
     FeedType,
-    FeedSupplier,
     FeedPurchase,
     FeedInventory,
     FeedConsumption
@@ -109,83 +108,18 @@ class FeedTypeAdmin(admin.ModelAdmin):
     active_status.short_description = 'Status'
 
 
-@admin.register(FeedSupplier)
-class FeedSupplierAdmin(admin.ModelAdmin):
-    """Admin interface for Feed Suppliers."""
-    
-    list_display = [
-        'name',
-        'contact_person',
-        'phone',
-        'city',
-        'payment_terms',
-        'total_purchases',
-        'last_purchase_date',
-        'active_status',
-    ]
-    
-    list_filter = [
-        'payment_terms',
-        'is_active',
-        'region',
-    ]
-    
-    search_fields = [
-        'name',
-        'contact_person',
-        'phone',
-        'email',
-        'registration_number',
-    ]
-    
-    readonly_fields = ['id', 'total_purchases', 'last_purchase_date', 'created_at', 'updated_at']
-    
-    fieldsets = (
-        ('Basic Information', {
-            'fields': ('id', 'name', 'contact_person', 'phone', 'email')
-        }),
-        ('Address', {
-            'fields': ('address', 'city', 'region')
-        }),
-        ('Business Information', {
-            'fields': (
-                'registration_number',
-                'tax_id',
-                'payment_terms',
-                'credit_limit',
-            )
-        }),
-        ('Performance Metrics', {
-            'fields': ('total_purchases', 'last_purchase_date'),
-            'classes': ('collapse',)
-        }),
-        ('Status', {
-            'fields': ('is_active', 'notes')
-        }),
-        ('Metadata', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def active_status(self, obj):
-        """Display active status with badge."""
-        if obj.is_active:
-            return format_html('<span style="color: green;">●</span> Active')
-        return format_html('<span style="color: red;">●</span> Inactive')
-    active_status.short_description = 'Status'
-
-
 @admin.register(FeedPurchase)
 class FeedPurchaseAdmin(admin.ModelAdmin):
     """Admin interface for Feed Purchases."""
     
     list_display = [
+        'batch_number',
         'purchase_date',
         'farm_link',
         'supplier',
         'feed_type',
         'quantity_kg',
+        'stock_balance_kg',
         'total_cost',
         'payment_status_badge',
         'delivery_date',
@@ -194,29 +128,28 @@ class FeedPurchaseAdmin(admin.ModelAdmin):
     list_filter = [
         'payment_status',
         'purchase_date',
-        'supplier',
     ]
     
     search_fields = [
         'farm__name',
-        'supplier__name',
+        'supplier',
         'feed_type__name',
         'invoice_number',
     ]
     
-    readonly_fields = ['id', 'total_cost', 'created_at', 'updated_at', 'created_by']
+    readonly_fields = ['id', 'batch_number', 'quantity_kg', 'unit_price', 'stock_balance_kg', 'total_cost', 'created_at', 'updated_at', 'created_by']
     
     date_hierarchy = 'purchase_date'
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('id', 'farm', 'supplier', 'feed_type', 'purchase_date', 'invoice_number')
+            'fields': ('id', 'batch_number', 'farm', 'supplier', 'supplier_contact', 'feed_type', 'brand', 'purchase_date', 'invoice_number', 'receipt_number')
         }),
         ('Quantity and Pricing', {
-            'fields': ('quantity_kg', 'unit_price', 'total_cost')
+            'fields': ('quantity_bags', 'bag_weight_kg', 'quantity_kg', 'unit_cost_ghs', 'unit_price', 'total_cost')
         }),
         ('Payment Information', {
-            'fields': ('payment_status', 'amount_paid', 'payment_due_date')
+            'fields': ('payment_status', 'payment_method', 'amount_paid', 'payment_due_date')
         }),
         ('Delivery Information', {
             'fields': ('delivery_date', 'received_by')

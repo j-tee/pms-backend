@@ -12,7 +12,7 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from decimal import Decimal
-from farms.models import Farm, PoultryHouse
+from farms.models import Farm, Infrastructure
 from accounts.models import User
 import uuid
 
@@ -134,12 +134,13 @@ class Flock(models.Model):
     
     # Housing
     housed_in = models.ForeignKey(
-        PoultryHouse,
-        on_delete=models.SET_NULL,
+        Infrastructure,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name='flocks',
-        help_text="Current housing location"
+        limit_choices_to={'infrastructure_type': 'Accommodation'},
+        help_text="Current housing location (must be Accommodation type)"
     )
     
     # Accumulated Costs (updated from daily records)
@@ -235,7 +236,7 @@ class Flock(models.Model):
     def save(self, *args, **kwargs):
         # Auto-calculate total acquisition cost
         if self.initial_count and self.purchase_price_per_bird:
-            self.total_acquisition_cost = Decimal(self.initial_count) * self.purchase_price_per_bird
+            self.total_acquisition_cost = Decimal(str(self.initial_count)) * Decimal(str(self.purchase_price_per_bird))
         
         # Set current count to initial count on first save
         if not self.pk and not self.current_count:
@@ -244,15 +245,29 @@ class Flock(models.Model):
         # Calculate mortality metrics
         self.total_mortality = self.initial_count - self.current_count
         if self.initial_count > 0:
-            self.mortality_rate_percent = (Decimal(self.total_mortality) / Decimal(self.initial_count)) * 100
+            self.mortality_rate_percent = (Decimal(str(self.total_mortality)) / Decimal(str(self.initial_count))) * Decimal('100')
         
         # Calculate average daily mortality
         if self.arrival_date:
             days_since_arrival = (timezone.now().date() - self.arrival_date).days
             if days_since_arrival > 0:
-                self.average_daily_mortality = Decimal(self.total_mortality) / Decimal(days_since_arrival)
+                self.average_daily_mortality = Decimal(str(self.total_mortality)) / Decimal(str(days_since_arrival))
+        
+        # Track old housed_in and current_count for occupancy updates
+        old_housed_in = None
+        old_current_count = 0
+        if self.pk:
+            try:
+                old_instance = Flock.objects.get(pk=self.pk)
+                old_housed_in = old_instance.housed_in
+                old_current_count = old_instance.current_count
+            except Flock.DoesNotExist:
+                pass
         
         super().save(*args, **kwargs)
+        
+        # Auto-update infrastructure occupancy when flock counts or housing changes
+        self._update_infrastructure_occupancy(old_housed_in, old_current_count)
     
     def clean(self):
         """Validate business logic"""
@@ -296,8 +311,34 @@ class Flock(models.Model):
         if self.housed_in_id and self.farm_id:
             if self.housed_in.farm != self.farm:
                 errors['housed_in'] = (
-                    f'Poultry house ({self.housed_in.house_name}) does not belong to '
+                    f'Infrastructure ({self.housed_in.infrastructure_name}) does not belong to '
                     f'this farm ({self.farm.farm_name})'
+                )
+        
+        # Validate housed_in is Accommodation type
+        if self.housed_in and self.housed_in.infrastructure_type != 'Accommodation':
+            errors['housed_in'] = (
+                f'Flocks can only be housed in Accommodation infrastructure. '
+                f'{self.housed_in.infrastructure_name} is type {self.housed_in.infrastructure_type}'
+            )
+        
+        # Validate flock doesn't exceed house capacity
+        if self.housed_in and self.housed_in.bird_capacity:
+            # Calculate total occupancy if this flock is housed here
+            other_flocks_count = Flock.objects.filter(
+                housed_in=self.housed_in,
+                status='Active'
+            ).exclude(pk=self.pk).aggregate(
+                total=models.Sum('current_count')
+            )['total'] or 0
+            
+            total_occupancy = other_flocks_count + self.current_count
+            
+            if total_occupancy > self.housed_in.bird_capacity:
+                errors['housed_in'] = (
+                    f'Capacity exceeded: {self.housed_in.infrastructure_name} has capacity '
+                    f'{self.housed_in.bird_capacity}, but would house {total_occupancy} birds '
+                    f'(current: {other_flocks_count}, this flock: {self.current_count})'
                 )
         
         # ===== FINANCIAL VALIDATION =====
@@ -344,6 +385,85 @@ class Flock(models.Model):
         if self.initial_count == 0:
             return 0
         return (Decimal(self.current_count) / Decimal(self.initial_count)) * 100
+    
+    @property
+    def house_name(self):
+        """Backward compatibility: Get infrastructure name as house_name"""
+        if self.housed_in:
+            return self.housed_in.infrastructure_name
+        return None
+    
+    @property
+    def capacity(self):
+        """Backward compatibility: Get bird_capacity as capacity"""
+        if self.housed_in:
+            return self.housed_in.bird_capacity
+        return None
+    
+    def get_current_bird_count(self, as_of_date=None):
+        """
+        Calculate current bird count: initial_count - mortalities - culls + transfers
+        
+        Args:
+            as_of_date: Calculate bird count as of specific date (default: today)
+        
+        Returns:
+            int: Current bird count
+        """
+        if as_of_date is None:
+            as_of_date = timezone.now().date()
+        
+        # Start with initial count
+        bird_count = self.initial_count
+        
+        # Subtract mortalities up to the date (field is 'birds_died' not 'mortality_count')
+        mortalities = self.daily_productions.filter(
+            production_date__lte=as_of_date
+        ).aggregate(
+            total=models.Sum('birds_died')
+        )['total'] or 0
+        
+        bird_count -= mortalities
+        
+        # Subtract sales up to the date (field is 'birds_sold' not 'culls_count')
+        sales = self.daily_productions.filter(
+            production_date__lte=as_of_date
+        ).aggregate(
+            total=models.Sum('birds_sold')
+        )['total'] or 0
+        
+        bird_count -= sales
+        
+        # TODO: Add transfers in/out when transfer model is implemented
+        # For now, we'll use current_count as the source of truth
+        # which is manually updated or calculated from daily production records
+        
+        return max(bird_count, 0)  # Ensure non-negative
+    
+    def _update_infrastructure_occupancy(self, old_housed_in, old_current_count):
+        """Update infrastructure current_occupancy when flock counts or housing changes"""
+        # Update old infrastructure if flock moved or count changed
+        if old_housed_in and old_housed_in != self.housed_in:
+            self._recalculate_infrastructure_occupancy(old_housed_in)
+        
+        # Update new infrastructure
+        if self.housed_in:
+            self._recalculate_infrastructure_occupancy(self.housed_in)
+    
+    def _recalculate_infrastructure_occupancy(self, infrastructure):
+        """Recalculate and update infrastructure's current_occupancy"""
+        if not infrastructure or infrastructure.infrastructure_type != 'Accommodation':
+            return
+        
+        # Calculate total occupancy from all active flocks in this infrastructure
+        total_occupancy = Flock.objects.filter(
+            housed_in=infrastructure,
+            status='Active'
+        ).aggregate(total=models.Sum('current_count'))['total'] or 0
+        
+        # Update the infrastructure
+        infrastructure.current_occupancy = total_occupancy
+        infrastructure.save(update_fields=['current_occupancy'])
 
 
 # =============================================================================
@@ -936,6 +1056,77 @@ class MortalityRecord(models.Model):
                 'Compensation amount must be greater than 0 when claim is submitted'
             )
         
+        if errors:
+            raise ValidationError(errors)
+
+
+# =============================================================================
+# HEALTH RECORD MODEL - Vaccination / Medication / Clinical Events
+# =============================================================================
+
+
+class HealthRecord(models.Model):
+    """Tracks flock health interventions such as vaccinations, treatments, and checkups."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Associations
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='health_records')
+    flock = models.ForeignKey(Flock, on_delete=models.CASCADE, related_name='health_records')
+
+    # Event metadata
+    record_date = models.DateField(db_index=True)
+    record_type = models.CharField(max_length=50, default='Health Check')
+    outcome = models.CharField(max_length=100, blank=True)
+    follow_up_date = models.DateField(null=True, blank=True)
+
+    # Clinical details
+    disease = models.CharField(max_length=200, blank=True)
+    diagnosis = models.CharField(max_length=200, blank=True)
+    symptoms = models.TextField(blank=True)
+    treatment_name = models.CharField(max_length=200, blank=True)
+    treatment_method = models.CharField(max_length=100, blank=True)
+    dosage = models.CharField(max_length=100, blank=True)
+    administering_person = models.CharField(max_length=100, blank=True)
+    vet_name = models.CharField(max_length=100, blank=True)
+    vet_license = models.CharField(max_length=100, blank=True)
+
+    # Impact / cost
+    birds_affected = models.PositiveIntegerField(default=0)
+    cost_ghs = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+
+    # Notes
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'health_records'
+        ordering = ['-record_date']
+        indexes = [
+            models.Index(fields=['farm', 'record_date']),
+            models.Index(fields=['flock', 'record_date']),
+            models.Index(fields=['record_type']),
+        ]
+
+    def __str__(self):
+        return f"{self.flock.flock_number} - {self.record_type} ({self.record_date})"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        errors = {}
+
+        if self.farm_id and self.flock_id and self.farm != self.flock.farm:
+            errors['farm'] = (
+                f'Farm mismatch: Health record farm ({self.farm.farm_name}) does not match '
+                f'flock farm ({self.flock.farm.farm_name}).'
+            )
+
+        if self.record_date and self.flock_id and self.record_date < self.flock.arrival_date:
+            errors['record_date'] = 'Record date cannot be before flock arrival date'
+
         if errors:
             raise ValidationError(errors)
 

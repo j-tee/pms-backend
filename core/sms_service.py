@@ -350,3 +350,46 @@ def get_sms_service() -> HubtelSMSService:
     if _hubtel_service is None:
         _hubtel_service = HubtelSMSService()
     return _hubtel_service
+
+
+class SMSService:
+    """Backward-compatible wrapper exposing class-style helpers."""
+
+    _service = None
+
+    @classmethod
+    def _get_service(cls) -> HubtelSMSService:
+        if cls._service is None:
+            cls._service = HubtelSMSService()
+        return cls._service
+
+    @classmethod
+    def send_sms(
+        cls,
+        phone_number: str,
+        message: str,
+        reference: Optional[str] = None,
+        callback_url: Optional[str] = None,
+    ) -> Dict:
+        """Proxy to Hubtel service instance."""
+        return cls._get_service().send_sms(
+            phone_number=phone_number,
+            message=message,
+            reference=reference,
+            callback_url=callback_url,
+        )
+
+    @classmethod
+    def send_bulk_sms(
+        cls,
+        recipients: List[Dict[str, str]],
+        callback_url: Optional[str] = None,
+    ) -> Dict:
+        return cls._get_service().send_bulk_sms(
+            recipients=recipients,
+            callback_url=callback_url,
+        )
+
+    @classmethod
+    def get_account_balance(cls) -> Dict:
+        return cls._get_service().get_account_balance()

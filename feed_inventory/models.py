@@ -2,12 +2,11 @@
 Feed Inventory Management Models
 
 This module handles feed inventory tracking for the YEA Poultry Management System.
-Tracks feed types, suppliers, purchases, stock levels, and daily consumption.
+Tracks feed types, purchases, stock levels, and daily consumption.
 
 Models:
     - FeedType: Master data for different types of poultry feed
-    - FeedSupplier: Information about feed suppliers
-    - FeedPurchase: Records of feed purchase transactions
+    - FeedPurchase: Records of feed purchase transactions (includes supplier name)
     - FeedInventory: Current stock levels per farm
     - FeedConsumption: Daily feed consumption by feed type
 """
@@ -151,81 +150,6 @@ class FeedType(models.Model):
             raise ValidationError(errors)
 
 
-class FeedSupplier(models.Model):
-    """
-    Information about feed suppliers.
-    
-    Tracks supplier contact information, payment terms, and performance metrics.
-    """
-    
-    PAYMENT_TERMS_CHOICES = [
-        ('CASH', 'Cash on Delivery'),
-        ('NET7', 'Net 7 Days'),
-        ('NET14', 'Net 14 Days'),
-        ('NET30', 'Net 30 Days'),
-        ('CREDIT', 'Credit Account'),
-    ]
-    
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
-    # Basic Information
-    name = models.CharField(max_length=200, unique=True, help_text="Supplier/company name")
-    contact_person = models.CharField(max_length=100, blank=True, help_text="Contact person name")
-    phone = models.CharField(max_length=20, help_text="Primary phone number")
-    email = models.EmailField(blank=True, help_text="Email address")
-    
-    # Address
-    address = models.TextField(help_text="Physical address")
-    city = models.CharField(max_length=100, blank=True)
-    region = models.CharField(max_length=100, blank=True)
-    
-    # Business Information
-    registration_number = models.CharField(max_length=50, blank=True, help_text="Business registration number")
-    tax_id = models.CharField(max_length=50, blank=True, help_text="Tax identification number (TIN)")
-    payment_terms = models.CharField(
-        max_length=10,
-        choices=PAYMENT_TERMS_CHOICES,
-        default='CASH',
-        help_text="Default payment terms"
-    )
-    credit_limit = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        validators=[MinValueValidator(Decimal('0.00'))],
-        default=Decimal('0.00'),
-        help_text="Maximum credit limit (GHS)"
-    )
-    
-    # Performance Metrics (Auto-calculated)
-    total_purchases = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        default=Decimal('0.00'),
-        help_text="Total value of purchases (GHS)"
-    )
-    last_purchase_date = models.DateField(null=True, blank=True, help_text="Date of most recent purchase")
-    
-    # Status
-    is_active = models.BooleanField(default=True, help_text="Whether supplier is currently active")
-    notes = models.TextField(blank=True, help_text="Additional notes about supplier")
-    
-    # Metadata
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    class Meta:
-        ordering = ['name']
-        verbose_name = 'Feed Supplier'
-        verbose_name_plural = 'Feed Suppliers'
-        indexes = [
-            models.Index(fields=['name']),
-            models.Index(fields=['is_active']),
-        ]
-    
-    def __str__(self):
-        return self.name
-
-
 class FeedPurchase(models.Model):
     """
     Records of feed purchase transactions.
@@ -242,6 +166,16 @@ class FeedPurchase(models.Model):
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
+    # Auto-generated Batch Number
+    batch_number = models.CharField(
+        max_length=50,
+        unique=True,
+        editable=False,
+        null=True,
+        blank=True,
+        help_text="System-generated unique batch ID (FSTK-YYYYMMDD-####)"
+    )
+    
     # Relationships
     farm = models.ForeignKey(
         'farms.Farm',
@@ -249,11 +183,15 @@ class FeedPurchase(models.Model):
         related_name='feed_purchases',
         help_text="Farm making the purchase"
     )
-    supplier = models.ForeignKey(
-        FeedSupplier,
-        on_delete=models.PROTECT,
-        related_name='purchases',
-        help_text="Supplier of the feed"
+    supplier = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Name of the supplier"
+    )
+    supplier_contact = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Supplier contact information"
     )
     feed_type = models.ForeignKey(
         FeedType,
@@ -261,28 +199,63 @@ class FeedPurchase(models.Model):
         related_name='purchases',
         help_text="Type of feed purchased"
     )
+    brand = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Brand of the feed"
+    )
     
     # Purchase Details
     purchase_date = models.DateField(help_text="Date of purchase")
-    invoice_number = models.CharField(max_length=50, blank=True, help_text="Supplier invoice number")
+    delivery_date = models.DateField(null=True, blank=True, help_text="Expected or actual delivery date")
+    receipt_number = models.CharField(max_length=50, blank=True, help_text="Receipt number")
+    invoice_number = models.CharField(max_length=50, blank=True, help_text="Supplier invoice number or batch number")
     
     # Quantity and Pricing
+    quantity_bags = models.PositiveIntegerField(
+        default=1,
+        help_text="Number of bags purchased"
+    )
+    bag_weight_kg = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+        default=Decimal('50.00'),
+        help_text="Weight per bag in kilograms"
+    )
     quantity_kg = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.01'))],
-        help_text="Quantity purchased in kilograms"
+        default=Decimal('50.00'),
+        help_text="Total quantity purchased in kilograms (auto-calculated from bags × weight)"
+    )
+    stock_balance_kg = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.00'))],
+        default=Decimal('0.00'),
+        help_text="Remaining stock balance in kilograms (updated on consumption)"
+    )
+    unit_cost_ghs = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.00'))],
+        default=Decimal('0.00'),
+        help_text="Cost per bag (GHS)"
     )
     unit_price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.00'))],
-        help_text="Price per kilogram (GHS)"
+        default=Decimal('0.00'),
+        help_text="Price per kilogram (GHS) - auto-calculated"
     )
     total_cost = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.00'))],
+        default=Decimal('0.00'),
         help_text="Total cost (quantity × unit_price)"
     )
     
@@ -292,6 +265,11 @@ class FeedPurchase(models.Model):
         choices=PAYMENT_STATUS_CHOICES,
         default='PENDING',
         help_text="Current payment status"
+    )
+    payment_method = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Payment method (Cash, Mobile Money, Bank Transfer, etc.)"
     )
     amount_paid = models.DecimalField(
         max_digits=12,
@@ -303,7 +281,6 @@ class FeedPurchase(models.Model):
     payment_due_date = models.DateField(null=True, blank=True, help_text="Payment due date")
     
     # Delivery Information
-    delivery_date = models.DateField(null=True, blank=True, help_text="Actual delivery date")
     received_by = models.CharField(max_length=100, blank=True, help_text="Person who received the delivery")
     
     # Additional Information
@@ -330,42 +307,60 @@ class FeedPurchase(models.Model):
             models.Index(fields=['supplier', 'purchase_date']),
             models.Index(fields=['payment_status']),
             models.Index(fields=['-purchase_date']),
+            models.Index(fields=['batch_number']),
+            models.Index(fields=['stock_balance_kg']),
         ]
     
     def __str__(self):
         return f"{self.farm.name} - {self.feed_type.name} ({self.purchase_date})"
     
     def save(self, *args, **kwargs):
-        """Auto-calculate total_cost before saving."""
+        """Auto-calculate derived fields before saving."""
+        # Generate batch_number if this is a new record
+        if not self.batch_number:
+            from django.utils import timezone
+            date_str = self.purchase_date.strftime('%Y%m%d') if self.purchase_date else timezone.now().strftime('%Y%m%d')
+            
+            # Get the count of purchases for this date to generate sequence
+            count = FeedPurchase.objects.filter(
+                batch_number__startswith=f'FSTK-{date_str}'
+            ).count()
+            
+            sequence = str(count + 1).zfill(4)
+            self.batch_number = f'FSTK-{date_str}-{sequence}'
+        
+        # Calculate total quantity from bags and weight
+        self.quantity_kg = Decimal(str(self.quantity_bags)) * self.bag_weight_kg
+        
+        # Initialize stock_balance_kg to quantity_kg for new purchases
+        if not self.pk and self.stock_balance_kg == Decimal('0.00'):
+            self.stock_balance_kg = self.quantity_kg
+        
+        # Calculate price per kg from cost per bag
+        if self.bag_weight_kg > 0:
+            self.unit_price = self.unit_cost_ghs / self.bag_weight_kg
+        
+        # Calculate total cost
         self.total_cost = self.quantity_kg * self.unit_price
+        
+        # Auto-calculate amount_paid based on payment_status if not explicitly set
+        if self.payment_status == 'PAID' and self.amount_paid == Decimal('0.00'):
+            self.amount_paid = self.total_cost
+        elif self.payment_status == 'PENDING' and self.amount_paid > Decimal('0.00'):
+            # If amount was paid but status is pending, it should be partial
+            self.payment_status = 'PARTIAL'
+        
         super().save(*args, **kwargs)
     
     def clean(self):
         """Validate purchase data."""
         errors = {}
         
-        # Total cost validation
-        expected_total = self.quantity_kg * self.unit_price
-        if abs(self.total_cost - expected_total) > Decimal('0.01'):
-            errors['total_cost'] = f"Total cost should be {expected_total:.2f} (quantity × unit_price)"
-        
-        # Payment validation
-        if self.amount_paid > self.total_cost:
-            errors['amount_paid'] = "Amount paid cannot exceed total cost"
-        
-        # Payment status consistency
-        if self.amount_paid == Decimal('0.00') and self.payment_status != 'PENDING':
-            errors['payment_status'] = "Payment status should be PENDING when nothing is paid"
-        elif self.amount_paid == self.total_cost and self.payment_status != 'PAID':
-            errors['payment_status'] = "Payment status should be PAID when fully paid"
-        elif Decimal('0.00') < self.amount_paid < self.total_cost and self.payment_status != 'PARTIAL':
-            errors['payment_status'] = "Payment status should be PARTIAL when partially paid"
-        
-        # Date validations
-        if self.delivery_date and self.delivery_date < self.purchase_date:
+        # Date validations only - let save() handle payment calculations
+        if self.delivery_date and self.purchase_date and self.delivery_date < self.purchase_date:
             errors['delivery_date'] = "Delivery date cannot be before purchase date"
         
-        if self.payment_due_date and self.payment_due_date < self.purchase_date:
+        if self.payment_due_date and self.purchase_date and self.payment_due_date < self.purchase_date:
             errors['payment_due_date'] = "Payment due date cannot be before purchase date"
         
         if errors:
@@ -543,11 +538,21 @@ class FeedConsumption(models.Model):
         related_name='feed_consumption_records',
         help_text="Flock that consumed the feed (denormalized for query performance)"
     )
+    feed_stock = models.ForeignKey(
+        FeedPurchase,
+        on_delete=models.PROTECT,
+        related_name='consumption_records',
+        null=True,
+        blank=True,
+        help_text="Specific feed stock/batch being consumed"
+    )
     feed_type = models.ForeignKey(
         FeedType,
         on_delete=models.PROTECT,
         related_name='consumption_records',
-        help_text="Type of feed consumed"
+        null=True,
+        blank=True,
+        help_text="Type of feed consumed (denormalized from feed_stock)"
     )
     
     # Consumption Details
@@ -564,12 +569,14 @@ class FeedConsumption(models.Model):
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.00'))],
+        default=Decimal('0.00'),
         help_text="Cost per kg at time of consumption (from inventory)"
     )
     total_cost = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.00'))],
+        default=Decimal('0.00'),
         help_text="Total cost (quantity × cost_per_kg)"
     )
     
@@ -581,6 +588,7 @@ class FeedConsumption(models.Model):
         max_digits=8,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.00'))],
+        default=Decimal('0.00'),
         help_text="Feed consumed per bird in grams (auto-calculated)"
     )
     
@@ -604,6 +612,13 @@ class FeedConsumption(models.Model):
     
     def save(self, *args, **kwargs):
         """Auto-calculate values before saving."""
+        is_new = not self.pk
+        
+        # Denormalize feed_type from feed_stock
+        if self.feed_stock_id:
+            self.feed_type = self.feed_stock.feed_type
+            self.cost_per_kg = self.feed_stock.unit_price
+        
         # Calculate total cost
         self.total_cost = self.quantity_consumed_kg * self.cost_per_kg
         
@@ -621,6 +636,11 @@ class FeedConsumption(models.Model):
             self.flock = self.daily_production.flock
         
         super().save(*args, **kwargs)
+        
+        # Update feed stock balance after saving (only for new records)
+        if is_new and self.feed_stock_id:
+            self.feed_stock.stock_balance_kg -= self.quantity_consumed_kg
+            self.feed_stock.save(update_fields=['stock_balance_kg'])
     
     def clean(self):
         """Validate consumption data."""
@@ -635,6 +655,11 @@ class FeedConsumption(models.Model):
         if self.daily_production_id and self.flock_id:
             if self.flock != self.daily_production.flock:
                 errors['flock'] = f"Flock must match daily production flock ({self.daily_production.flock.name})"
+        
+        # Stock balance validation - prevent negative draws
+        if self.feed_stock_id and self.quantity_consumed_kg:
+            if self.quantity_consumed_kg > self.feed_stock.stock_balance_kg:
+                errors['quantity_consumed_kg'] = f"Insufficient stock. Available: {self.feed_stock.stock_balance_kg} kg, Requested: {self.quantity_consumed_kg} kg"
         
         # Bird count validation
         if self.birds_count_at_consumption == 0:
