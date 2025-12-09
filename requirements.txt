@@ -1,6 +1,7 @@
 # Django Core
 Django==5.2.7
 python-dotenv==1.0.0
+setuptools>=65.0.0  # Required by rest_framework_simplejwt
 
 # Database
 psycopg[binary]>=3.2.12  # PostgreSQL adapter for Python 3.13+
