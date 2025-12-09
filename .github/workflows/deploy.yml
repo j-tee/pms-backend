@@ -116,7 +116,7 @@ jobs:
             echo "🚀 Starting deployment..."
             
             # Navigate to project directory
-            cd $PROJECT_PATH
+            cd /var/www/YEA/PMS/pms-backend
             
             # Pull latest changes
             echo "📥 Pulling latest changes from main branch..."
