@@ -57,17 +57,28 @@ class StaffInvitationService:
         """
         
         # Validate admin permission
-        if admin_user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']:
+        allowed_admin_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']
+        if admin_user.role not in allowed_admin_roles:
             raise PermissionError("Only admins can create staff invitations")
         
-        # Validate role hierarchy
-        if admin_user.role == 'REGIONAL_COORDINATOR':
-            if role not in ['CONSTITUENCY_OFFICIAL', 'EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
-                raise PermissionError(f"Regional coordinators cannot create {role} users")
+        # Validate role hierarchy - only SUPER_ADMIN can create YEA_OFFICIAL
+        if role == 'SUPER_ADMIN':
+            raise PermissionError("SUPER_ADMIN accounts cannot be created via invitation")
         
-        if admin_user.role == 'NATIONAL_ADMIN':
-            if role == 'SUPER_ADMIN':
-                raise PermissionError("National admins cannot create SUPER_ADMIN users")
+        if role == 'YEA_OFFICIAL':
+            if admin_user.role != 'SUPER_ADMIN':
+                raise PermissionError("Only SUPER_ADMIN can create YEA_OFFICIAL users")
+        
+        # YEA_OFFICIAL has same creation rights as NATIONAL_ADMIN
+        if admin_user.role == 'REGIONAL_COORDINATOR':
+            allowed_roles = ['CONSTITUENCY_OFFICIAL', 'EXTENSION_OFFICER', 'VETERINARY_OFFICER']
+            if role not in allowed_roles:
+                raise PermissionError(f"Regional coordinators can only create: {', '.join(allowed_roles)}")
+        
+        if admin_user.role in ['NATIONAL_ADMIN', 'YEA_OFFICIAL']:
+            disallowed_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL']
+            if role in disallowed_roles:
+                raise PermissionError(f"{admin_user.get_role_display()} cannot create {role} users")
         
         # Check if email already exists
         if User.objects.filter(email=email).exists():
@@ -288,7 +299,8 @@ YEA Poultry Management System
             raise ValueError("User account is already active")
         
         # Check admin permission
-        if admin_user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']:
+        allowed_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']
+        if admin_user.role not in allowed_roles:
             raise PermissionError("Permission denied")
         
         # Generate new token
@@ -337,7 +349,8 @@ YEA Poultry Management System
             raise ValueError("Cannot cancel invitation for active user. Use deactivate instead.")
         
         # Check admin permission
-        if admin_user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']:
+        allowed_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']
+        if admin_user.role not in allowed_roles:
             raise PermissionError("Permission denied")
         
         # Delete the user

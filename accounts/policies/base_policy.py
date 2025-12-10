@@ -13,23 +13,28 @@ class BasePolicy:
     
     @staticmethod
     def is_super_admin(user):
-        """Check if user is super admin."""
-        return user.has_role('SUPER_ADMIN')
+        """Check if user is super admin (highest privilege level)."""
+        return user.role == 'SUPER_ADMIN' or user.has_role('SUPER_ADMIN')
+    
+    @staticmethod
+    def is_yea_official(user):
+        """Check if user is YEA official (elevated admin below super admin)."""
+        return user.role == 'YEA_OFFICIAL' or user.has_role('YEA_OFFICIAL')
     
     @staticmethod
     def is_national_admin(user):
         """Check if user is national admin."""
-        return user.has_role('NATIONAL_ADMIN')
+        return user.role == 'NATIONAL_ADMIN' or user.has_role('NATIONAL_ADMIN')
     
     @staticmethod
     def is_regional_coordinator(user):
         """Check if user is regional coordinator."""
-        return user.has_role('REGIONAL_COORDINATOR')
+        return user.role == 'REGIONAL_COORDINATOR' or user.has_role('REGIONAL_COORDINATOR')
     
     @staticmethod
     def is_constituency_official(user):
         """Check if user is constituency official."""
-        return user.has_role('CONSTITUENCY_OFFICIAL')
+        return user.role == 'CONSTITUENCY_OFFICIAL' or user.has_role('CONSTITUENCY_OFFICIAL')
     
     @staticmethod
     def is_extension_officer(user):
@@ -66,10 +71,16 @@ class BasePolicy:
         """Check if user has any admin-level access."""
         return (
             BasePolicy.is_super_admin(user) or
+            BasePolicy.is_yea_official(user) or
             BasePolicy.is_national_admin(user) or
             BasePolicy.is_regional_coordinator(user) or
             BasePolicy.is_constituency_official(user)
         )
+    
+    @staticmethod
+    def has_elevated_admin_access(user):
+        """Check if user has elevated admin access (Super Admin or YEA Official)."""
+        return BasePolicy.is_super_admin(user) or BasePolicy.is_yea_official(user)
     
     @staticmethod
     def get_user_constituencies(user):
@@ -79,7 +90,7 @@ class BasePolicy:
         Returns:
             List of constituency names
         """
-        if BasePolicy.is_super_admin(user) or BasePolicy.is_national_admin(user):
+        if BasePolicy.is_super_admin(user) or BasePolicy.is_yea_official(user) or BasePolicy.is_national_admin(user):
             # Access to all constituencies
             from farms.models import Farm
             return list(Farm.objects.values_list('primary_constituency', flat=True).distinct())

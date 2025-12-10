@@ -27,7 +27,7 @@ class UserPolicy(BasePolicy):
             return True
         
         # Admins can view all
-        if cls.is_super_admin(user) or cls.is_national_admin(user):
+        if cls.is_super_admin(user) or cls.is_yea_official(user) or cls.is_national_admin(user):
             return True
         
         # Regional coordinator can view users in region
@@ -60,7 +60,7 @@ class UserPolicy(BasePolicy):
         - National Admin: Can create any user type
         - Regional Coordinator: Can create constituency officials and extension officers in region
         """
-        if cls.is_super_admin(user) or cls.is_national_admin(user):
+        if cls.is_super_admin(user) or cls.is_yea_official(user) or cls.is_national_admin(user):
             return True
         
         if cls.is_regional_coordinator(user):
@@ -78,11 +78,11 @@ class UserPolicy(BasePolicy):
             target_role: Role to be assigned to new user
         """
         if cls.is_super_admin(user):
-            return True  # Can create any role
+            return True  # Can create any role except other SUPER_ADMIN
         
-        if cls.is_national_admin(user):
-            # Cannot create super admin
-            return target_role != 'SUPER_ADMIN'
+        if cls.is_yea_official(user) or cls.is_national_admin(user):
+            # Cannot create super admin or YEA official
+            return target_role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']
         
         if cls.is_regional_coordinator(user):
             # Can only create constituency officials and extension officers
@@ -109,9 +109,13 @@ class UserPolicy(BasePolicy):
         if cls.is_super_admin(user):
             return True
         
-        # National admin can edit all except super admin
+        # YEA Official can edit all except super admin and other YEA officials
+        if cls.is_yea_official(user):
+            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
+        
+        # National admin can edit all except super admin and YEA officials
         if cls.is_national_admin(user):
-            return not cls.is_super_admin(target_user)
+            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
         
         # Regional coordinator can edit users in region
         if cls.is_regional_coordinator(user):
@@ -150,8 +154,11 @@ class UserPolicy(BasePolicy):
         if cls.is_super_admin(user):
             return True
         
+        if cls.is_yea_official(user):
+            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
+        
         if cls.is_national_admin(user):
-            return not cls.is_super_admin(target_user)
+            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
         
         return False
     
@@ -168,9 +175,9 @@ class UserPolicy(BasePolicy):
         if cls.is_super_admin(user):
             return True
         
-        if cls.is_national_admin(user):
-            # Cannot assign super admin role
-            return role_name != 'SUPER_ADMIN'
+        if cls.is_yea_official(user) or cls.is_national_admin(user):
+            # Cannot assign super admin or YEA official roles
+            return role_name not in ['SUPER_ADMIN', 'YEA_OFFICIAL']
         
         if cls.is_regional_coordinator(user):
             # Can only assign certain roles in their region
@@ -196,8 +203,11 @@ class UserPolicy(BasePolicy):
         if cls.is_super_admin(user):
             return True
         
+        if cls.is_yea_official(user):
+            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
+        
         if cls.is_national_admin(user):
-            return not cls.is_super_admin(target_user)
+            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
         
         return False
     
