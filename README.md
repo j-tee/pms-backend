@@ -20,6 +20,9 @@ All project documentation is located in the [`docs/`](./docs/) folder:
 | [REQUIREMENTS_DISCUSSION.md](./docs/REQUIREMENTS_DISCUSSION.md) | Complete requirements analysis with 102 discussion questions |
 | [USER_STORIES.md](./docs/USER_STORIES.md) | 40+ user stories organized into 10 epics with acceptance criteria |
 | [FARM_REGISTRATION_MODEL.md](./docs/FARM_REGISTRATION_MODEL.md) | Detailed farm registration data model specification |
+| [SUPER_ADMIN_YEA_OFFICIAL_GUIDE.md](./docs/SUPER_ADMIN_YEA_OFFICIAL_GUIDE.md) | Complete guide for Super Admin & YEA Official user management |
+| [QUICK_SETUP_GUIDE.md](./docs/QUICK_SETUP_GUIDE.md) | Quick start guide for super admin setup and user hierarchy |
+| [IMPLEMENTATION_SUMMARY.md](./docs/IMPLEMENTATION_SUMMARY.md) | Summary of super admin implementation changes |
 
 ## 🏗️ System Architecture
 
@@ -30,12 +33,25 @@ All project documentation is located in the [`docs/`](./docs/) folder:
 
 ## 👥 User Roles
 
-1. **Farmers** - Register farms, submit reports, manage orders
-2. **Constituency Officials** - Review applications, coordinate local support
-3. **National Administrators** - Program oversight, resource allocation
-4. **Procurement Officers** - Place government orders, manage suppliers
-5. **Veterinary Officers** - Monitor health, coordinate disease control
-6. **Auditors** - Verify compliance, access audit trails
+### Administrative Hierarchy
+1. **Super Administrator** - Complete system control, can invite YEA Officials
+2. **YEA Official** - Elevated administrator, can manage all users and invite admins
+3. **National Administrator** - Program oversight, resource allocation
+4. **Regional Coordinator** - Regional-level management
+5. **Constituency Official** - Review applications, coordinate local support
+
+### Specialized Roles
+6. **Procurement Officer** - Place government orders, manage suppliers
+7. **Veterinary Officer** - Monitor health, coordinate disease control
+8. **Extension Officer** - Provide technical support to farmers
+9. **Finance Officer** - Financial management and reporting
+10. **Auditor** - Verify compliance, access audit trails
+
+### End Users
+11. **Farmers** - Register farms, submit reports, manage orders
+
+> **New Feature**: Super Admin & YEA Official management system with invitation-based user onboarding.
+> See [docs/SUPER_ADMIN_YEA_OFFICIAL_GUIDE.md](./docs/SUPER_ADMIN_YEA_OFFICIAL_GUIDE.md) for details.
 
 ## 🌍 Geographic Coverage
 

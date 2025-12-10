@@ -14,12 +14,22 @@ class User(AbstractUser, RoleMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     class UserRole(models.TextChoices):
-        FARMER = 'FARMER', 'Farmer'
-        CONSTITUENCY_OFFICIAL = 'CONSTITUENCY_OFFICIAL', 'Constituency Official'
+        # System Administration (Highest Level)
+        SUPER_ADMIN = 'SUPER_ADMIN', 'Super Administrator'
+        # YEA Officials (Elevated Administrators)
+        YEA_OFFICIAL = 'YEA_OFFICIAL', 'YEA Official'
+        # Standard Administrative Roles
         NATIONAL_ADMIN = 'NATIONAL_ADMIN', 'National Administrator'
+        REGIONAL_COORDINATOR = 'REGIONAL_COORDINATOR', 'Regional Coordinator'
+        CONSTITUENCY_OFFICIAL = 'CONSTITUENCY_OFFICIAL', 'Constituency Official'
+        # Specialized Roles
         PROCUREMENT_OFFICER = 'PROCUREMENT_OFFICER', 'Procurement Officer'
         VETERINARY_OFFICER = 'VETERINARY_OFFICER', 'Veterinary Officer'
+        EXTENSION_OFFICER = 'EXTENSION_OFFICER', 'Extension Officer'
+        FINANCE_OFFICER = 'FINANCE_OFFICER', 'Finance Officer'
         AUDITOR = 'AUDITOR', 'Auditor'
+        # End User
+        FARMER = 'FARMER', 'Farmer'
     
     class PreferredContactMethod(models.TextChoices):
         EMAIL = 'EMAIL', 'Email'
