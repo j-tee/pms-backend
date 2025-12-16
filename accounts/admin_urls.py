@@ -31,6 +31,7 @@ from .batch_admin_views import (
 # Program action views
 from .batch_action_views import (
     AdminBatchToggleActiveView,
+    AdminBatchTogglePublishView,
     AdminBatchCloseApplicationsView,
     AdminBatchExtendDeadlineView,
     AdminBatchParticipantsView,
@@ -70,6 +71,7 @@ urlpatterns = [
     
     # Batch Management - Actions
     path('batches/<uuid:batch_id>/toggle-active/', AdminBatchToggleActiveView.as_view(), name='admin-batch-toggle-active'),
+    path('batches/<uuid:batch_id>/toggle-publish/', AdminBatchTogglePublishView.as_view(), name='admin-batch-toggle-publish'),
     path('batches/<uuid:batch_id>/close-applications/', AdminBatchCloseApplicationsView.as_view(), name='admin-batch-close-applications'),
     path('batches/<uuid:batch_id>/extend-deadline/', AdminBatchExtendDeadlineView.as_view(), name='admin-batch-extend-deadline'),
     path('batches/<uuid:batch_id>/duplicate/', AdminBatchDuplicateView.as_view(), name='admin-batch-duplicate'),

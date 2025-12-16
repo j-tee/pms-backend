@@ -66,6 +66,49 @@ class AdminBatchToggleActiveView(APIView):
         })
 
 
+class AdminBatchTogglePublishView(APIView):
+    """
+    POST /api/admin/batches/{batch_id}/toggle-publish/
+    
+    Publish or unpublish a batch to control public visibility.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, batch_id):
+        try:
+            program = Batch.objects.get(id=batch_id, archived=False)
+        except Batch.DoesNotExist:
+            return Response(
+                {'error': 'Batch not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if not BatchPolicy.can_edit_batch(request.user, program):
+            return Response(
+                {'error': 'Permission denied. Only Super Admin and National Admin can publish batches.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        is_published = request.data.get('is_published', not program.is_published)
+        reason = request.data.get('reason', '')
+        
+        program.is_published = is_published
+        program.last_modified_by = request.user
+        program.save()
+        
+        return Response({
+            'id': str(program.id),
+            'batch_code': program.batch_code,
+            'batch_name': program.batch_name,
+            'is_published': program.is_published,
+            'is_active': program.is_active,
+            'reason': reason,
+            'message': f'Batch {"published" if is_published else "unpublished"} successfully',
+            'note': 'Batch must be both published AND active to be visible to farmers',
+            'updated_at': program.updated_at.isoformat()
+        })
+
+
 class AdminBatchCloseApplicationsView(APIView):
     """
     POST /api/admin/programs/{batch_id}/close-applications/
