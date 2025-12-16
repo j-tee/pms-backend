@@ -33,8 +33,8 @@ def create_super_admin():
     
     # Get user input
     print("Enter Super Admin details:")
-    username = input("Username [alphalogiquetechnologies@gmail.com]: ").strip() or 'alphalogiquetechnologies@gmail.com'
-    email = input("Email [alphalogiquetechnologies@gmail.com]: ").strip() or 'alphalogiquetechnologies@gmail.com'
+    username = input("Username [admin]: ").strip() or 'admin'
+    email = input("Email: ").strip()
     first_name = input("First Name: ").strip()
     last_name = input("Last Name: ").strip()
     phone = input("Phone (Ghana format +233...): ").strip()

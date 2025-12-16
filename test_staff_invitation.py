@@ -31,8 +31,17 @@ User = get_user_model()
 
 # Configuration
 API_BASE_URL = os.environ.get('API_BASE_URL', 'http://localhost:8000')
-ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
+
+# Validate required environment variables
+if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+    print("❌ Error: ADMIN_USERNAME and ADMIN_PASSWORD environment variables are required")
+    print("\nUsage:")
+    print("  export ADMIN_USERNAME='your_admin_username'")
+    print("  export ADMIN_PASSWORD='your_admin_password'")
+    print("  python test_staff_invitation.py")
+    sys.exit(1)
 
 
 def print_header(text):
