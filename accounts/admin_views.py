@@ -924,6 +924,7 @@ class AdminStaffInvitationAcceptView(APIView):
         uidb64 = request.data.get('uidb64')
         token = request.data.get('token')
         password = request.data.get('password')
+        confirm_password = request.data.get('confirm_password')
         
         if not all([uidb64, token, password]):
             return Response(
@@ -931,8 +932,13 @@ class AdminStaffInvitationAcceptView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Use password for both if confirm_password not provided (backward compatibility)
+        if not confirm_password:
+            confirm_password = password
+        
         try:
-            user = StaffInvitationService.accept_invitation(uidb64, token, password)
+            result = StaffInvitationService.accept_invitation(uidb64, token, password, confirm_password)
+            user = result['user']
             
             return Response({
                 'id': str(user.id),
@@ -942,7 +948,7 @@ class AdminStaffInvitationAcceptView(APIView):
                 'last_name': user.last_name,
                 'role': user.role,
                 'is_active': user.is_active,
-                'message': 'Invitation accepted successfully. You can now log in with your credentials.'
+                'message': result['message']
             }, status=status.HTTP_200_OK)
             
         except ValueError as e:
@@ -970,14 +976,11 @@ class AdminStaffInvitationResendView(APIView):
         
         try:
             result = StaffInvitationService.resend_invitation(
-                admin_user=request.user,
-                user_id=user_id
+                user_id=user_id,
+                admin_user=request.user
             )
             
             return Response({
-                'id': str(result['user'].id),
-                'username': result['user'].username,
-                'email': result['user'].email,
                 'invitation_sent': True,
                 'expires_at': result['expires_at'].isoformat(),
                 'message': result['message']
@@ -1012,14 +1015,12 @@ class AdminStaffInvitationCancelView(APIView):
         from accounts.services.staff_invitation_service import StaffInvitationService
         
         try:
-            StaffInvitationService.cancel_invitation(
-                admin_user=request.user,
-                user_id=user_id
+            result = StaffInvitationService.cancel_invitation(
+                user_id=user_id,
+                admin_user=request.user
             )
             
-            return Response({
-                'message': 'Invitation cancelled successfully'
-            }, status=status.HTTP_200_OK)
+            return Response(result, status=status.HTTP_200_OK)
             
         except PermissionError as e:
             return Response(
