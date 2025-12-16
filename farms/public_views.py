@@ -285,8 +285,7 @@ class PublicBatchListView(APIView):
             if is_published:
                 queryset = queryset.filter(is_published=True)
             
-            if accepts_applications:
-                queryset = queryset.filter(accepts_applications=True)
+            # Note: accepts_applications is a property, not a field, so we filter after retrieval
             
             # Order by most recent
             queryset = queryset.order_by('-created_at')
@@ -294,8 +293,12 @@ class PublicBatchListView(APIView):
             # Serialize batches
             batches = []
             for batch in queryset:
-                # Check if batch accepts applications
-                accepts_apps = batch.status == 'open' and batch.is_active and batch.slots_available > 0
+                # Check if batch accepts applications (using the property)
+                accepts_apps = batch.is_accepting_applications
+                
+                # Apply accepts_applications filter if requested
+                if accepts_applications and not accepts_apps:
+                    continue
                 
                 batches.append({
                     'id': str(batch.id),
