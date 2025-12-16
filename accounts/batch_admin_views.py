@@ -397,6 +397,42 @@ class AdminBatchListView(APIView):
             )
 
 
+class AdminBatchDetailUpdateDeleteView(APIView):
+    """
+    Combined view for batch detail operations
+    
+    GET /api/admin/batches/{batch_id}/     - Get batch details
+    PUT /api/admin/batches/{batch_id}/     - Full update
+    PATCH /api/admin/batches/{batch_id}/   - Partial update
+    DELETE /api/admin/batches/{batch_id}/  - Archive batch
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, batch_id):
+        """Get detailed batch information - delegates to AdminBatchDetailView"""
+        view = AdminBatchDetailView()
+        view.request = request
+        return view.get(request, batch_id)
+    
+    def put(self, request, batch_id):
+        """Full update - delegates to AdminBatchUpdateView"""
+        view = AdminBatchUpdateView()
+        view.request = request
+        return view.put(request, batch_id)
+    
+    def patch(self, request, batch_id):
+        """Partial update - delegates to AdminBatchUpdateView"""
+        view = AdminBatchUpdateView()
+        view.request = request
+        return view.patch(request, batch_id)
+    
+    def delete(self, request, batch_id):
+        """Archive batch - delegates to AdminBatchDeleteView"""
+        view = AdminBatchDeleteView()
+        view.request = request
+        return view.delete(request, batch_id)
+
+
 class AdminBatchDetailView(APIView):
     """
     GET /api/admin/programs/{batch_id}/

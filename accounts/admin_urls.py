@@ -25,6 +25,7 @@ from .batch_admin_views import (
     AdminBatchCreateView,
     AdminBatchUpdateView,
     AdminBatchDeleteView,
+    AdminBatchDetailUpdateDeleteView,
 )
 
 # Program action views
@@ -65,9 +66,7 @@ urlpatterns = [
     
     # Batch Management - CRUD
     path('batches/', AdminBatchListView.as_view(), name='admin-batch-list'),  # GET & POST
-    path('batches/<uuid:batch_id>/', AdminBatchDetailView.as_view(), name='admin-batch-detail'),  # GET
-    path('batches/<uuid:batch_id>/', AdminBatchUpdateView.as_view(), name='admin-batch-update'),  # PUT/PATCH
-    path('batches/<uuid:batch_id>/', AdminBatchDeleteView.as_view(), name='admin-batch-delete'),  # DELETE
+    path('batches/<uuid:batch_id>/', AdminBatchDetailUpdateDeleteView.as_view(), name='admin-batch-detail'),  # GET, PUT, PATCH, DELETE
     
     # Batch Management - Actions
     path('batches/<uuid:batch_id>/toggle-active/', AdminBatchToggleActiveView.as_view(), name='admin-batch-toggle-active'),
