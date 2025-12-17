@@ -200,6 +200,7 @@ class AdminBatchListView(APIView):
                     'average_review_time_days': avg_review_time
                 },
                 'is_active': program.is_active,
+                'is_published': program.is_published,
                 'is_accepting_applications': program.is_accepting_applications,
                 'created_at': program.created_at.isoformat(),
                 'updated_at': program.updated_at.isoformat(),

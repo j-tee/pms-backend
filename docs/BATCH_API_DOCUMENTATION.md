@@ -1,7 +1,7 @@
 # Backend Batch CRUD API Documentation
 
-**Date:** December 16, 2025  
-**Version:** 1.1  
+**Date:** December 17, 2025  
+**Version:** 1.2  
 **Status:** Production Ready  
 **Base URL (Production):** `https://pms.alphalogictech.com`  
 **Base URL (Development):** `http://localhost:8000`
@@ -1085,6 +1085,18 @@ print(f'Is staff: {user.is_staff}')
 
 ## 📝 Change Log
 
+### **Version 1.2 - December 17, 2025**
+
+**Fixed:**
+- ✅ **Critical Bug**: `is_published` field was missing from batch list API response
+  - **Issue**: Frontend always showed "Unpublished" badge because field was missing
+  - **Root Cause**: List view response only included `is_active` and `is_accepting_applications`, but not `is_published`
+  - **Fix**: Added `is_published` field to list view response in `AdminBatchListView`
+  - **Impact**: Frontend badges now correctly show published/unpublished status
+
+**Files Modified:**
+- `accounts/batch_admin_views.py` - Added `is_published` to list view response
+
 ### **Version 1.1 - December 16, 2025**
 
 **Added:**
@@ -1134,6 +1146,6 @@ For technical support or questions about this API:
 
 ---
 
-**Document Version:** 1.1  
-**Last Updated:** December 16, 2025  
+**Document Version:** 1.2  
+**Last Updated:** December 17, 2025  
 **Status:** ✅ Production Ready
