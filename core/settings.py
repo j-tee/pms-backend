@@ -39,6 +39,49 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 
 
+# =============================================================================
+# REDIS & CACHING (Required for scaling)
+# =============================================================================
+
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/1')
+
+# Cache configuration - uses Redis in production for cross-worker caching
+if os.getenv('REDIS_ENABLED', 'False') == 'True':
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+            'KEY_PREFIX': 'pms',
+            'TIMEOUT': 300,  # 5 minutes default
+        }
+    }
+    # Store sessions in Redis
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+    SESSION_CACHE_ALIAS = 'default'
+else:
+    # Development: use local memory cache
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+        }
+    }
+
+
+# =============================================================================
+# CELERY CONFIGURATION (Background Tasks)
+# =============================================================================
+
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+
+# Celery Beat scheduler (for periodic tasks)
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -58,6 +101,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_filters',
+    'django_celery_beat',  # Celery beat scheduler
     
     # Authentication & Social Auth
     'allauth',
@@ -432,11 +476,12 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
 
 
 # =============================================================================
-# SUBSCRIPTION SETTINGS
+# MARKETPLACE ACTIVATION SETTINGS
 # =============================================================================
 
-# Marketplace subscription pricing (all farmers pay same price)
-MARKETPLACE_SUBSCRIPTION_PRICE = float(os.getenv('MARKETPLACE_SUBSCRIPTION_PRICE', 100.00))
+# Marketplace activation fee (all farmers pay same price) - avoid "subscription" terminology
+MARKETPLACE_ACTIVATION_FEE = float(os.getenv('MARKETPLACE_ACTIVATION_FEE', 50.00))
+MARKETPLACE_SUBSCRIPTION_PRICE = MARKETPLACE_ACTIVATION_FEE  # Backward compatibility alias
 
 # Trial and grace periods
 MARKETPLACE_TRIAL_DAYS = int(os.getenv('MARKETPLACE_TRIAL_DAYS', 14))

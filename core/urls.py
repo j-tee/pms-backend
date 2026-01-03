@@ -18,15 +18,26 @@ from django.urls import path, include
 from django.views.generic import RedirectView
 from core.admin_site import yea_admin_site
 
+# Import platform settings URL patterns
+from sales_revenue.platform_settings_urls import admin_urlpatterns as platform_settings_admin_urls
+from sales_revenue.platform_settings_urls import public_urlpatterns as platform_settings_public_urls
+
 urlpatterns = [
     path('', RedirectView.as_view(url='/admin/', permanent=False)),
     path('admin/', yea_admin_site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/dashboards/', include('dashboards.urls')),
     path('api/admin/', include('accounts.admin_urls')),
+    path('api/admin/inventory/', include('sales_revenue.inventory_urls', namespace='admin-inventory')),  # Government inventory analytics
+    path('api/admin/platform-settings/', include((platform_settings_admin_urls, 'platform_settings'))),  # Platform settings (Super Admin)
     path('api/farms/', include('farms.management_urls')),  # Authenticated farm management
     path('api/flocks/', include('flock_management.urls')),  # Flock management
     path('api/feed/', include('feed_inventory.urls')),  # Feed inventory management
+    path('api/inventory/', include('sales_revenue.inventory_urls')),  # Farmer inventory management
+    path('api/marketplace/', include('sales_revenue.marketplace_urls')),  # Marketplace (farmer-scoped)
+    path('api/processing/', include('sales_revenue.processing_urls')),  # Processing batches (birds → products)
+    path('api/public/marketplace/', include('sales_revenue.public_marketplace_urls')),  # Public marketplace (no auth)
+    path('api/public/platform-settings/', include((platform_settings_public_urls, 'public_platform_settings'))),  # Public platform settings
     path('api/', include('farms.urls')),  # Public farm application endpoints
 ]
 

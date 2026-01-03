@@ -8,24 +8,26 @@ from django.utils import timezone
 
 class SubscriptionPlan(models.Model):
     """
-    OPTIONAL subscription plans for marketplace & sales features.
+    Marketplace Activation Plans (renamed from "subscription" per monetization strategy).
     Core farm management is FREE for all farmers.
-    Currently: GHS 100/month for marketplace access.
+    Currently: GHS 50/month for marketplace access (Seller Access Fee).
     ALL farmers (government and independent) pay the same price for marketplace features.
+    
+    NOTE: Avoid using "subscription" terminology in UI/API - use "Marketplace Activation" instead.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(
-        help_text="Subscription unlocks PUBLIC MARKETPLACE visibility and sales features"
+        help_text="Marketplace activation unlocks PUBLIC MARKETPLACE visibility and sales features"
     )
     
     # Pricing
     price_monthly = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        default=Decimal('100.00'),
-        help_text="Monthly subscription fee (GHS)"
+        default=Decimal('50.00'),
+        help_text="Monthly marketplace activation fee (GHS)"
     )
     
     # Features
@@ -77,10 +79,13 @@ class SubscriptionPlan(models.Model):
 
 class Subscription(models.Model):
     """
-    OPTIONAL subscription for marketplace & sales features.
-    Farmers without subscription can still use core farm management (FREE).
-    Only subscribed farms appear on public marketplace.
-    ALL farmers (government and independent) pay GHS 100/month for marketplace access.
+    Marketplace Activation record for farms.
+    Farmers without activation can still use core farm management (FREE).
+    Only activated farms appear on public marketplace.
+    ALL farmers (government and independent) pay GHS 50/month for marketplace access.
+    
+    NOTE: Model kept as "Subscription" for backward compatibility, but UI/API should
+    use "Marketplace Activation" or "Seller Access" terminology.
     """
     STATUS_CHOICES = [
         ('trial', 'Trial Period'),

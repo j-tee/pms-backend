@@ -129,6 +129,87 @@ class PlatformSettings(models.Model):
         help_text="Automatically refund failed payments after timeout"
     )
     
+    # =========================================================================
+    # MARKETPLACE ACTIVATION / MONETIZATION SETTINGS
+    # =========================================================================
+    
+    # Marketplace Activation Fee (renamed from "subscription" per strategy)
+    marketplace_activation_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('50.00'),
+        validators=[MinValueValidator(0)],
+        help_text="Monthly marketplace activation fee (GHS). Default: 50.00"
+    )
+    
+    marketplace_trial_days = models.PositiveIntegerField(
+        default=14,
+        validators=[MinValueValidator(0), MaxValueValidator(90)],
+        help_text="Free trial period for new marketplace sellers (days)"
+    )
+    
+    marketplace_grace_period_days = models.PositiveIntegerField(
+        default=5,
+        validators=[MinValueValidator(0), MaxValueValidator(30)],
+        help_text="Grace period after payment due before suspension (days)"
+    )
+    
+    # Government Subsidy Settings
+    enable_government_subsidy = models.BooleanField(
+        default=False,
+        help_text="Allow government-subsidized marketplace access for enrolled farmers"
+    )
+    
+    government_subsidy_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('100.00'),
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Percentage of marketplace fee covered by government (0-100)"
+    )
+    
+    # Verified/Priority Seller Tier (Phase 2)
+    verified_seller_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('50.00'),
+        validators=[MinValueValidator(0)],
+        help_text="Monthly fee for verified/priority seller status (GHS)"
+    )
+    
+    enable_verified_seller_tier = models.BooleanField(
+        default=False,
+        help_text="Enable verified/priority seller tier (Phase 2)"
+    )
+    
+    # Transaction Commission Settings (Phase 2)
+    enable_transaction_commission = models.BooleanField(
+        default=False,
+        help_text="Enable commission on completed marketplace sales (Phase 2)"
+    )
+    
+    # Advertising Settings
+    enable_ads = models.BooleanField(
+        default=True,
+        help_text="Enable Google AdSense ads on platform"
+    )
+    
+    # Free Tier Feature Flags
+    free_tier_can_view_marketplace = models.BooleanField(
+        default=True,
+        help_text="Free users can view marketplace listings (without contact info)"
+    )
+    
+    free_tier_can_view_prices = models.BooleanField(
+        default=True,
+        help_text="Free users can view market price dashboards"
+    )
+    
+    free_tier_can_access_education = models.BooleanField(
+        default=True,
+        help_text="Free users can access educational content"
+    )
+    
     # Metadata
     last_modified_by = models.ForeignKey(
         'accounts.User',
@@ -328,7 +409,7 @@ class EggSale(models.Model):
     )
     
     # Sale Details
-    sale_date = models.DateField(default=timezone.now)
+    sale_date = models.DateField(default=timezone.localdate)
     quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -418,10 +499,59 @@ class EggSale(models.Model):
         self.farmer_payout = self.subtotal - self.platform_commission
     
     def save(self, *args, **kwargs):
+        # Track old status for inventory update
+        old_status = None
+        if self.pk:
+            old_instance = EggSale.objects.filter(pk=self.pk).first()
+            if old_instance:
+                old_status = old_instance.status
+        
         # Auto-calculate amounts before saving
         if not self.subtotal or self.subtotal == 0:
             self.calculate_amounts()
+        
         super().save(*args, **kwargs)
+        
+        # Update inventory when sale is completed
+        if self.status == 'completed' and old_status != 'completed':
+            self._deduct_from_inventory()
+    
+    def _deduct_from_inventory(self):
+        """
+        Deduct eggs from inventory when sale is completed.
+        Converts crates to individual eggs for inventory tracking.
+        """
+        from .inventory_models import (
+            FarmInventory, InventoryCategory, StockMovementType
+        )
+        
+        # Convert crates to pieces if needed (1 crate = 30 eggs)
+        if self.unit == 'crate':
+            eggs_sold = int(self.quantity) * 30
+        else:
+            eggs_sold = int(self.quantity)
+        
+        try:
+            # Find eggs inventory for this farm
+            inventory = FarmInventory.objects.filter(
+                farm=self.farm,
+                category=InventoryCategory.EGGS,
+                is_active=True
+            ).first()
+            
+            if inventory and inventory.quantity_available >= eggs_sold:
+                inventory.remove_stock(
+                    quantity=eggs_sold,
+                    movement_type=StockMovementType.SALE,
+                    reference_record=self,
+                    unit_price=self.price_per_unit,
+                    notes=f"Sale to {self.customer.get_full_name()}"
+                )
+        except Exception as e:
+            # Log error but don't fail the sale
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to update inventory for egg sale {self.id}: {e}")
 
 
 class BirdSale(models.Model):
@@ -455,7 +585,7 @@ class BirdSale(models.Model):
     )
     
     # Sale Details
-    sale_date = models.DateField(default=timezone.now)
+    sale_date = models.DateField(default=timezone.localdate)
     bird_type = models.CharField(max_length=20, choices=BIRD_TYPE_CHOICES)
     quantity = models.IntegerField(validators=[MinValueValidator(1)])
     price_per_bird = models.DecimalField(
@@ -511,9 +641,51 @@ class BirdSale(models.Model):
         self.farmer_payout = self.subtotal - self.platform_commission
     
     def save(self, *args, **kwargs):
+        # Track old status for inventory update
+        old_status = None
+        if self.pk:
+            old_instance = BirdSale.objects.filter(pk=self.pk).first()
+            if old_instance:
+                old_status = old_instance.status
+        
         if not self.subtotal or self.subtotal == 0:
             self.calculate_amounts()
+        
         super().save(*args, **kwargs)
+        
+        # Update inventory when sale is completed
+        if self.status == 'completed' and old_status != 'completed':
+            self._deduct_from_inventory()
+    
+    def _deduct_from_inventory(self):
+        """
+        Deduct birds from inventory when sale is completed.
+        """
+        from .inventory_models import (
+            FarmInventory, InventoryCategory, StockMovementType
+        )
+        
+        try:
+            # Find birds inventory for this farm and bird type
+            inventory = FarmInventory.objects.filter(
+                farm=self.farm,
+                category=InventoryCategory.BIRDS,
+                is_active=True
+            ).first()
+            
+            if inventory and inventory.quantity_available >= self.quantity:
+                inventory.remove_stock(
+                    quantity=self.quantity,
+                    movement_type=StockMovementType.SALE,
+                    reference_record=self,
+                    unit_price=self.price_per_bird,
+                    notes=f"Sale to {self.customer.get_full_name()} - {self.bird_type}"
+                )
+        except Exception as e:
+            # Log error but don't fail the sale
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to update inventory for bird sale {self.id}: {e}")
 
 
 class Payment(models.Model):

@@ -50,7 +50,9 @@ class SalesPolicy(BasePolicy):
         Access Rules:
         - Must be farm owner
         - Must have marketplace enabled
-        - Subscription must be active
+        - Marketplace activation must be active
+        
+        NOTE: Avoid "subscription" terminology - use "marketplace activation" or "seller access".
         """
         # Must be farmer
         if not cls.is_farmer(user):
@@ -64,14 +66,14 @@ class SalesPolicy(BasePolicy):
         if not farm.marketplace_enabled:
             return False
         
-        # Check subscription status
+        # Check marketplace activation status
         if farm.subscription_type == 'none':
             return False
         
-        # If has subscription object, check status
+        # If has activation record, check status
         if hasattr(farm, 'subscription'):
-            subscription = farm.subscription
-            if subscription.status not in ['trial', 'active']:
+            activation = farm.subscription
+            if activation.status not in ['trial', 'active']:
                 return False
         
         return True
