@@ -129,6 +129,7 @@ INSTALLED_APPS = [
     'medication_management',
     'sales_revenue',
     'subscriptions',
+    'advertising',
 ]
 
 SITE_ID = 1  # Required for django.contrib.sites

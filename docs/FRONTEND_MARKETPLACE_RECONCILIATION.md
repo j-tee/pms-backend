@@ -1,7 +1,7 @@
 # Frontend Marketplace Reconciliation Guide
 
 **Date:** January 3, 2026  
-**Version:** 2.0  
+**Version:** 2.1  
 **Status:** Production Ready  
 **Base URL:** `https://pms.alphalogictech.com`
 
@@ -18,6 +18,8 @@ This document outlines all marketplace-related backend changes that require fron
 | **Terminology** | "Subscription" → "Marketplace Activation" | UI text, variable names |
 | **Farm Model** | New `subscription_type` values | Farmer dashboard, status displays |
 | **Platform Settings** | New public endpoint for pricing | Pricing displays, signup flows |
+| **Partner Offers** | New advertising system | Farmer dashboard, partner offers section |
+| **Advertise With Us** | Lead capture for advertisers | New public page |
 | **Celery/Redis** | Background task processing | No frontend changes needed |
 | **Scaling** | Production-ready architecture | No frontend changes needed |
 
@@ -472,7 +474,322 @@ No new frontend environment variables required. All pricing and settings are fet
 
 ---
 
-## 📞 Support
+## � Partner Offers / Advertising System
+
+### Overview
+
+The platform now includes a **Partner Offers** system for displaying targeted promotions from agricultural partners (feed suppliers, banks, insurance, etc.) on farmer dashboards.
+
+**Key Concept:** This replaces generic Google AdSense on authenticated pages with curated, high-value offers relevant to farmers.
+
+### New Endpoints
+
+#### 1. Get Partner Offers for Farmer Dashboard
+
+```http
+GET /api/advertising/offers/
+Authorization: Bearer {token}
+```
+
+**Query Parameters:**
+- `source` (optional): Page source for analytics (e.g., `dashboard`, `marketplace`)
+
+**Response:**
+```json
+{
+    "offers": [
+        {
+            "id": "offer-uuid",
+            "partner_name": "Olam Ghana",
+            "partner_logo": "https://pms.alphalogictech.com/media/partners/logos/olam.png",
+            "partner_category": "Feed & Nutrition Supplier",
+            "partner_verified": true,
+            "title": "10% Off Starter Feed - New Year Special",
+            "description": "Get premium starter feed for your day-old chicks at 10% off. Use code YEAPOULTRY at checkout.",
+            "offer_type": "discount",
+            "offer_type_display": "Discount / Promo Code",
+            "image": "https://pms.alphalogictech.com/media/partners/offers/starter-feed.jpg",
+            "cta_text": "Shop Now",
+            "cta_url": "https://olamghana.com/poultry-feed?promo=YEAPOULTRY",
+            "promo_code": "YEAPOULTRY",
+            "is_featured": true
+        },
+        {
+            "id": "offer-uuid-2",
+            "partner_name": "Ecobank Ghana",
+            "partner_logo": "...",
+            "partner_category": "Banks & Financial Services",
+            "partner_verified": true,
+            "title": "Agricultural Loan - Up to GHS 50,000",
+            "description": "Expand your poultry operation with our low-interest agricultural loans. Pre-qualify in 5 minutes.",
+            "offer_type": "loan",
+            "offer_type_display": "Loan / Financing",
+            "image": "...",
+            "cta_text": "Check Eligibility",
+            "cta_url": "https://ecobank.com/agri-loan",
+            "promo_code": "",
+            "is_featured": false
+        }
+    ],
+    "count": 2
+}
+```
+
+---
+
+#### 2. Record Offer Click
+
+Call this when a farmer clicks on an offer:
+
+```http
+POST /api/advertising/offers/click/
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+    "offer_id": "offer-uuid",
+    "source_page": "dashboard"
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "redirect_url": "https://olamghana.com/poultry-feed?promo=YEAPOULTRY"
+}
+```
+
+---
+
+#### 3. Dismiss Offer
+
+Call this when a farmer dismisses/closes an offer:
+
+```http
+POST /api/advertising/offers/{offer_id}/dismiss/
+Authorization: Bearer {token}
+```
+
+---
+
+### Frontend Implementation
+
+#### Partner Offers Component for Farmer Dashboard
+
+```jsx
+function PartnerOffers() {
+    const [offers, setOffers] = useState([]);
+    
+    useEffect(() => {
+        fetch('/api/advertising/offers/?source=dashboard', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(res => res.json())
+        .then(data => setOffers(data.offers));
+    }, []);
+    
+    const handleOfferClick = async (offer) => {
+        // Record click for analytics
+        await fetch('/api/advertising/offers/click/', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                offer_id: offer.id,
+                source_page: 'dashboard'
+            })
+        });
+        
+        // Open offer URL
+        window.open(offer.cta_url, '_blank');
+    };
+    
+    return (
+        <div className="partner-offers">
+            <h3>Special Offers for Farmers</h3>
+            {offers.map(offer => (
+                <OfferCard 
+                    key={offer.id}
+                    offer={offer}
+                    onClick={() => handleOfferClick(offer)}
+                    onDismiss={() => dismissOffer(offer.id)}
+                />
+            ))}
+        </div>
+    );
+}
+```
+
+---
+
+## 📝 Advertise With Us Page
+
+### Public Endpoint (No Auth)
+
+```http
+GET /api/public/advertise/
+```
+
+Returns advertising info and form options:
+
+```json
+{
+    "title": "Advertise on YEA Poultry Platform",
+    "description": "Reach thousands of verified poultry farmers across Ghana",
+    "benefits": [
+        "Direct access to verified, active poultry farmers",
+        "Target by region, flock size, or production volume",
+        "Farmers with transaction history and production data",
+        "Premium placement on farmer dashboards",
+        "Detailed analytics and reporting"
+    ],
+    "categories": [
+        {"value": "feed_supplier", "label": "Feed & Nutrition Supplier"},
+        {"value": "equipment", "label": "Equipment & Infrastructure"},
+        {"value": "veterinary", "label": "Veterinary Services"},
+        {"value": "financial", "label": "Banks & Financial Services"},
+        {"value": "insurance", "label": "Insurance Provider"},
+        ...
+    ],
+    "budget_ranges": [
+        {"value": "under_500", "label": "Under GHS 500/month"},
+        {"value": "500_2000", "label": "GHS 500 - 2,000/month"},
+        {"value": "2000_5000", "label": "GHS 2,000 - 5,000/month"},
+        {"value": "over_5000", "label": "Over GHS 5,000/month"},
+        {"value": "not_sure", "label": "Not Sure Yet"}
+    ],
+    "platform_stats": {
+        "total_farmers": 1250,
+        "active_farmers": 890,
+        "regions_covered": 10
+    }
+}
+```
+
+### Submit Advertiser Lead
+
+```http
+POST /api/public/advertise/
+Content-Type: application/json
+
+{
+    "company_name": "Agri Feeds Ltd",
+    "category": "feed_supplier",
+    "website": "https://agrifeeds.gh",
+    "contact_name": "John Mensah",
+    "contact_email": "john@agrifeeds.gh",
+    "contact_phone": "+233244123456",
+    "job_title": "Marketing Manager",
+    "advertising_interest": "We want to promote our new layer feed to farmers in Greater Accra and Ashanti regions.",
+    "target_audience": "Farmers with 500+ birds, layer operations",
+    "budget_range": "2000_5000"
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Thank you for your interest! Our team will contact you within 2 business days.",
+    "lead_id": "lead-uuid"
+}
+```
+
+### Frontend Page Wireframe
+
+```
+┌────────────────────────────────────────────────────────────┐
+│            ADVERTISE ON YEA POULTRY PLATFORM               │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  Reach thousands of verified poultry farmers across Ghana  │
+│                                                            │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐                     │
+│  │  1,250  │  │   890   │  │   10    │                     │
+│  │ Farmers │  │ Active  │  │ Regions │                     │
+│  └─────────┘  └─────────┘  └─────────┘                     │
+│                                                            │
+│  ✓ Direct access to verified farmers                       │
+│  ✓ Target by region, flock size, production                │
+│  ✓ Premium placement on dashboards                         │
+│  ✓ Detailed analytics and reporting                        │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│                    GET STARTED                             │
+│                                                            │
+│  Company Name: [_______________________]                   │
+│  Category:     [Feed Supplier       ▼]                     │
+│  Website:      [_______________________]                   │
+│                                                            │
+│  Contact Name: [_______________________]                   │
+│  Email:        [_______________________]                   │
+│  Phone:        [_______________________]                   │
+│                                                            │
+│  What would you like to advertise?                         │
+│  [                                    ]                    │
+│  [                                    ]                    │
+│                                                            │
+│  Monthly Budget: [GHS 2,000-5,000    ▼]                    │
+│                                                            │
+│              [SUBMIT INQUIRY]                              │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🛠️ Admin Advertising Management
+
+### Endpoints for Super Admin / YEA Official
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/admin/advertising/partners/` | GET, POST | List/create partners |
+| `/api/admin/advertising/partners/{id}/` | GET, PUT, DELETE | Partner details |
+| `/api/admin/advertising/offers/` | GET, POST | List/create offers |
+| `/api/admin/advertising/offers/{id}/` | GET, PUT, DELETE | Offer details |
+| `/api/admin/advertising/leads/` | GET | List advertiser leads |
+| `/api/admin/advertising/leads/{id}/` | GET, PUT | Lead details/update status |
+| `/api/admin/advertising/analytics/` | GET | Advertising analytics |
+
+### Analytics Response
+
+```json
+{
+    "partners": {
+        "total": 5,
+        "verified": 3
+    },
+    "offers": {
+        "active": 8,
+        "total_impressions": 15420,
+        "total_clicks": 342
+    },
+    "leads": {
+        "new": 3,
+        "total": 12,
+        "converted": 5,
+        "conversion_rate": "41.7%"
+    },
+    "top_offers": [
+        {
+            "id": "...",
+            "title": "10% Off Starter Feed",
+            "partner_name": "Olam Ghana",
+            "impressions": 5230,
+            "clicks": 156,
+            "click_through_rate": "2.98"
+        }
+    ]
+}
+```
+
+---
+
+## �📞 Support
 
 For questions about these changes:
 - Backend issues: Check API error responses

@@ -22,6 +22,11 @@ from core.admin_site import yea_admin_site
 from sales_revenue.platform_settings_urls import admin_urlpatterns as platform_settings_admin_urls
 from sales_revenue.platform_settings_urls import public_urlpatterns as platform_settings_public_urls
 
+# Import advertising URL patterns
+from advertising.urls import farmer_urlpatterns as advertising_farmer_urls
+from advertising.urls import public_urlpatterns as advertising_public_urls
+from advertising.urls import admin_urlpatterns as advertising_admin_urls
+
 urlpatterns = [
     path('', RedirectView.as_view(url='/admin/', permanent=False)),
     path('admin/', yea_admin_site.urls),
@@ -38,6 +43,9 @@ urlpatterns = [
     path('api/processing/', include('sales_revenue.processing_urls')),  # Processing batches (birds → products)
     path('api/public/marketplace/', include('sales_revenue.public_marketplace_urls')),  # Public marketplace (no auth)
     path('api/public/platform-settings/', include((platform_settings_public_urls, 'public_platform_settings'))),  # Public platform settings
+    path('api/public/advertise/', include((advertising_public_urls, 'advertise'))),  # Advertise with us (lead capture)
+    path('api/advertising/', include((advertising_farmer_urls, 'advertising'))),  # Partner offers for farmers
+    path('api/admin/advertising/', include((advertising_admin_urls, 'admin_advertising'))),  # Admin advertising management
     path('api/', include('farms.urls')),  # Public farm application endpoints
 ]
 
