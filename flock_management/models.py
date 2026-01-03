@@ -657,6 +657,10 @@ class DailyProduction(models.Model):
         return f"{self.flock.flock_number} - {self.production_date}"
     
     def save(self, *args, **kwargs):
+        # Track if this is an update vs create
+        is_update = bool(self.pk)
+        old_good_eggs = 0
+        
         # Calculate production rate
         if self.flock.current_count > 0:
             self.production_rate_percent = (
@@ -664,9 +668,10 @@ class DailyProduction(models.Model):
             ) * 100
         
         # Update flock metrics
-        if self.pk:  # Only on update, not create
+        if is_update:
             old_record = DailyProduction.objects.filter(pk=self.pk).first()
             if old_record:
+                old_good_eggs = old_record.good_eggs
                 # Reverse old values
                 self.flock.current_count += old_record.birds_died
                 self.flock.current_count += old_record.birds_sold
@@ -692,6 +697,75 @@ class DailyProduction(models.Model):
         self.flock.save()
         
         super().save(*args, **kwargs)
+        
+        # ===== UPDATE INVENTORY WITH GOOD EGGS =====
+        # Only good eggs go to inventory for sale
+        self._update_egg_inventory(old_good_eggs, is_update)
+    
+    def _update_egg_inventory(self, old_good_eggs, is_update):
+        """
+        Add good eggs to farm inventory when production is recorded.
+        
+        This bridges production tracking to sales inventory:
+        - Only 'good_eggs' are added to inventory (sellable)
+        - Broken, dirty, small eggs are tracked but not added to inventory
+        - On update, adjusts for difference between old and new values
+        """
+        from sales_revenue.inventory_models import (
+            FarmInventory, InventoryCategory, StockMovementType, InventoryBatch
+        )
+        
+        # Calculate net change in good eggs
+        if is_update:
+            eggs_to_add = self.good_eggs - old_good_eggs
+        else:
+            eggs_to_add = self.good_eggs
+        
+        # Skip if no change
+        if eggs_to_add == 0:
+            return
+        
+        # Get or create inventory record for eggs
+        inventory = FarmInventory.get_or_create_for_category(
+            farm=self.farm,
+            category=InventoryCategory.EGGS,
+            product_name='Fresh Eggs',
+            unit='piece'
+        )
+        
+        if eggs_to_add > 0:
+            # Add eggs to inventory
+            inventory.add_stock(
+                quantity=eggs_to_add,
+                movement_type=StockMovementType.PRODUCTION,
+                source_record=self,
+                notes=f"From {self.flock.flock_number} on {self.production_date}",
+                recorded_by=self.recorded_by,
+                stock_date=self.production_date
+            )
+            
+            # Create batch for FIFO tracking
+            InventoryBatch.objects.create(
+                inventory=inventory,
+                source_flock=self.flock,
+                source_production=self,
+                initial_quantity=eggs_to_add,
+                current_quantity=eggs_to_add,
+                production_date=self.production_date
+            )
+        elif eggs_to_add < 0:
+            # Handle reduction (correction) - remove from inventory
+            try:
+                inventory.remove_stock(
+                    quantity=abs(eggs_to_add),
+                    movement_type=StockMovementType.ADJUSTMENT_REMOVE,
+                    reference_record=self,
+                    notes=f"Correction for {self.flock.flock_number} on {self.production_date}",
+                    recorded_by=self.recorded_by
+                )
+            except ValueError:
+                # If not enough stock, just log and continue
+                pass
     
     def clean(self):
         """Validate business logic"""

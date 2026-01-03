@@ -586,37 +586,39 @@ class Farm(models.Model):
     )
     
     # ============================================================================
-    # SECTION 9C: MARKETPLACE SUBSCRIPTION (OPTIONAL)
+    # SECTION 9C: MARKETPLACE ACTIVATION (Seller Access Fee)
+    # NOTE: Avoid "subscription" terminology in UI/API - use "Marketplace Activation"
     # ============================================================================
     
-    SUBSCRIPTION_TYPE_CHOICES = [
-        ('none', 'No Subscription (Free Core Platform)'),
-        ('government_subsidized', 'Government-Subsidized Marketplace (Free/Reduced)'),
-        ('standard', 'Standard Marketplace Subscription (GHS 100/month)'),
-        ('premium', 'Premium Subscription (Future)'),
+    MARKETPLACE_ACCESS_TYPE_CHOICES = [
+        ('none', 'No Marketplace Access (Free Core Platform)'),
+        ('government_subsidized', 'Government-Subsidized Marketplace Access'),
+        ('standard', 'Standard Marketplace Access (GHS 50/month)'),
+        ('verified', 'Verified Seller (GHS 50 + Priority Features)'),
     ]
     
+    # Keep field name for backward compatibility, but update choices
     subscription_type = models.CharField(
         max_length=30,
-        choices=SUBSCRIPTION_TYPE_CHOICES,
+        choices=MARKETPLACE_ACCESS_TYPE_CHOICES,
         default='none',
-        help_text="Type of marketplace subscription"
+        help_text="Type of marketplace access (activation level)"
     )
     
     marketplace_enabled = models.BooleanField(
         default=False,
-        help_text="Is marketplace access enabled (requires subscription)"
+        help_text="Is marketplace access enabled (requires activation payment)"
     )
     
     product_images_count = models.PositiveIntegerField(
         default=0,
-        help_text="Current number of product images (max 20 with subscription)"
+        help_text="Current number of product images (max 20 with activation)"
     )
     
     # Government Subsidy Tracking
     government_subsidy_active = models.BooleanField(
         default=False,
-        help_text="Is farmer receiving government marketplace subscription subsidy"
+        help_text="Is farmer receiving government marketplace activation subsidy"
     )
     government_subsidy_start_date = models.DateField(
         null=True,
@@ -883,11 +885,11 @@ class Farm(models.Model):
     
     @property
     def has_marketplace_access(self):
-        """Check if farmer has active marketplace access"""
+        """Check if farmer has active marketplace access (activation)"""
         return self.marketplace_enabled and self.subscription_type in [
             'government_subsidized',
             'standard',
-            'premium'
+            'verified'
         ]
     
     @property
@@ -902,7 +904,7 @@ class Farm(models.Model):
     @property
     def core_platform_accessible(self):
         """
-        Core farm management is ALWAYS accessible regardless of subscription.
+        Core farm management is ALWAYS accessible regardless of marketplace activation.
         Returns True for all approved farmers.
         """
         return self.application_status == 'Approved'

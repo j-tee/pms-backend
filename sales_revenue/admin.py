@@ -2,7 +2,122 @@ from django.contrib import admin, messages
 from django.utils.html import format_html
 from django.utils import timezone
 from .models import PlatformSettings, Customer, EggSale, BirdSale, Payment, FarmerPayout, FraudAlert
+from .marketplace_models import ProductCategory, Product, ProductImage, MarketplaceOrder, OrderItem, MarketplaceStatistics
 
+
+# =============================================================================
+# MARKETPLACE ADMIN
+# =============================================================================
+
+@admin.register(ProductCategory)
+class ProductCategoryAdmin(admin.ModelAdmin):
+    """Admin for product categories."""
+    list_display = ['name', 'slug', 'is_active', 'display_order', 'created_at']
+    list_filter = ['is_active']
+    search_fields = ['name', 'description']
+    prepopulated_fields = {'slug': ('name',)}
+    ordering = ['display_order', 'name']
+
+
+class ProductImageInline(admin.TabularInline):
+    model = ProductImage
+    extra = 1
+
+
+@admin.register(Product)
+class ProductAdmin(admin.ModelAdmin):
+    """Admin for marketplace products."""
+    list_display = [
+        'name', 'farm', 'category', 'price', 'unit',
+        'stock_quantity', 'status', 'is_featured', 'total_sold', 'created_at'
+    ]
+    list_filter = ['status', 'category', 'is_featured', 'track_inventory']
+    search_fields = ['name', 'sku', 'description', 'farm__farm_name']
+    readonly_fields = ['total_sold', 'total_revenue', 'average_rating', 'review_count', 'created_at', 'updated_at']
+    inlines = [ProductImageInline]
+    
+    fieldsets = (
+        ('Product Information', {
+            'fields': ('farm', 'category', 'name', 'description', 'sku', 'primary_image')
+        }),
+        ('Pricing', {
+            'fields': ('unit', 'price', 'compare_at_price')
+        }),
+        ('Inventory', {
+            'fields': ('stock_quantity', 'low_stock_threshold', 'track_inventory', 'allow_backorder')
+        }),
+        ('Status & Visibility', {
+            'fields': ('status', 'is_featured', 'min_order_quantity', 'max_order_quantity')
+        }),
+        ('Statistics', {
+            'fields': ('total_sold', 'total_revenue', 'average_rating', 'review_count'),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('tags', 'specifications', 'created_at', 'updated_at', 'published_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 0
+    readonly_fields = ['product_name', 'product_sku', 'unit', 'unit_price', 'line_total']
+
+
+@admin.register(MarketplaceOrder)
+class MarketplaceOrderAdmin(admin.ModelAdmin):
+    """Admin for marketplace orders."""
+    list_display = [
+        'order_number', 'farm', 'customer', 'status', 'payment_status',
+        'total_amount', 'delivery_method', 'created_at'
+    ]
+    list_filter = ['status', 'payment_status', 'delivery_method', 'created_at']
+    search_fields = [
+        'order_number', 'farm__farm_name',
+        'customer__first_name', 'customer__last_name', 'customer__phone_number'
+    ]
+    readonly_fields = ['order_number', 'subtotal', 'total_amount', 'created_at', 'updated_at']
+    inlines = [OrderItemInline]
+    
+    fieldsets = (
+        ('Order Information', {
+            'fields': ('order_number', 'farm', 'customer', 'status', 'payment_status')
+        }),
+        ('Totals', {
+            'fields': ('subtotal', 'discount_amount', 'delivery_fee', 'total_amount')
+        }),
+        ('Delivery', {
+            'fields': ('delivery_method', 'delivery_address', 'delivery_notes',
+                       'estimated_delivery_date', 'actual_delivery_date')
+        }),
+        ('Notes', {
+            'fields': ('customer_notes', 'internal_notes', 'cancellation_reason'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at', 'confirmed_at', 'completed_at', 'cancelled_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(MarketplaceStatistics)
+class MarketplaceStatisticsAdmin(admin.ModelAdmin):
+    """Admin for marketplace daily statistics."""
+    list_display = [
+        'farm', 'date', 'total_orders', 'completed_orders',
+        'total_revenue', 'new_customers', 'products_out_of_stock'
+    ]
+    list_filter = ['date', 'farm']
+    readonly_fields = ['farm', 'date', 'created_at', 'updated_at']
+    ordering = ['-date']
+
+
+# =============================================================================
+# ORIGINAL ADMIN CLASSES
+# =============================================================================
 
 @admin.register(PlatformSettings)
 class PlatformSettingsAdmin(admin.ModelAdmin):
@@ -59,6 +174,45 @@ class PlatformSettingsAdmin(admin.ModelAdmin):
                 'enable_instant_settlements',
             ),
             'description': 'Enable or disable platform features'
+        }),
+        ('Marketplace Activation (Monetization)', {
+            'fields': (
+                'marketplace_activation_fee',
+                'marketplace_trial_days',
+                'marketplace_grace_period_days',
+            ),
+            'description': 'Configure marketplace activation fee (seller access). Avoid using "subscription" terminology.'
+        }),
+        ('Government Subsidy', {
+            'fields': (
+                'enable_government_subsidy',
+                'government_subsidy_percentage',
+            ),
+            'description': 'Configure government subsidy for enrolled farmers'
+        }),
+        ('Verified Seller Tier (Phase 2)', {
+            'fields': (
+                'enable_verified_seller_tier',
+                'verified_seller_fee',
+            ),
+            'description': 'Priority/verified seller tier - enable when ready for Phase 2',
+            'classes': ('collapse',)
+        }),
+        ('Transaction Commission (Phase 2)', {
+            'fields': (
+                'enable_transaction_commission',
+            ),
+            'description': 'Commission on completed sales - uses commission tiers above',
+            'classes': ('collapse',)
+        }),
+        ('Advertising & Free Tier', {
+            'fields': (
+                'enable_ads',
+                'free_tier_can_view_marketplace',
+                'free_tier_can_view_prices',
+                'free_tier_can_access_education',
+            ),
+            'description': 'Configure advertising and free tier access'
         }),
         ('Metadata', {
             'fields': (

@@ -306,12 +306,15 @@ def require_verification(check_phone=True, check_email=False):
     return decorator
 
 
-def require_marketplace_subscription(func):
+def require_marketplace_activation(func):
     """
-    Decorator to require active marketplace subscription.
+    Decorator to require active marketplace activation (seller access).
+    
+    NOTE: Renamed from require_marketplace_subscription per monetization strategy.
+    Avoid "subscription" terminology - use "Marketplace Activation" or "Seller Access".
     
     Usage:
-        @require_marketplace_subscription
+        @require_marketplace_activation
         def create_product_listing(request):
             ...
     """
@@ -339,34 +342,45 @@ def require_marketplace_subscription(func):
         
         # Check marketplace enabled
         if not farm.marketplace_enabled:
+            # Get activation fee from platform settings
+            from sales_revenue.models import PlatformSettings
+            settings = PlatformSettings.get_settings()
+            activation_fee = settings.marketplace_activation_fee
+            
             return Response(
                 {
-                    'error': 'Marketplace not enabled',
-                    'code': 'MARKETPLACE_NOT_ENABLED',
-                    'message': 'Subscribe to marketplace to access this feature'
+                    'error': 'Marketplace access not activated',
+                    'code': 'MARKETPLACE_NOT_ACTIVATED',
+                    'message': f'Activate marketplace access for GHS {activation_fee}/month to sell products',
+                    'activation_fee': float(activation_fee)
                 },
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Check subscription status
+        # Check activation status (subscription record)
         if hasattr(farm, 'subscription'):
-            subscription = farm.subscription
-            if subscription.status not in ['trial', 'active']:
+            activation = farm.subscription
+            if activation.status not in ['trial', 'active']:
                 return Response(
                     {
-                        'error': 'Active subscription required',
-                        'code': 'SUBSCRIPTION_REQUIRED',
-                        'subscription_status': subscription.status,
-                        'message': 'Your subscription is not active'
+                        'error': 'Active marketplace access required',
+                        'code': 'ACTIVATION_EXPIRED',
+                        'activation_status': activation.status,
+                        'message': 'Your marketplace access is not active. Please renew to continue selling.'
                     },
                     status=status.HTTP_403_FORBIDDEN
                 )
         elif farm.subscription_type == 'none':
+            from sales_revenue.models import PlatformSettings
+            settings = PlatformSettings.get_settings()
+            activation_fee = settings.marketplace_activation_fee
+            
             return Response(
                 {
-                    'error': 'Marketplace subscription required',
-                    'code': 'SUBSCRIPTION_REQUIRED',
-                    'message': 'Subscribe to access marketplace features'
+                    'error': 'Marketplace activation required',
+                    'code': 'ACTIVATION_REQUIRED',
+                    'message': f'Activate marketplace access for GHS {activation_fee}/month to sell products',
+                    'activation_fee': float(activation_fee)
                 },
                 status=status.HTTP_403_FORBIDDEN
             )
@@ -374,6 +388,10 @@ def require_marketplace_subscription(func):
         return func(request, *args, **kwargs)
     
     return wrapper
+
+
+# Backward compatibility alias
+require_marketplace_subscription = require_marketplace_activation
 
 
 # Context manager for authorization
