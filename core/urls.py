@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/auth/', include('accounts.urls')),
     path('api/dashboards/', include('dashboards.urls')),
     path('api/admin/', include('accounts.admin_urls')),
+    path('api/admin/analytics/', include('dashboards.analytics_urls', namespace='admin-analytics')),  # YEA Admin analytics
     path('api/admin/inventory/', include('sales_revenue.inventory_urls', namespace='admin-inventory')),  # Government inventory analytics
     path('api/admin/platform-settings/', include((platform_settings_admin_urls, 'platform_settings'))),  # Platform settings (Super Admin)
     path('api/farms/', include('farms.management_urls')),  # Authenticated farm management
