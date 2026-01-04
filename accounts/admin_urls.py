@@ -18,6 +18,19 @@ from .admin_views import (
     AdminStaffInvitationCancelView,
 )
 
+# User Management views (suspend, unlock, etc.)
+from .user_management_views import (
+    AdminUserSuspendView,
+    AdminUserUnsuspendView,
+    AdminUserResetPasswordView,
+    AdminUserUnlockView,
+    AdminUserForceLogoutView,
+    AdminUserLoginAttemptsView,
+    AdminUserLoginHistoryView,
+    AdminUserReset2FAView,
+    AdminUserSuspensionStatusView,
+)
+
 # Batch management views
 from .batch_admin_views import (
     AdminBatchListView,
@@ -64,12 +77,34 @@ urlpatterns = [
     # Dashboard Overview
     path('dashboard/overview/', AdminDashboardOverviewView.as_view(), name='admin-overview'),
     
-    # User Management
+    # ========================================
+    # User Management - CRUD
+    # ========================================
     path('users/', AdminUserListView.as_view(), name='admin-user-list'),
     path('users/create/', AdminUserCreateView.as_view(), name='admin-user-create'),
     path('users/<uuid:user_id>/', AdminUserDetailView.as_view(), name='admin-user-detail'),
     
+    # ========================================
+    # User Management - Actions
+    # ========================================
+    # Suspension
+    path('users/<uuid:user_id>/suspend/', AdminUserSuspendView.as_view(), name='admin-user-suspend'),
+    path('users/<uuid:user_id>/unsuspend/', AdminUserUnsuspendView.as_view(), name='admin-user-unsuspend'),
+    path('users/<uuid:user_id>/suspension-status/', AdminUserSuspensionStatusView.as_view(), name='admin-user-suspension-status'),
+    
+    # Account Security
+    path('users/<uuid:user_id>/unlock/', AdminUserUnlockView.as_view(), name='admin-user-unlock'),
+    path('users/<uuid:user_id>/force-logout/', AdminUserForceLogoutView.as_view(), name='admin-user-force-logout'),
+    path('users/<uuid:user_id>/reset-password/', AdminUserResetPasswordView.as_view(), name='admin-user-reset-password'),
+    path('users/<uuid:user_id>/reset-2fa/', AdminUserReset2FAView.as_view(), name='admin-user-reset-2fa'),
+    
+    # Login History & Attempts
+    path('users/<uuid:user_id>/login-attempts/', AdminUserLoginAttemptsView.as_view(), name='admin-user-login-attempts'),
+    path('users/<uuid:user_id>/login-history/', AdminUserLoginHistoryView.as_view(), name='admin-user-login-history'),
+    
+    # ========================================
     # Staff Invitation Management
+    # ========================================
     path('staff/<uuid:user_id>/resend-invitation/', AdminStaffInvitationResendView.as_view(), name='admin-staff-resend-invitation'),
     path('staff/<uuid:user_id>/cancel-invitation/', AdminStaffInvitationCancelView.as_view(), name='admin-staff-cancel-invitation'),
     

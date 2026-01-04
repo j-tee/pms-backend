@@ -115,7 +115,52 @@ class User(AbstractUser, RoleMixin):
         help_text="Whether the user account is fully verified"
     )
     
+    # ========================================
+    # Suspension Management
+    # ========================================
+    is_suspended = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether the user account is currently suspended"
+    )
+    
+    suspended_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the account was suspended"
+    )
+    
+    suspended_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the suspension expires (null = indefinite)"
+    )
+    
+    suspended_by = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='suspended_users',
+        help_text="Admin who suspended this account"
+    )
+    
+    suspension_reason = models.TextField(
+        blank=True,
+        help_text="Reason for account suspension"
+    )
+    
+    # ========================================
+    # Token Versioning (for force logout)
+    # ========================================
+    token_version = models.IntegerField(
+        default=0,
+        help_text="Increment to invalidate all existing tokens"
+    )
+    
+    # ========================================
     # Login attempt tracking (for security)
+    # ========================================
     failed_login_attempts = models.IntegerField(
         default=0,
         help_text="Number of consecutive failed login attempts"
@@ -125,6 +170,12 @@ class User(AbstractUser, RoleMixin):
         null=True,
         blank=True,
         help_text="Account locked until this time due to failed login attempts"
+    )
+    
+    last_failed_login_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of last failed login attempt"
     )
     
     # Password reset
@@ -183,12 +234,13 @@ class User(AbstractUser, RoleMixin):
         from datetime import timedelta
         
         self.failed_login_attempts += 1
+        self.last_failed_login_at = timezone.now()
         
         # Lock account for 15 minutes after 5 failed attempts
         if self.failed_login_attempts >= 5:
             self.account_locked_until = timezone.now() + timedelta(minutes=15)
         
-        self.save(update_fields=['failed_login_attempts', 'account_locked_until'])
+        self.save(update_fields=['failed_login_attempts', 'account_locked_until', 'last_failed_login_at'])
     
     def record_successful_login(self):
         """Reset failed login attempts on successful login."""
@@ -198,6 +250,75 @@ class User(AbstractUser, RoleMixin):
         self.account_locked_until = None
         self.last_login_at = timezone.now()
         self.save(update_fields=['failed_login_attempts', 'account_locked_until', 'last_login_at'])
+    
+    def unlock_account(self):
+        """Manually unlock account (admin action)."""
+        self.failed_login_attempts = 0
+        self.account_locked_until = None
+        self.save(update_fields=['failed_login_attempts', 'account_locked_until'])
+    
+    def suspend(self, suspended_by, reason, duration_days=None):
+        """
+        Suspend this user account.
+        
+        Args:
+            suspended_by: User who is performing the suspension
+            reason: Reason for the suspension
+            duration_days: Number of days to suspend (None = indefinite)
+        """
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        self.is_suspended = True
+        self.suspended_at = timezone.now()
+        self.suspended_by = suspended_by
+        self.suspension_reason = reason
+        
+        if duration_days:
+            self.suspended_until = timezone.now() + timedelta(days=duration_days)
+        else:
+            self.suspended_until = None  # Indefinite
+        
+        # Increment token version to invalidate all existing tokens
+        self.token_version += 1
+        
+        self.save(update_fields=[
+            'is_suspended', 'suspended_at', 'suspended_by',
+            'suspension_reason', 'suspended_until', 'token_version'
+        ])
+    
+    def unsuspend(self):
+        """Remove suspension from this user account."""
+        self.is_suspended = False
+        self.suspended_at = None
+        self.suspended_by = None
+        self.suspension_reason = ''
+        self.suspended_until = None
+        self.save(update_fields=[
+            'is_suspended', 'suspended_at', 'suspended_by',
+            'suspension_reason', 'suspended_until'
+        ])
+    
+    def is_suspension_expired(self):
+        """Check if a time-limited suspension has expired."""
+        if not self.is_suspended:
+            return False
+        if self.suspended_until is None:
+            return False  # Indefinite suspension
+        from django.utils import timezone
+        return timezone.now() >= self.suspended_until
+    
+    def check_and_clear_expired_suspension(self):
+        """Auto-clear suspension if expired. Returns True if was cleared."""
+        if self.is_suspension_expired():
+            self.unsuspend()
+            return True
+        return False
+    
+    def force_logout(self):
+        """Invalidate all existing tokens for this user."""
+        self.token_version += 1
+        self.save(update_fields=['token_version'])
     
     def has_role(self, role_name, resource=None):
         """

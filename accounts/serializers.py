@@ -102,6 +102,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     password = serializers.CharField(write_only=True, required=False)
+    suspended_by_name = serializers.SerializerMethodField()
     
     class Meta:
         model = User
@@ -111,12 +112,25 @@ class UserDetailSerializer(serializers.ModelSerializer):
             'region', 'constituency', 'is_verified', 'is_active', 'phone_verified',
             'email_verified', 'is_staff', 'date_joined', 'last_login_at',
             'created_at', 'updated_at', 'failed_login_attempts',
-            'account_locked_until', 'password'
+            'account_locked_until', 'password',
+            # Suspension fields
+            'is_suspended', 'suspended_at', 'suspended_until', 'suspended_by',
+            'suspended_by_name', 'suspension_reason',
+            # Security fields
+            'token_version', 'last_failed_login_at'
         )
         read_only_fields = (
             'id', 'full_name', 'role_display', 'date_joined', 'last_login_at',
-            'created_at', 'updated_at'
+            'created_at', 'updated_at', 'is_suspended', 'suspended_at',
+            'suspended_until', 'suspended_by', 'suspended_by_name',
+            'suspension_reason', 'token_version', 'last_failed_login_at'
         )
+    
+    def get_suspended_by_name(self, obj):
+        """Get the name of the admin who suspended this user."""
+        if obj.suspended_by:
+            return obj.suspended_by.get_full_name()
+        return None
     
     def create(self, validated_data):
         """Create a new user with encrypted password."""
