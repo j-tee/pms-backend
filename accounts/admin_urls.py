@@ -39,6 +39,14 @@ from .batch_action_views import (
     AdminBatchDuplicateView,
 )
 
+# Financial admin views
+from .financial_admin_views import (
+    PaymentHistoryView,
+    RevenueSummaryView,
+    ActiveSubscribersView,
+    FinanceDashboardView,
+)
+
 app_name = 'admin_api'
 
 urlpatterns = [
@@ -90,4 +98,20 @@ urlpatterns = [
     
     # System Configuration
     path('config/', AdminSystemConfigView.as_view(), name='admin-config'),
+    
+    # ========================================
+    # Financial Reporting
+    # ========================================
+    
+    # Payment History
+    path('payments/', PaymentHistoryView.as_view(), name='admin-payments'),
+    
+    # Revenue Summary
+    path('revenue/summary/', RevenueSummaryView.as_view(), name='admin-revenue-summary'),
+    
+    # Subscribers Management
+    path('subscribers/', ActiveSubscribersView.as_view(), name='admin-subscribers'),
+    
+    # Financial Dashboard
+    path('finance/dashboard/', FinanceDashboardView.as_view(), name='admin-finance-dashboard'),
 ]
