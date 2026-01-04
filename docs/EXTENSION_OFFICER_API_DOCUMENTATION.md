@@ -1,7 +1,7 @@
 # Extension Officer / Field Officer API Documentation
 
 **Date:** January 4, 2026  
-**Version:** 1.0  
+**Version:** 2.0  
 **Status:** Production Ready  
 **Base URL:** `https://pms.alphalogictech.com`
 
@@ -9,7 +9,16 @@
 
 ## 📋 Overview
 
-This document provides API integration details for the **Extension Officer / Field Officer** module. These endpoints enable field officers to register farmers, manage farms in their jurisdiction, and conduct extension duties.
+This document provides API integration details for the **Extension Officer / Field Officer** module. 
+
+### ⭐ PRIMARY RESPONSIBILITY
+
+**Field officers' primary responsibility is to ensure that farmers are feeding the system with accurate data and where necessary help them with the input.**
+
+The data verification endpoints are the MOST IMPORTANT part of this module:
+- `/api/extension/data-quality/` - See which farms need data attention
+- `/api/extension/farms/{farm_id}/data-review/` - Review and verify farmer data
+- `/api/extension/farms/{farm_id}/assist-entry/` - Enter data on farmer's behalf
 
 ### Terminology
 
@@ -44,15 +53,355 @@ Authorization: Bearer {jwt_token}
 
 ## 📊 Endpoints Summary
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/extension/dashboard/` | GET | Field officer dashboard stats |
-| `/api/extension/farms/` | GET | List farms in jurisdiction |
-| `/api/extension/farms/{farm_id}/` | GET, PUT | View/update farm details |
-| `/api/extension/farms/{farm_id}/assign-officer/` | POST | Assign extension officer |
-| `/api/extension/farms/bulk-update/` | POST | Bulk update multiple farms |
-| `/api/extension/register-farmer/` | POST | Register new farmer |
-| `/api/extension/officers/` | GET | List extension officers |
+| Endpoint | Method | Description | Priority |
+|----------|--------|-------------|----------|
+| `/api/extension/data-quality/` | GET | ⭐ Data quality dashboard | **PRIMARY** |
+| `/api/extension/farms/{farm_id}/data-review/` | GET, POST | ⭐ Review/verify farm data | **PRIMARY** |
+| `/api/extension/farms/{farm_id}/assist-entry/` | POST | ⭐ Enter data for farmer | **PRIMARY** |
+| `/api/extension/dashboard/` | GET | Field officer dashboard stats | Secondary |
+| `/api/extension/farms/` | GET | List farms in jurisdiction | Secondary |
+| `/api/extension/farms/{farm_id}/` | GET, PUT | View/update farm details | Secondary |
+| `/api/extension/farms/{farm_id}/assign-officer/` | POST | Assign extension officer | Secondary |
+| `/api/extension/farms/bulk-update/` | POST | Bulk update multiple farms | Secondary |
+| `/api/extension/register-farmer/` | POST | Register new farmer | Secondary |
+| `/api/extension/officers/` | GET | List extension officers | Secondary |
+
+---
+
+## ⭐ DATA VERIFICATION ENDPOINTS (PRIMARY RESPONSIBILITY)
+
+These are the MOST IMPORTANT endpoints for field officers. Their primary job is to ensure farmers are entering accurate data.
+
+### 1. Data Quality Dashboard
+
+### GET `/api/extension/data-quality/`
+
+Overview of data quality across all farms in jurisdiction. **Start here to identify which farms need attention.**
+
+**Response:**
+```json
+{
+    "summary": {
+        "total_farms_analyzed": 45,
+        "needs_attention": 12,
+        "fair_quality": 18,
+        "good_quality": 15,
+        "average_completeness": 67.5
+    },
+    "farms": [
+        {
+            "farm_id": "farm-uuid",
+            "farm_name": "Alpha Poultry Farm",
+            "farmer_name": "Kwame Asante",
+            "farmer_phone": "+233244123456",
+            "entries_last_30_days": 5,
+            "entries_last_7_days": 0,
+            "expected_entries": 30,
+            "completeness_score": 16.7,
+            "status": "no_recent_data",
+            "last_entry": "2025-12-20"
+        },
+        {
+            "farm_id": "farm-uuid-2",
+            "farm_name": "Beta Farm",
+            "farmer_name": "Ama Serwaa",
+            "farmer_phone": "+233244789012",
+            "entries_last_30_days": 28,
+            "entries_last_7_days": 7,
+            "expected_entries": 30,
+            "completeness_score": 93.3,
+            "status": "good",
+            "last_entry": "2026-01-04"
+        }
+    ]
+}
+```
+
+**Status Values:**
+| Status | Meaning | Action Required |
+|--------|---------|----------------|
+| `no_recent_data` | No entries in last 7 days | Contact farmer immediately |
+| `needs_attention` | Less than 50% completeness | Visit farm or call farmer |
+| `fair` | 50-80% completeness | Monitor, encourage consistency |
+| `good` | Over 80% completeness | No immediate action needed |
+
+**Frontend Usage:**
+```jsx
+function DataQualityDashboard() {
+    const [data, setData] = useState(null);
+    
+    useEffect(() => {
+        fetch('/api/extension/data-quality/', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(res => res.json())
+        .then(setData);
+    }, []);
+    
+    // Sort farms by completeness (worst first)
+    const priorityFarms = data?.farms?.filter(f => 
+        ['no_recent_data', 'needs_attention'].includes(f.status)
+    ) || [];
+    
+    return (
+        <div>
+            <h1>⭐ Data Quality Overview</h1>
+            
+            <SummaryCards>
+                <Card title="Needs Attention" value={data?.summary?.needs_attention} color="red" />
+                <Card title="Fair Quality" value={data?.summary?.fair_quality} color="yellow" />
+                <Card title="Good Quality" value={data?.summary?.good_quality} color="green" />
+            </SummaryCards>
+            
+            <h2>🔴 Priority: Farms Needing Attention</h2>
+            <PriorityFarmList farms={priorityFarms} />
+        </div>
+    );
+}
+```
+
+---
+
+### 2. Farm Data Review
+
+### GET `/api/extension/farms/{farm_id}/data-review/`
+
+Get recent data entries for a specific farm to review and verify.
+
+**Response:**
+```json
+{
+    "farm": {
+        "id": "farm-uuid",
+        "farm_id": "YEA-GAR-2026-0001",
+        "farm_name": "Alpha Poultry Farm",
+        "farmer_name": "Kwame Asante"
+    },
+    "data_quality": {
+        "score": 72.5,
+        "total_entries": 40,
+        "verified_entries": 29,
+        "pending_verification": 11,
+        "data_gaps": [
+            {
+                "start": "2025-12-20",
+                "end": "2025-12-25",
+                "missing_days": 4
+            }
+        ]
+    },
+    "production_records": [
+        {
+            "id": "record-uuid",
+            "date": "2026-01-04",
+            "flock_name": "Batch A - Layers",
+            "eggs_collected": 1250,
+            "mortality_count": 2,
+            "feed_consumed_kg": "150.5",
+            "is_verified": false,
+            "verified_by": null,
+            "created_at": "2026-01-04T06:30:00Z"
+        }
+    ],
+    "mortality_records": [
+        {
+            "id": "mortality-uuid",
+            "date": "2026-01-03",
+            "flock_name": "Batch A - Layers",
+            "count": 3,
+            "cause": "Heat stress",
+            "is_verified": true
+        }
+    ]
+}
+```
+
+### POST `/api/extension/farms/{farm_id}/data-review/`
+
+Verify or flag data entries after review.
+
+**Request Body:**
+```json
+{
+    "action": "verify",
+    "record_type": "production",
+    "record_ids": ["record-uuid-1", "record-uuid-2"],
+    "notes": "Verified during farm visit on 2026-01-04"
+}
+```
+
+**Actions:**
+| Action | Description |
+|--------|-------------|
+| `verify` | Mark records as verified (data is accurate) |
+| `flag` | Flag records for issues (data needs correction) |
+
+**Response:**
+```json
+{
+    "success": true,
+    "action": "verify",
+    "processed": 2,
+    "total": 2,
+    "message": "2 records verified successfully"
+}
+```
+
+**Frontend Usage:**
+```jsx
+function DataReviewScreen({ farmId }) {
+    const [data, setData] = useState(null);
+    const [selectedRecords, setSelectedRecords] = useState([]);
+    
+    useEffect(() => {
+        fetch(`/api/extension/farms/${farmId}/data-review/`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(res => res.json())
+        .then(setData);
+    }, [farmId]);
+    
+    const handleVerify = async () => {
+        await fetch(`/api/extension/farms/${farmId}/data-review/`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action: 'verify',
+                record_type: 'production',
+                record_ids: selectedRecords
+            })
+        });
+        // Refresh data
+    };
+    
+    return (
+        <div>
+            <h1>Review Data: {data?.farm?.farm_name}</h1>
+            
+            <DataQualityScore score={data?.data_quality?.score} />
+            
+            {data?.data_quality?.data_gaps?.length > 0 && (
+                <Alert type="warning">
+                    ⚠️ Data gaps detected! Missing {data.data_quality.data_gaps.length} period(s)
+                </Alert>
+            )}
+            
+            <h2>Production Records</h2>
+            <SelectableTable 
+                data={data?.production_records}
+                onSelect={setSelectedRecords}
+            />
+            
+            <Button onClick={handleVerify}>✅ Verify Selected</Button>
+            <Button onClick={handleFlag}>🚩 Flag for Issues</Button>
+        </div>
+    );
+}
+```
+
+---
+
+### 3. Data Entry Assistance
+
+### POST `/api/extension/farms/{farm_id}/assist-entry/`
+
+Enter data on behalf of a farmer who needs assistance. Data entered by field officers is automatically marked as verified.
+
+**Request - Production Data:**
+```json
+{
+    "entry_type": "production",
+    "data": {
+        "flock_id": "flock-uuid",
+        "date": "2026-01-04",
+        "eggs_collected": 1250,
+        "mortality_count": 2,
+        "feed_consumed_kg": 150.5,
+        "water_consumed_liters": 200,
+        "notes": "Entered by field officer during visit"
+    }
+}
+```
+
+**Request - Mortality Data:**
+```json
+{
+    "entry_type": "mortality",
+    "data": {
+        "flock_id": "flock-uuid",
+        "date": "2026-01-04",
+        "count": 5,
+        "cause": "Disease outbreak - suspected Newcastle",
+        "notes": "Farmer reported symptoms, samples collected"
+    }
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Production data entered successfully",
+    "created": true,
+    "record": {
+        "id": "new-record-uuid",
+        "date": "2026-01-04",
+        "flock": "Batch A - Layers",
+        "eggs_collected": 1250
+    }
+}
+```
+
+**Frontend Usage:**
+```jsx
+function DataAssistanceForm({ farmId }) {
+    const [entryType, setEntryType] = useState('production');
+    const [formData, setFormData] = useState({});
+    
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        
+        const response = await fetch(`/api/extension/farms/${farmId}/assist-entry/`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                entry_type: entryType,
+                data: formData
+            })
+        });
+        
+        if (response.ok) {
+            toast.success('Data entered successfully!');
+            // Navigate or reset form
+        }
+    };
+    
+    return (
+        <form onSubmit={handleSubmit}>
+            <h2>Enter Data for Farmer</h2>
+            
+            <Select value={entryType} onChange={setEntryType}>
+                <option value="production">Production Data</option>
+                <option value="mortality">Mortality Record</option>
+            </Select>
+            
+            {entryType === 'production' ? (
+                <ProductionForm onChange={setFormData} />
+            ) : (
+                <MortalityForm onChange={setFormData} />
+            )}
+            
+            <Button type="submit">Submit Entry</Button>
+        </form>
+    );
+}
+```
 
 ---
 

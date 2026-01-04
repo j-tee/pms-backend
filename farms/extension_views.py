@@ -7,15 +7,23 @@ All three roles below have field officer access:
 - VETERINARY_OFFICER (field officer with animal health focus)
 - CONSTITUENCY_OFFICIAL (senior field officer with assignment privileges)
 
-Provides endpoints for field officers to:
-- Register farmers on behalf (field registration)
-- Update farm information
-- View and manage assigned farms
-- Record extension visits and recommendations
-- Track farmer progress and issues
+PRIMARY RESPONSIBILITY:
+Field officers ensure farmers are feeding the system with accurate data.
+They verify farmer-entered data and assist with data input when necessary.
 
-These are the primary field officers responsible for farmer onboarding
-and ongoing support in their constituency.
+Core Functions:
+1. DATA VERIFICATION - Review and verify farmer-entered production data
+2. DATA ASSISTANCE - Help farmers enter data when they need support
+3. FARMER REGISTRATION - Register farmers on behalf (field registration)
+4. FARM UPDATES - Update farm information after field visits
+5. QUALITY TRACKING - Monitor data quality and flag issues
+
+EXTENSION/VET ADDITIONAL DUTIES:
+Extension officers and veterinary officers have additional responsibilities:
+- Technical advice and recommendations
+- Health monitoring and interventions
+- Training and capacity building
+- Issue escalation to regional/national level
 """
 
 from rest_framework.views import APIView
@@ -730,3 +738,570 @@ class BulkUpdateFarmsView(APIView):
             'failed': len(updates) - successful,
             'results': results,
         })
+
+
+# =============================================================================
+# DATA VERIFICATION VIEWS
+# Primary responsibility: Ensure farmers input accurate data
+# =============================================================================
+
+class FarmDataVerificationView(APIView):
+    """
+    GET /api/extension/farms/{farm_id}/data-review/
+    POST /api/extension/farms/{farm_id}/data-review/
+    
+    Review and verify farmer-entered data.
+    Field officers can view recent entries and mark them as verified or flag issues.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, farm_id):
+        """Get recent data entries for verification"""
+        user = request.user
+        
+        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+            return Response(
+                {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        farm = self._get_farm_if_accessible(user, farm_id)
+        if not farm:
+            return Response(
+                {'error': 'Farm not found or access denied', 'code': 'FARM_NOT_FOUND'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get recent production records
+        production_data = []
+        try:
+            from flock_management.models import DailyProduction, Flock
+            
+            # Get flocks for this farm
+            flocks = Flock.objects.filter(farm=farm)
+            
+            # Get last 30 days of production data
+            thirty_days_ago = timezone.now() - timedelta(days=30)
+            productions = DailyProduction.objects.filter(
+                flock__farm=farm,
+                date__gte=thirty_days_ago.date()
+            ).order_by('-date')[:30]
+            
+            production_data = [{
+                'id': str(p.id),
+                'date': p.date.isoformat(),
+                'flock_name': p.flock.name if p.flock else 'Unknown',
+                'eggs_collected': p.eggs_collected,
+                'mortality_count': p.mortality_count,
+                'feed_consumed_kg': str(p.feed_consumed_kg) if p.feed_consumed_kg else None,
+                'is_verified': getattr(p, 'is_verified', False),
+                'verified_by': p.verified_by.get_full_name() if hasattr(p, 'verified_by') and p.verified_by else None,
+                'created_at': p.created_at.isoformat() if hasattr(p, 'created_at') else None,
+            } for p in productions]
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"Error fetching production data: {e}")
+        
+        # Get recent mortality records
+        mortality_data = []
+        try:
+            from flock_management.models import MortalityRecord
+            
+            mortalities = MortalityRecord.objects.filter(
+                flock__farm=farm,
+                date__gte=thirty_days_ago.date()
+            ).order_by('-date')[:20]
+            
+            mortality_data = [{
+                'id': str(m.id),
+                'date': m.date.isoformat(),
+                'flock_name': m.flock.name if m.flock else 'Unknown',
+                'count': m.count,
+                'cause': m.cause,
+                'is_verified': getattr(m, 'is_verified', False),
+            } for m in mortalities]
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"Error fetching mortality data: {e}")
+        
+        # Calculate data quality score
+        total_entries = len(production_data) + len(mortality_data)
+        verified_entries = sum(1 for p in production_data if p.get('is_verified'))
+        verified_entries += sum(1 for m in mortality_data if m.get('is_verified'))
+        
+        data_quality_score = (verified_entries / total_entries * 100) if total_entries > 0 else 0
+        
+        # Check for data gaps (missing days)
+        data_gaps = self._find_data_gaps(production_data)
+        
+        return Response({
+            'farm': {
+                'id': str(farm.id),
+                'farm_id': farm.farm_id,
+                'farm_name': farm.farm_name,
+                'farmer_name': farm.user.get_full_name() if farm.user else 'N/A',
+            },
+            'data_quality': {
+                'score': round(data_quality_score, 1),
+                'total_entries': total_entries,
+                'verified_entries': verified_entries,
+                'pending_verification': total_entries - verified_entries,
+                'data_gaps': data_gaps,
+            },
+            'production_records': production_data,
+            'mortality_records': mortality_data,
+        })
+    
+    def post(self, request, farm_id):
+        """Verify or flag data entries"""
+        user = request.user
+        
+        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+            return Response(
+                {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        farm = self._get_farm_if_accessible(user, farm_id)
+        if not farm:
+            return Response(
+                {'error': 'Farm not found or access denied', 'code': 'FARM_NOT_FOUND'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        action = request.data.get('action')  # 'verify' or 'flag'
+        record_type = request.data.get('record_type')  # 'production' or 'mortality'
+        record_ids = request.data.get('record_ids', [])
+        notes = request.data.get('notes', '')
+        
+        if action not in ['verify', 'flag']:
+            return Response(
+                {'error': 'Invalid action. Use "verify" or "flag"', 'code': 'INVALID_ACTION'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not record_ids:
+            return Response(
+                {'error': 'No record_ids provided', 'code': 'NO_RECORDS'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Process records
+        processed = 0
+        try:
+            if record_type == 'production':
+                from flock_management.models import DailyProduction
+                for record_id in record_ids:
+                    try:
+                        record = DailyProduction.objects.get(id=record_id, flock__farm=farm)
+                        if action == 'verify':
+                            record.is_verified = True
+                            record.verified_by = user
+                            record.verified_at = timezone.now()
+                        else:
+                            record.is_flagged = True
+                            record.flag_notes = notes
+                            record.flagged_by = user
+                        record.save()
+                        processed += 1
+                    except DailyProduction.DoesNotExist:
+                        continue
+            
+            elif record_type == 'mortality':
+                from flock_management.models import MortalityRecord
+                for record_id in record_ids:
+                    try:
+                        record = MortalityRecord.objects.get(id=record_id, flock__farm=farm)
+                        if action == 'verify':
+                            record.is_verified = True
+                            record.verified_by = user
+                            record.verified_at = timezone.now()
+                        else:
+                            record.is_flagged = True
+                            record.flag_notes = notes
+                            record.flagged_by = user
+                        record.save()
+                        processed += 1
+                    except MortalityRecord.DoesNotExist:
+                        continue
+        except ImportError:
+            return Response(
+                {'error': 'Flock management module not available', 'code': 'MODULE_NOT_FOUND'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        return Response({
+            'success': True,
+            'action': action,
+            'processed': processed,
+            'total': len(record_ids),
+            'message': f'{processed} records {action}ed successfully',
+        })
+    
+    def _get_farm_if_accessible(self, user, farm_id):
+        """Get farm if user has access"""
+        try:
+            farm = Farm.objects.get(id=farm_id)
+            
+            if user.role == 'CONSTITUENCY_OFFICIAL':
+                if farm.primary_constituency == user.constituency:
+                    return farm
+            elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+                if (farm.extension_officer == user or 
+                    farm.assigned_extension_officer == user or
+                    farm.primary_constituency == user.constituency):
+                    return farm
+            
+            return None
+        except Farm.DoesNotExist:
+            return None
+    
+    def _find_data_gaps(self, production_data):
+        """Find missing dates in production data"""
+        if not production_data:
+            return []
+        
+        dates = sorted([p['date'] for p in production_data])
+        gaps = []
+        
+        for i in range(len(dates) - 1):
+            from datetime import datetime
+            current = datetime.fromisoformat(dates[i]).date()
+            next_date = datetime.fromisoformat(dates[i + 1]).date()
+            diff = (next_date - current).days
+            
+            if diff > 1:
+                gaps.append({
+                    'start': dates[i],
+                    'end': dates[i + 1],
+                    'missing_days': diff - 1,
+                })
+        
+        return gaps
+
+
+class FarmerDataAssistanceView(APIView):
+    """
+    POST /api/extension/farms/{farm_id}/assist-entry/
+    
+    Help farmers enter data when they need assistance.
+    Field officer can enter production/mortality data on behalf of farmer.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, farm_id):
+        """Enter data on behalf of farmer"""
+        user = request.user
+        
+        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+            return Response(
+                {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        farm = self._get_farm_if_accessible(user, farm_id)
+        if not farm:
+            return Response(
+                {'error': 'Farm not found or access denied', 'code': 'FARM_NOT_FOUND'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        entry_type = request.data.get('entry_type')  # 'production' or 'mortality'
+        data = request.data.get('data', {})
+        
+        if entry_type == 'production':
+            return self._enter_production_data(farm, user, data)
+        elif entry_type == 'mortality':
+            return self._enter_mortality_data(farm, user, data)
+        else:
+            return Response(
+                {'error': 'Invalid entry_type. Use "production" or "mortality"', 'code': 'INVALID_TYPE'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    def _enter_production_data(self, farm, officer, data):
+        """Enter daily production data on behalf of farmer"""
+        try:
+            from flock_management.models import DailyProduction, Flock
+            from datetime import datetime
+            
+            flock_id = data.get('flock_id')
+            date = data.get('date', timezone.now().date().isoformat())
+            
+            # Get or validate flock
+            if flock_id:
+                flock = Flock.objects.get(id=flock_id, farm=farm)
+            else:
+                # Get active flock
+                flock = Flock.objects.filter(farm=farm, is_active=True).first()
+                if not flock:
+                    return Response(
+                        {'error': 'No active flock found for this farm', 'code': 'NO_ACTIVE_FLOCK'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Parse date
+            if isinstance(date, str):
+                date = datetime.fromisoformat(date).date()
+            
+            # Create production record
+            production, created = DailyProduction.objects.update_or_create(
+                flock=flock,
+                date=date,
+                defaults={
+                    'eggs_collected': data.get('eggs_collected', 0),
+                    'mortality_count': data.get('mortality_count', 0),
+                    'feed_consumed_kg': data.get('feed_consumed_kg'),
+                    'water_consumed_liters': data.get('water_consumed_liters'),
+                    'notes': data.get('notes', ''),
+                    # Mark as entered by field officer and auto-verified
+                    'entered_by_officer': True,
+                    'is_verified': True,
+                    'verified_by': officer,
+                    'verified_at': timezone.now(),
+                }
+            )
+            
+            return Response({
+                'success': True,
+                'message': 'Production data entered successfully',
+                'created': created,
+                'record': {
+                    'id': str(production.id),
+                    'date': date.isoformat(),
+                    'flock': flock.name,
+                    'eggs_collected': production.eggs_collected,
+                },
+            }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+            
+        except ImportError:
+            return Response(
+                {'error': 'Flock management module not available', 'code': 'MODULE_NOT_FOUND'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Flock.DoesNotExist:
+            return Response(
+                {'error': 'Flock not found', 'code': 'FLOCK_NOT_FOUND'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error entering production data: {e}")
+            return Response(
+                {'error': f'Failed to enter data: {str(e)}', 'code': 'ENTRY_ERROR'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _enter_mortality_data(self, farm, officer, data):
+        """Enter mortality data on behalf of farmer"""
+        try:
+            from flock_management.models import MortalityRecord, Flock
+            from datetime import datetime
+            
+            flock_id = data.get('flock_id')
+            date = data.get('date', timezone.now().date().isoformat())
+            count = data.get('count', 0)
+            cause = data.get('cause', '')
+            
+            if not count or count < 1:
+                return Response(
+                    {'error': 'Mortality count must be at least 1', 'code': 'INVALID_COUNT'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get or validate flock
+            if flock_id:
+                flock = Flock.objects.get(id=flock_id, farm=farm)
+            else:
+                flock = Flock.objects.filter(farm=farm, is_active=True).first()
+                if not flock:
+                    return Response(
+                        {'error': 'No active flock found for this farm', 'code': 'NO_ACTIVE_FLOCK'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Parse date
+            if isinstance(date, str):
+                date = datetime.fromisoformat(date).date()
+            
+            # Create mortality record
+            mortality = MortalityRecord.objects.create(
+                flock=flock,
+                date=date,
+                count=count,
+                cause=cause,
+                notes=data.get('notes', ''),
+                # Mark as entered by field officer and auto-verified
+                entered_by_officer=True,
+                is_verified=True,
+                verified_by=officer,
+                verified_at=timezone.now(),
+            )
+            
+            return Response({
+                'success': True,
+                'message': 'Mortality record entered successfully',
+                'record': {
+                    'id': str(mortality.id),
+                    'date': date.isoformat(),
+                    'flock': flock.name,
+                    'count': count,
+                    'cause': cause,
+                },
+            }, status=status.HTTP_201_CREATED)
+            
+        except ImportError:
+            return Response(
+                {'error': 'Flock management module not available', 'code': 'MODULE_NOT_FOUND'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Flock.DoesNotExist:
+            return Response(
+                {'error': 'Flock not found', 'code': 'FLOCK_NOT_FOUND'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error entering mortality data: {e}")
+            return Response(
+                {'error': f'Failed to enter data: {str(e)}', 'code': 'ENTRY_ERROR'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _get_farm_if_accessible(self, user, farm_id):
+        """Get farm if user has access"""
+        try:
+            farm = Farm.objects.get(id=farm_id)
+            
+            if user.role == 'CONSTITUENCY_OFFICIAL':
+                if farm.primary_constituency == user.constituency:
+                    return farm
+            elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+                if (farm.extension_officer == user or 
+                    farm.assigned_extension_officer == user or
+                    farm.primary_constituency == user.constituency):
+                    return farm
+            
+            return None
+        except Farm.DoesNotExist:
+            return None
+
+
+class DataQualityDashboardView(APIView):
+    """
+    GET /api/extension/data-quality/
+    
+    Overview of data quality across all farms in jurisdiction.
+    Helps field officers identify farms needing data assistance.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        
+        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+            return Response(
+                {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        farms = self._get_jurisdiction_farms(user)
+        
+        # Analyze data quality for each farm
+        farm_quality = []
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        
+        try:
+            from flock_management.models import DailyProduction, Flock
+            
+            for farm in farms[:50]:  # Limit to 50 farms for performance
+                # Count recent entries
+                recent_entries = DailyProduction.objects.filter(
+                    flock__farm=farm,
+                    date__gte=thirty_days_ago.date()
+                ).count()
+                
+                # Count very recent entries (last 7 days)
+                very_recent = DailyProduction.objects.filter(
+                    flock__farm=farm,
+                    date__gte=seven_days_ago.date()
+                ).count()
+                
+                # Expected entries (1 per day per active flock)
+                active_flocks = Flock.objects.filter(farm=farm, is_active=True).count()
+                expected_entries = active_flocks * 30 if active_flocks > 0 else 30
+                
+                # Data completeness score
+                completeness = (recent_entries / expected_entries * 100) if expected_entries > 0 else 0
+                
+                # Determine status
+                if very_recent == 0:
+                    status_label = 'no_recent_data'
+                elif completeness < 50:
+                    status_label = 'needs_attention'
+                elif completeness < 80:
+                    status_label = 'fair'
+                else:
+                    status_label = 'good'
+                
+                farm_quality.append({
+                    'farm_id': str(farm.id),
+                    'farm_name': farm.farm_name,
+                    'farmer_name': farm.user.get_full_name() if farm.user else 'N/A',
+                    'farmer_phone': str(farm.primary_phone),
+                    'entries_last_30_days': recent_entries,
+                    'entries_last_7_days': very_recent,
+                    'expected_entries': expected_entries,
+                    'completeness_score': round(completeness, 1),
+                    'status': status_label,
+                    'last_entry': self._get_last_entry_date(farm),
+                })
+        except ImportError:
+            pass
+        
+        # Sort by completeness (worst first)
+        farm_quality.sort(key=lambda x: x['completeness_score'])
+        
+        # Summary stats
+        total_farms = len(farm_quality)
+        needs_attention = sum(1 for f in farm_quality if f['status'] in ['no_recent_data', 'needs_attention'])
+        good_farms = sum(1 for f in farm_quality if f['status'] == 'good')
+        
+        return Response({
+            'summary': {
+                'total_farms_analyzed': total_farms,
+                'needs_attention': needs_attention,
+                'fair_quality': total_farms - needs_attention - good_farms,
+                'good_quality': good_farms,
+                'average_completeness': round(
+                    sum(f['completeness_score'] for f in farm_quality) / total_farms, 1
+                ) if total_farms > 0 else 0,
+            },
+            'farms': farm_quality,
+        })
+    
+    def _get_jurisdiction_farms(self, user):
+        """Get farms based on user's role and jurisdiction"""
+        if user.role == 'CONSTITUENCY_OFFICIAL':
+            return Farm.objects.filter(
+                primary_constituency=user.constituency,
+                application_status='Approved'
+            )
+        elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+            return Farm.objects.filter(
+                Q(extension_officer=user) | 
+                Q(assigned_extension_officer=user) |
+                Q(primary_constituency=user.constituency),
+                application_status='Approved'
+            )
+        return Farm.objects.none()
+    
+    def _get_last_entry_date(self, farm):
+        """Get the date of the last production entry"""
+        try:
+            from flock_management.models import DailyProduction
+            last = DailyProduction.objects.filter(flock__farm=farm).order_by('-date').first()
+            return last.date.isoformat() if last else None
+        except:
+            return None
