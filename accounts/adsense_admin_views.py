@@ -44,14 +44,15 @@ class IsSuperAdmin(IsAuthenticated):
 class IsFinanceViewer(IsAuthenticated):
     """
     Permission class for viewing AdSense data.
-    Allows: SUPER_ADMIN, YEA_OFFICIAL, NATIONAL_ADMIN
+    SUPER_ADMIN ONLY - Platform owner access.
+    
+    AdSense earnings are confidential platform revenue data.
     """
     
     def has_permission(self, request, view):
         if not super().has_permission(request, view):
             return False
-        allowed_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN']
-        return request.user.role in allowed_roles
+        return request.user.role == 'SUPER_ADMIN'
 
 
 class AdSenseStatusView(APIView):

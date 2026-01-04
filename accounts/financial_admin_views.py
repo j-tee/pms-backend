@@ -34,15 +34,21 @@ logger = logging.getLogger(__name__)
 class IsFinanceAdmin(IsAuthenticated):
     """
     Permission class for financial admin endpoints.
-    Allows: SUPER_ADMIN, YEA_OFFICIAL, NATIONAL_ADMIN
+    SUPER_ADMIN ONLY - Platform owner access.
+    
+    Financial data is confidential and restricted to the platform owner.
+    YEA Officials and other admins do NOT have access to:
+    - Payment history
+    - Revenue reports
+    - Subscriber financial data
+    - AdSense earnings
     """
     
     def has_permission(self, request, view):
         if not super().has_permission(request, view):
             return False
         
-        allowed_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN']
-        return request.user.role in allowed_roles
+        return request.user.role == 'SUPER_ADMIN'
 
 
 class PaymentHistoryView(APIView):
