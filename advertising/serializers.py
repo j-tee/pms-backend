@@ -142,3 +142,177 @@ class PartnerOfferAnalyticsSerializer(serializers.ModelSerializer):
             'impressions', 'clicks', 'click_through_rate',
             'start_date', 'end_date', 'is_active',
         ]
+
+
+# =============================================================================
+# A/B TESTING SERIALIZERS
+# =============================================================================
+
+class OfferVariantSerializer(serializers.ModelSerializer):
+    """Full variant serializer for admin views"""
+    click_through_rate = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+    conversion_rate = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+    display_title = serializers.CharField(source='get_display_title', read_only=True)
+    display_description = serializers.CharField(source='get_display_description', read_only=True)
+    display_cta = serializers.CharField(source='get_display_cta', read_only=True)
+    
+    class Meta:
+        from .models import OfferVariant
+        model = OfferVariant
+        fields = [
+            'id', 'offer', 'name',
+            'title', 'description', 'image', 'cta_text',
+            'display_title', 'display_description', 'display_cta',
+            'traffic_percentage',
+            'impressions', 'clicks', 'conversions',
+            'click_through_rate', 'conversion_rate',
+            'is_active', 'is_winner',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'impressions', 'clicks', 'conversions', 'created_at', 'updated_at']
+
+
+class OfferVariantListSerializer(serializers.ModelSerializer):
+    """Minimal variant serializer for list views"""
+    click_through_rate = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+    conversion_rate = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+    
+    class Meta:
+        from .models import OfferVariant
+        model = OfferVariant
+        fields = [
+            'id', 'name', 'traffic_percentage',
+            'impressions', 'clicks', 'conversions',
+            'click_through_rate', 'conversion_rate',
+            'is_active', 'is_winner',
+        ]
+
+
+# =============================================================================
+# CONVERSION TRACKING SERIALIZERS
+# =============================================================================
+
+class ConversionEventSerializer(serializers.ModelSerializer):
+    """Full conversion event serializer"""
+    offer_title = serializers.CharField(source='offer.title', read_only=True)
+    partner_name = serializers.CharField(source='offer.partner.company_name', read_only=True)
+    farm_name = serializers.CharField(source='farm.farm_name', read_only=True)
+    variant_name = serializers.CharField(source='variant.name', read_only=True)
+    conversion_type_display = serializers.CharField(source='get_conversion_type_display', read_only=True)
+    source_display = serializers.CharField(source='get_source_display', read_only=True)
+    
+    class Meta:
+        from .models import ConversionEvent
+        model = ConversionEvent
+        fields = [
+            'id', 'offer', 'offer_title', 'partner_name',
+            'variant', 'variant_name',
+            'farm', 'farm_name',
+            'conversion_type', 'conversion_type_display',
+            'conversion_value', 'promo_code_used', 'external_reference',
+            'click_interaction', 'attribution_window_hours',
+            'source', 'source_display',
+            'is_verified', 'verified_by', 'verified_at',
+            'notes', 'created_at',
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class ConversionEventCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating conversion events (webhook/manual)"""
+    farm_id = serializers.UUIDField(required=False, allow_null=True)
+    
+    class Meta:
+        from .models import ConversionEvent
+        model = ConversionEvent
+        fields = [
+            'offer', 'variant', 'farm_id',
+            'conversion_type', 'conversion_value',
+            'promo_code_used', 'external_reference', 'notes',
+        ]
+    
+    def create(self, validated_data):
+        from .models import ConversionEvent
+        farm_id = validated_data.pop('farm_id', None)
+        if farm_id:
+            from farms.models import Farm
+            validated_data['farm'] = Farm.objects.get(id=farm_id)
+        return ConversionEvent.objects.create(**validated_data)
+
+
+class WebhookConversionSerializer(serializers.Serializer):
+    """Serializer for partner webhook conversion data"""
+    offer_id = serializers.UUIDField()
+    conversion_type = serializers.ChoiceField(choices=[
+        'signup', 'purchase', 'application', 'registration',
+        'quote_request', 'contact', 'download', 'other'
+    ])
+    conversion_value = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True
+    )
+    promo_code = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    external_reference = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    farmer_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    farmer_email = serializers.EmailField(required=False, allow_blank=True)
+
+
+# =============================================================================
+# PARTNER PAYMENT SERIALIZERS
+# =============================================================================
+
+class PartnerPaymentSerializer(serializers.ModelSerializer):
+    """Full partner payment serializer"""
+    partner_name = serializers.CharField(source='partner.company_name', read_only=True)
+    partner_category = serializers.CharField(source='partner.get_category_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    payment_type_display = serializers.CharField(source='get_payment_type_display', read_only=True)
+    payment_method_display = serializers.CharField(source='get_payment_method_display', read_only=True)
+    recorded_by_name = serializers.CharField(source='recorded_by.get_full_name', read_only=True)
+    
+    class Meta:
+        from .models import PartnerPayment
+        model = PartnerPayment
+        fields = [
+            'id', 'partner', 'partner_name', 'partner_category',
+            'amount', 'currency',
+            'payment_type', 'payment_type_display',
+            'period_start', 'period_end',
+            'status', 'status_display',
+            'payment_method', 'payment_method_display',
+            'transaction_reference', 'invoice_number',
+            'invoice_date', 'due_date', 'paid_at',
+            'notes', 'recorded_by', 'recorded_by_name',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class PartnerPaymentCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating partner payments"""
+    
+    class Meta:
+        from .models import PartnerPayment
+        model = PartnerPayment
+        fields = [
+            'partner', 'amount', 'currency',
+            'payment_type', 'period_start', 'period_end',
+            'status', 'payment_method',
+            'transaction_reference', 'invoice_number',
+            'invoice_date', 'due_date', 'paid_at', 'notes',
+        ]
+
+
+class WebhookKeySerializer(serializers.ModelSerializer):
+    """Webhook key serializer for admin"""
+    partner_name = serializers.CharField(source='partner.company_name', read_only=True)
+    
+    class Meta:
+        from .models import ConversionWebhookKey
+        model = ConversionWebhookKey
+        fields = [
+            'id', 'partner', 'partner_name',
+            'api_key', 'is_active',
+            'daily_limit', 'last_used_at', 'total_requests',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'api_key', 'last_used_at', 'total_requests', 'created_at']

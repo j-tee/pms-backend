@@ -2,8 +2,13 @@
 Advertising Models
 
 Phase 1: Curated Partner Offers
+- Partner: Advertising partner/company profile
 - PartnerOffer: Manually curated offers from agricultural partners
+- OfferVariant: A/B testing variants for offers
+- OfferInteraction: Track farmer interactions with offers
 - AdvertiserLead: Leads from "Advertise With Us" page
+- PartnerPayment: Track advertising revenue from partners
+- ConversionEvent: Track farmer conversions after clicking offers
 
 Phase 2 (Future): Full self-service ad platform
 - Advertiser accounts
@@ -13,6 +18,7 @@ Phase 2 (Future): Full self-service ad platform
 """
 
 import uuid
+import secrets
 from decimal import Decimal
 from django.db import models
 from django.utils import timezone
@@ -437,3 +443,418 @@ class AdvertiserLead(models.Model):
     
     def __str__(self):
         return f"{self.company_name} - {self.contact_name} ({self.get_status_display()})"
+
+
+class OfferVariant(models.Model):
+    """
+    A/B testing variants for partner offers.
+    
+    Allows testing different creatives, CTAs, or messaging
+    to optimize conversion rates.
+    
+    Example:
+    - Variant A: "Get 10% Off" with green button
+    - Variant B: "Save GHS 50" with orange button
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    offer = models.ForeignKey(
+        PartnerOffer,
+        on_delete=models.CASCADE,
+        related_name='variants'
+    )
+    
+    # Variant identification
+    name = models.CharField(
+        max_length=50,
+        help_text="e.g., 'Control', 'Variant A', 'Green CTA'"
+    )
+    
+    # Variant-specific content (overrides offer defaults)
+    title = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Leave blank to use offer's title"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Leave blank to use offer's description"
+    )
+    image = models.ImageField(
+        upload_to='partners/offers/variants/',
+        null=True,
+        blank=True
+    )
+    cta_text = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Leave blank to use offer's CTA"
+    )
+    
+    # Traffic allocation (percentage)
+    traffic_percentage = models.PositiveIntegerField(
+        default=50,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Percentage of traffic to receive this variant (0-100)"
+    )
+    
+    # Variant-specific analytics
+    impressions = models.PositiveIntegerField(default=0)
+    clicks = models.PositiveIntegerField(default=0)
+    conversions = models.PositiveIntegerField(default=0)
+    
+    # Status
+    is_active = models.BooleanField(default=True)
+    is_winner = models.BooleanField(
+        default=False,
+        help_text="Marked as winning variant after test completion"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'offer_variants'
+        ordering = ['-traffic_percentage', 'name']
+        unique_together = [['offer', 'name']]
+    
+    def __str__(self):
+        return f"{self.offer.title} - {self.name}"
+    
+    @property
+    def click_through_rate(self):
+        """Calculate CTR as percentage"""
+        if self.impressions == 0:
+            return Decimal('0.00')
+        return Decimal(self.clicks / self.impressions * 100).quantize(Decimal('0.01'))
+    
+    @property
+    def conversion_rate(self):
+        """Calculate conversion rate as percentage"""
+        if self.clicks == 0:
+            return Decimal('0.00')
+        return Decimal(self.conversions / self.clicks * 100).quantize(Decimal('0.01'))
+    
+    def get_display_title(self):
+        """Get title to display (variant or fallback to offer)"""
+        return self.title or self.offer.title
+    
+    def get_display_description(self):
+        """Get description to display (variant or fallback to offer)"""
+        return self.description or self.offer.description
+    
+    def get_display_cta(self):
+        """Get CTA text to display (variant or fallback to offer)"""
+        return self.cta_text or self.offer.cta_text
+    
+    def get_display_image(self):
+        """Get image to display (variant or fallback to offer)"""
+        return self.image or self.offer.image
+
+
+class ConversionEvent(models.Model):
+    """
+    Track conversion events when farmers complete actions after clicking offers.
+    
+    A conversion can be:
+    - Signing up with a partner
+    - Making a purchase using promo code
+    - Completing a loan application
+    - Registering for an event
+    
+    Partners can send conversion data via webhook or admin can log manually.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    offer = models.ForeignKey(
+        PartnerOffer,
+        on_delete=models.CASCADE,
+        related_name='conversions'
+    )
+    variant = models.ForeignKey(
+        OfferVariant,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='conversion_events'
+    )
+    farm = models.ForeignKey(
+        'farms.Farm',
+        on_delete=models.CASCADE,
+        related_name='ad_conversions'
+    )
+    
+    # Conversion details
+    conversion_type = models.CharField(
+        max_length=30,
+        choices=[
+            ('signup', 'Partner Sign Up'),
+            ('purchase', 'Purchase Made'),
+            ('application', 'Application Submitted'),
+            ('registration', 'Event Registration'),
+            ('quote_request', 'Quote Requested'),
+            ('contact', 'Contact Form Submitted'),
+            ('download', 'Resource Downloaded'),
+            ('other', 'Other Conversion'),
+        ]
+    )
+    
+    # Value tracking
+    conversion_value = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Value of conversion in GHS (if applicable)"
+    )
+    
+    # Tracking
+    promo_code_used = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Promo code used in conversion"
+    )
+    external_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="External transaction/reference ID from partner"
+    )
+    
+    # Attribution
+    click_interaction = models.ForeignKey(
+        OfferInteraction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='conversions',
+        help_text="The click that led to this conversion"
+    )
+    attribution_window_hours = models.PositiveIntegerField(
+        default=168,  # 7 days
+        help_text="Hours between click and conversion"
+    )
+    
+    # Source
+    source = models.CharField(
+        max_length=30,
+        choices=[
+            ('webhook', 'Partner Webhook'),
+            ('manual', 'Manual Entry'),
+            ('api', 'Partner API'),
+            ('promo_code', 'Promo Code Redemption'),
+        ],
+        default='manual'
+    )
+    
+    # Verification
+    is_verified = models.BooleanField(
+        default=False,
+        help_text="Has this conversion been verified?"
+    )
+    verified_by = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='verified_conversions'
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    
+    # Notes
+    notes = models.TextField(blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'conversion_events'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['offer', 'created_at']),
+            models.Index(fields=['farm', 'created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.get_conversion_type_display()} - {self.offer.title}"
+
+
+class PartnerPayment(models.Model):
+    """
+    Track advertising payments received from partners.
+    
+    This is the revenue side of the advertising system:
+    - Monthly advertising fees
+    - Campaign payments
+    - Performance bonuses
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    partner = models.ForeignKey(
+        Partner,
+        on_delete=models.CASCADE,
+        related_name='payments'
+    )
+    
+    # Payment details
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))]
+    )
+    currency = models.CharField(max_length=3, default='GHS')
+    
+    payment_type = models.CharField(
+        max_length=30,
+        choices=[
+            ('monthly_fee', 'Monthly Advertising Fee'),
+            ('campaign_fee', 'Campaign Fee'),
+            ('setup_fee', 'Setup/Onboarding Fee'),
+            ('performance_bonus', 'Performance Bonus'),
+            ('renewal', 'Contract Renewal'),
+            ('one_time', 'One-Time Payment'),
+            ('other', 'Other'),
+        ],
+        default='monthly_fee'
+    )
+    
+    # Period (for recurring payments)
+    period_start = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Start of billing period"
+    )
+    period_end = models.DateField(
+        null=True,
+        blank=True,
+        help_text="End of billing period"
+    )
+    
+    # Payment status
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending'),
+            ('paid', 'Paid'),
+            ('overdue', 'Overdue'),
+            ('cancelled', 'Cancelled'),
+            ('refunded', 'Refunded'),
+        ],
+        default='pending'
+    )
+    
+    # Payment method
+    payment_method = models.CharField(
+        max_length=30,
+        choices=[
+            ('bank_transfer', 'Bank Transfer'),
+            ('mobile_money', 'Mobile Money'),
+            ('cheque', 'Cheque'),
+            ('cash', 'Cash'),
+            ('online', 'Online Payment'),
+        ],
+        default='bank_transfer'
+    )
+    
+    # Transaction info
+    transaction_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Bank/payment reference"
+    )
+    invoice_number = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Invoice number"
+    )
+    
+    # Dates
+    invoice_date = models.DateField(null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    
+    # Notes
+    notes = models.TextField(blank=True)
+    
+    # Recorded by
+    recorded_by = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='recorded_ad_payments'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'partner_payments'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['partner', 'status']),
+            models.Index(fields=['status', 'due_date']),
+            models.Index(fields=['paid_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.partner.company_name} - {self.amount} {self.currency} ({self.get_status_display()})"
+    
+    def mark_as_paid(self, user=None, reference=None):
+        """Mark payment as paid"""
+        self.status = 'paid'
+        self.paid_at = timezone.now()
+        if reference:
+            self.transaction_reference = reference
+        self.save(update_fields=['status', 'paid_at', 'transaction_reference', 'updated_at'])
+
+
+class ConversionWebhookKey(models.Model):
+    """
+    API keys for partners to send conversion data via webhook.
+    
+    Each partner gets a unique webhook key to authenticate
+    their conversion tracking requests.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    partner = models.OneToOneField(
+        Partner,
+        on_delete=models.CASCADE,
+        related_name='webhook_key'
+    )
+    
+    api_key = models.CharField(
+        max_length=64,
+        unique=True,
+        editable=False
+    )
+    
+    is_active = models.BooleanField(default=True)
+    
+    # Rate limiting
+    daily_limit = models.PositiveIntegerField(
+        default=1000,
+        help_text="Maximum conversions per day"
+    )
+    
+    # Tracking
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    total_requests = models.PositiveIntegerField(default=0)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'conversion_webhook_keys'
+    
+    def save(self, *args, **kwargs):
+        if not self.api_key:
+            self.api_key = secrets.token_urlsafe(48)
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"Webhook Key - {self.partner.company_name}"
+    
+    def regenerate_key(self):
+        """Generate a new API key"""
+        self.api_key = secrets.token_urlsafe(48)
+        self.save(update_fields=['api_key', 'updated_at'])
+        return self.api_key

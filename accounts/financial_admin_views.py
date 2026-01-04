@@ -556,6 +556,9 @@ class FinanceDashboardView(APIView):
         # Get AdSense data if available
         adsense_data = self._get_adsense_summary()
         
+        # Get Partner Advertising Revenue
+        advertising_data = self._get_advertising_summary()
+        
         return Response({
             'today': today_stats,
             'this_week': week_stats,
@@ -571,7 +574,59 @@ class FinanceDashboardView(APIView):
             },
             'recent_payments': recent_payments_list,
             'adsense': adsense_data,
+            'advertising': advertising_data,
         })
+    
+    def _get_advertising_summary(self):
+        """Get partner advertising revenue summary"""
+        try:
+            from advertising.models import PartnerPayment, Partner
+            
+            today = timezone.now().date()
+            this_month_start = today.replace(day=1)
+            this_year_start = today.replace(month=1, day=1)
+            
+            paid_payments = PartnerPayment.objects.filter(status='paid')
+            
+            # This month revenue
+            this_month = paid_payments.filter(
+                paid_at__date__gte=this_month_start
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            
+            # This year revenue
+            this_year = paid_payments.filter(
+                paid_at__date__gte=this_year_start
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            
+            # Total revenue
+            total = paid_payments.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            
+            # Pending payments
+            pending = PartnerPayment.objects.filter(status='pending')
+            pending_amount = pending.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            pending_count = pending.count()
+            
+            # Active partners
+            active_partners = Partner.objects.filter(is_active=True).count()
+            
+            return {
+                'this_month': str(this_month),
+                'this_year': str(this_year),
+                'total': str(total),
+                'pending_amount': str(pending_amount),
+                'pending_count': pending_count,
+                'active_partners': active_partners,
+                'currency': 'GHS',
+            }
+            
+        except Exception as e:
+            logger.warning(f"Failed to get advertising data: {e}")
+            return {
+                'error': str(e),
+                'this_month': '0.00',
+                'this_year': '0.00',
+                'total': '0.00',
+            }
     
     def _get_adsense_summary(self):
         """Get AdSense earnings summary if connected"""
