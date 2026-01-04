@@ -96,22 +96,30 @@ class UserPolicy(BasePolicy):
         Check if user can edit target user.
         
         Access Rules:
-        - Super Admin: All users
-        - National Admin: All except super admin
+        - SUPER_ADMIN accounts can ONLY be edited by themselves (protected accounts)
+        - Super Admin: All other users
+        - National Admin: All except super admin and YEA officials
         - Regional Coordinator: Users in their region (limited roles)
         - Users: Own profile (limited fields)
+        
+        SECURITY: SUPER_ADMIN accounts are fully protected and cannot be modified
+        by any other user, including other SUPER_ADMINs.
         """
         # Can edit own profile
         if user == target_user:
             return True
         
-        # Super admin can edit all
+        # SECURITY: SUPER_ADMIN accounts cannot be edited by anyone else
+        if cls.is_super_admin(target_user):
+            return False  # Only self-edit allowed (handled above)
+        
+        # Super admin can edit all non-SUPER_ADMIN users
         if cls.is_super_admin(user):
             return True
         
         # YEA Official can edit all except super admin and other YEA officials
         if cls.is_yea_official(user):
-            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
+            return not cls.is_yea_official(target_user)
         
         # National admin can edit all except super admin and YEA officials
         if cls.is_national_admin(user):
@@ -131,11 +139,19 @@ class UserPolicy(BasePolicy):
         Check if user can delete target user.
         
         Access Rules:
-        - Only super admin
+        - SUPER_ADMIN accounts CANNOT be deleted (protected accounts)
+        - Only super admin can delete other users
         - Cannot delete self
+        
+        SECURITY: SUPER_ADMIN accounts are fully protected and cannot be deleted
+        by anyone, including themselves or other SUPER_ADMINs.
         """
         if user == target_user:
             return False  # Cannot delete self
+        
+        # SECURITY: SUPER_ADMIN accounts cannot be deleted by anyone
+        if cls.is_super_admin(target_user):
+            return False
         
         return cls.is_super_admin(user)
     
@@ -145,20 +161,28 @@ class UserPolicy(BasePolicy):
         Check if user can suspend target user.
         
         Access Rules:
-        - Super Admin: All users
-        - National Admin: All except super admin and self
+        - SUPER_ADMIN accounts CANNOT be suspended (protected accounts)
+        - Super Admin: All non-SUPER_ADMIN users
+        - National Admin: All except super admin, YEA officials, and self
+        
+        SECURITY: SUPER_ADMIN accounts are fully protected and cannot be suspended
+        by anyone, including other SUPER_ADMINs.
         """
         if user == target_user:
             return False  # Cannot suspend self
+        
+        # SECURITY: SUPER_ADMIN accounts cannot be suspended by anyone
+        if cls.is_super_admin(target_user):
+            return False
         
         if cls.is_super_admin(user):
             return True
         
         if cls.is_yea_official(user):
-            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
+            return not cls.is_yea_official(target_user)
         
         if cls.is_national_admin(user):
-            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
+            return not cls.is_yea_official(target_user)
         
         return False
     
@@ -168,12 +192,21 @@ class UserPolicy(BasePolicy):
         Check if user can assign role to target user.
         
         Access Rules:
-        - Super Admin: Can assign any role
+        - SUPER_ADMIN accounts cannot have their role changed (protected accounts)
+        - Super Admin: Can assign any role to non-SUPER_ADMIN users
         - National Admin: Can assign most roles
         - Regional Coordinator: Limited roles in region
+        
+        SECURITY: SUPER_ADMIN accounts are fully protected. Their role cannot
+        be changed by anyone.
         """
+        # SECURITY: Cannot change role of SUPER_ADMIN accounts
+        if cls.is_super_admin(target_user):
+            return False
+        
         if cls.is_super_admin(user):
-            return True
+            # Cannot create new SUPER_ADMIN via role assignment
+            return role_name != 'SUPER_ADMIN'
         
         if cls.is_yea_official(user) or cls.is_national_admin(user):
             # Cannot assign super admin or YEA official roles
@@ -193,21 +226,28 @@ class UserPolicy(BasePolicy):
         Check if user can reset target user's password.
         
         Access Rules:
-        - Super Admin: All users
-        - National Admin: All except super admin
+        - SUPER_ADMIN: Can only reset their own password (except for self-service)
+        - Super Admin: All non-SUPER_ADMIN users
+        - National Admin: All except super admin and YEA officials
         - Users: Can request own password reset
+        
+        SECURITY: Other users cannot trigger password resets for SUPER_ADMIN accounts.
         """
         if user == target_user:
             return True  # Can reset own
+        
+        # SECURITY: Cannot reset password of SUPER_ADMIN accounts
+        if cls.is_super_admin(target_user):
+            return False
         
         if cls.is_super_admin(user):
             return True
         
         if cls.is_yea_official(user):
-            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
+            return not cls.is_yea_official(target_user)
         
         if cls.is_national_admin(user):
-            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
+            return not cls.is_yea_official(target_user)
         
         return False
     

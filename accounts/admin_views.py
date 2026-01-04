@@ -536,6 +536,9 @@ class AdminUserDetailView(APIView):
     GET /api/admin/users/{user_id}/
     PUT /api/admin/users/{user_id}/
     DELETE /api/admin/users/{user_id}/
+    
+    SECURITY: SUPER_ADMIN accounts are protected and cannot be modified or deleted
+    by any other user. Only the SUPER_ADMIN can update their own account.
     """
     permission_classes = [IsAuthenticated]
     
@@ -569,8 +572,16 @@ class AdminUserDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Check edit permission
         user = request.user
+        
+        # SECURITY: Protect SUPER_ADMIN accounts from being modified by others
+        if target_user.role == 'SUPER_ADMIN' and user.id != target_user.id:
+            return Response(
+                {'error': 'SUPER_ADMIN accounts cannot be modified by other users. Only the account owner can update their own profile.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check edit permission for non-SUPER_ADMIN targets
         if user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']:
             if user.id != target_user.id:
                 return Response(
@@ -594,6 +605,13 @@ class AdminUserDetailView(APIView):
             return Response(
                 {'error': 'User not found'},
                 status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # SECURITY: SUPER_ADMIN accounts cannot be deleted by anyone
+        if target_user.role == 'SUPER_ADMIN':
+            return Response(
+                {'error': 'SUPER_ADMIN accounts cannot be deleted. This is a protected account type.'},
+                status=status.HTTP_403_FORBIDDEN
             )
         
         # Only SUPER_ADMIN can delete users
