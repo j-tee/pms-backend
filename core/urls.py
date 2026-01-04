@@ -36,6 +36,7 @@ urlpatterns = [
     path('api/admin/inventory/', include('sales_revenue.inventory_urls', namespace='admin-inventory')),  # Government inventory analytics
     path('api/admin/platform-settings/', include((platform_settings_admin_urls, 'platform_settings'))),  # Platform settings (Super Admin)
     path('api/farms/', include('farms.management_urls')),  # Authenticated farm management
+    path('api/extension/', include('farms.extension_urls')),  # Extension officer / field officer endpoints
     path('api/flocks/', include('flock_management.urls')),  # Flock management
     path('api/feed/', include('feed_inventory.urls')),  # Feed inventory management
     path('api/inventory/', include('sales_revenue.inventory_urls')),  # Farmer inventory management

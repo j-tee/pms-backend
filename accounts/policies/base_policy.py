@@ -39,12 +39,21 @@ class BasePolicy:
     @staticmethod
     def is_extension_officer(user):
         """Check if user is extension officer."""
-        return user.has_role('EXTENSION_OFFICER')
+        return user.role == 'EXTENSION_OFFICER' or user.has_role('EXTENSION_OFFICER')
     
     @staticmethod
     def is_veterinary_officer(user):
         """Check if user is veterinary officer."""
-        return user.has_role('VETERINARY_OFFICER')
+        return user.role == 'VETERINARY_OFFICER' or user.has_role('VETERINARY_OFFICER')
+    
+    @staticmethod
+    def is_field_officer(user):
+        """Check if user is any type of field officer (extension, vet, or constituency)."""
+        return (
+            BasePolicy.is_extension_officer(user) or
+            BasePolicy.is_veterinary_officer(user) or
+            BasePolicy.is_constituency_official(user)
+        )
     
     @staticmethod
     def is_procurement_officer(user):
