@@ -1,7 +1,13 @@
 """
 Extension Officer / Field Officer Views
 
-Provides endpoints for extension officers and constituency vet officers to:
+"Extension Officer" and "Field Officer" are synonymous terms in this system.
+All three roles below have field officer access:
+- EXTENSION_OFFICER (primary field officer role)
+- VETERINARY_OFFICER (field officer with animal health focus)
+- CONSTITUENCY_OFFICIAL (senior field officer with assignment privileges)
+
+Provides endpoints for field officers to:
 - Register farmers on behalf (field registration)
 - Update farm information
 - View and manage assigned farms
