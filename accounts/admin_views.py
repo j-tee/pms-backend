@@ -335,6 +335,15 @@ def _create_farm_profile(application):
         application.farm_created_at = timezone.now()
         application.save()
         
+        # Sync location data to user profile for easy access
+        user = application.user_account
+        if user:
+            user.region = application.region or ''
+            user.district = application.district or ''
+            user.constituency = application.primary_constituency
+            user.save(update_fields=['region', 'district', 'constituency'])
+            logger.info(f"Synced location data to user {user.username}: {user.region}, {user.district}, {user.constituency}")
+        
         return True
     except Exception as e:
         # Log error but don't fail the approval

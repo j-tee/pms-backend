@@ -92,13 +92,21 @@ class User(AbstractUser, RoleMixin):
         help_text="Preferred method of contact"
     )
     
-    # Geographic assignment (for officials)
+    # Geographic assignment (for officials and farmers)
     region = models.CharField(
         max_length=100,
         blank=True,
         null=True,
         db_index=True,
-        help_text="Assigned region (for officials)"
+        help_text="Assigned region (for officials) or farm region (for farmers)"
+    )
+    
+    district = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="District (for farmers - synced from farm registration)"
     )
     
     constituency = models.CharField(
@@ -106,7 +114,7 @@ class User(AbstractUser, RoleMixin):
         blank=True,
         null=True,
         db_index=True,
-        help_text="Assigned constituency (for constituency officials)"
+        help_text="Assigned constituency (for officials) or farm constituency (for farmers)"
     )
     
     # Account status
