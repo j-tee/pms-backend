@@ -27,6 +27,15 @@ from .analytics_views import (
     ProductionComparisonView,
     FarmRankingView,
     GeographicHierarchyView,
+    
+    # Egg Production Analytics
+    EggProductionOverviewView,
+    EggProductionTrendView,
+    EggQualityAnalysisView,
+    EggProductionByFarmView,
+    EggProductionEfficiencyView,
+    EggDefectAnalysisView,
+    EggProductionComparisonView,
 )
 
 app_name = 'analytics'
@@ -91,4 +100,29 @@ urlpatterns = [
     
     # Geographic hierarchy for drill-down navigation
     path('geographic/hierarchy/', GeographicHierarchyView.as_view(), name='geographic-hierarchy'),
+    
+    # ==========================================================================
+    # EGG PRODUCTION ANALYTICS - Comprehensive egg production analysis
+    # ==========================================================================
+    
+    # Egg production overview with quality breakdown
+    path('eggs/overview/', EggProductionOverviewView.as_view(), name='eggs-overview'),
+    
+    # Egg production trend over time
+    path('eggs/trend/', EggProductionTrendView.as_view(), name='eggs-trend'),
+    
+    # Egg quality analysis by geographic level
+    path('eggs/quality/', EggQualityAnalysisView.as_view(), name='eggs-quality'),
+    
+    # Individual farm egg production rankings
+    path('eggs/farms/', EggProductionByFarmView.as_view(), name='eggs-farms'),
+    
+    # Egg production efficiency metrics
+    path('eggs/efficiency/', EggProductionEfficiencyView.as_view(), name='eggs-efficiency'),
+    
+    # Egg defect analysis with recommendations
+    path('eggs/defects/', EggDefectAnalysisView.as_view(), name='eggs-defects'),
+    
+    # Period comparison for egg production
+    path('eggs/comparison/', EggProductionComparisonView.as_view(), name='eggs-comparison'),
 ]

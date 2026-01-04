@@ -1360,3 +1360,834 @@ class YEAAnalyticsService:
             )
         }
 
+    # =========================================================================
+    # EGG PRODUCTION ANALYTICS
+    # =========================================================================
+    
+    def get_egg_production_overview(self, period_days=30):
+        """
+        Get comprehensive egg production overview with quality breakdown.
+        
+        Args:
+            period_days: Period for analysis
+            
+        Returns:
+            dict: Complete egg production metrics
+        """
+        from flock_management.models import DailyProduction
+        from farms.models import Farm
+        
+        farms = self._get_farm_queryset()
+        farm_ids = farms.values_list('id', flat=True)
+        
+        start_date = self.today - timedelta(days=period_days)
+        previous_start = start_date - timedelta(days=period_days)
+        previous_end = start_date - timedelta(days=1)
+        
+        # Current period production
+        current_production = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=start_date
+        ).aggregate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            broken_eggs=Coalesce(Sum('broken_eggs'), 0),
+            dirty_eggs=Coalesce(Sum('dirty_eggs'), 0),
+            small_eggs=Coalesce(Sum('small_eggs'), 0),
+            soft_shell_eggs=Coalesce(Sum('soft_shell_eggs'), 0),
+            avg_production_rate=Coalesce(Avg('production_rate_percent'), Decimal('0')),
+            days_recorded=Count('production_date', distinct=True),
+            farms_reporting=Count('farm_id', distinct=True)
+        )
+        
+        # Previous period for comparison
+        previous_production = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=previous_start,
+            production_date__lte=previous_end
+        ).aggregate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0)
+        )
+        
+        # Bird population
+        total_birds = farms.aggregate(total=Coalesce(Sum('current_bird_count'), 0))['total']
+        
+        # Calculate quality percentages
+        total = current_production['total_eggs'] or 1  # Avoid division by zero
+        good_pct = round((current_production['good_eggs'] / total * 100), 1)
+        broken_pct = round((current_production['broken_eggs'] / total * 100), 1)
+        dirty_pct = round((current_production['dirty_eggs'] / total * 100), 1)
+        small_pct = round((current_production['small_eggs'] / total * 100), 1)
+        soft_shell_pct = round((current_production['soft_shell_eggs'] / total * 100), 1)
+        
+        # Calculate trends
+        prev_total = previous_production['total_eggs'] or 1
+        production_change = round(((current_production['total_eggs'] - previous_production['total_eggs']) / prev_total * 100), 1)
+        quality_change = 0
+        if previous_production['good_eggs'] > 0:
+            prev_quality_rate = previous_production['good_eggs'] / prev_total * 100
+            curr_quality_rate = current_production['good_eggs'] / total * 100
+            quality_change = round(curr_quality_rate - prev_quality_rate, 1)
+        
+        # Calculate eggs per bird per day
+        days = current_production['days_recorded'] or 1
+        eggs_per_bird_per_day = round((current_production['total_eggs'] / (total_birds * days)), 3) if total_birds > 0 else 0
+        
+        return {
+            'period_days': period_days,
+            'production': {
+                'total_eggs': current_production['total_eggs'],
+                'daily_average': round(current_production['total_eggs'] / days, 0),
+                'eggs_per_bird_per_day': eggs_per_bird_per_day,
+                'avg_production_rate': float(current_production['avg_production_rate']),
+                'farms_reporting': current_production['farms_reporting'],
+                'days_recorded': current_production['days_recorded']
+            },
+            'quality': {
+                'good_eggs': current_production['good_eggs'],
+                'good_eggs_percent': good_pct,
+                'broken_eggs': current_production['broken_eggs'],
+                'broken_eggs_percent': broken_pct,
+                'dirty_eggs': current_production['dirty_eggs'],
+                'dirty_eggs_percent': dirty_pct,
+                'small_eggs': current_production['small_eggs'],
+                'small_eggs_percent': small_pct,
+                'soft_shell_eggs': current_production['soft_shell_eggs'],
+                'soft_shell_eggs_percent': soft_shell_pct
+            },
+            'trends': {
+                'production_change_percent': production_change,
+                'production_trend': 'up' if production_change > 0 else ('down' if production_change < 0 else 'stable'),
+                'quality_change_percent': quality_change,
+                'quality_trend': 'improving' if quality_change > 0 else ('declining' if quality_change < 0 else 'stable'),
+                'previous_period_eggs': previous_production['total_eggs']
+            },
+            'population': {
+                'total_birds': total_birds,
+                'laying_efficiency': float(current_production['avg_production_rate'])
+            }
+        }
+    
+    def get_egg_production_trend(self, period_days=30, granularity='daily'):
+        """
+        Get egg production trend over time with quality breakdown.
+        
+        Args:
+            period_days: Number of days to include
+            granularity: 'daily', 'weekly', or 'monthly'
+            
+        Returns:
+            dict: Time-series production data
+        """
+        from flock_management.models import DailyProduction
+        
+        farms = self._get_farm_queryset()
+        farm_ids = farms.values_list('id', flat=True)
+        
+        start_date = self.today - timedelta(days=period_days)
+        
+        # Choose truncation function
+        if granularity == 'weekly':
+            trunc_fn = TruncWeek('production_date')
+            date_format = '%Y-W%W'
+        elif granularity == 'monthly':
+            trunc_fn = TruncMonth('production_date')
+            date_format = '%Y-%m'
+        else:
+            trunc_fn = TruncDate('production_date')
+            date_format = '%Y-%m-%d'
+        
+        trend = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=start_date
+        ).annotate(
+            period=trunc_fn
+        ).values('period').annotate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            broken_eggs=Coalesce(Sum('broken_eggs'), 0),
+            dirty_eggs=Coalesce(Sum('dirty_eggs'), 0),
+            small_eggs=Coalesce(Sum('small_eggs'), 0),
+            soft_shell_eggs=Coalesce(Sum('soft_shell_eggs'), 0),
+            avg_production_rate=Coalesce(Avg('production_rate_percent'), Decimal('0')),
+            farms_count=Count('farm_id', distinct=True)
+        ).order_by('period')
+        
+        data = []
+        for item in trend:
+            total = item['total_eggs'] or 1
+            data.append({
+                'period': item['period'].strftime(date_format) if item['period'] else None,
+                'date': item['period'].isoformat() if item['period'] else None,
+                'total_eggs': item['total_eggs'],
+                'good_eggs': item['good_eggs'],
+                'good_eggs_percent': round((item['good_eggs'] / total * 100), 1),
+                'defective_eggs': item['broken_eggs'] + item['dirty_eggs'] + item['small_eggs'] + item['soft_shell_eggs'],
+                'breakdown': {
+                    'broken': item['broken_eggs'],
+                    'dirty': item['dirty_eggs'],
+                    'small': item['small_eggs'],
+                    'soft_shell': item['soft_shell_eggs']
+                },
+                'avg_production_rate': float(item['avg_production_rate']),
+                'farms_reporting': item['farms_count']
+            })
+        
+        # Calculate moving average (7-day for daily, 4-week for weekly)
+        if len(data) >= 3:
+            window = 7 if granularity == 'daily' else (4 if granularity == 'weekly' else 3)
+            for i in range(len(data)):
+                start_idx = max(0, i - window + 1)
+                window_data = data[start_idx:i + 1]
+                data[i]['moving_avg'] = round(sum(d['total_eggs'] for d in window_data) / len(window_data), 0)
+        
+        return {
+            'period_days': period_days,
+            'granularity': granularity,
+            'data_points': len(data),
+            'data': data
+        }
+    
+    def get_egg_quality_analysis(self, period_days=30, level='region', parent_filter=None):
+        """
+        Get egg quality breakdown by geographic level.
+        
+        Args:
+            period_days: Period for analysis
+            level: 'region', 'district', or 'constituency'
+            parent_filter: Parent filter for drill-down
+            
+        Returns:
+            dict: Quality metrics by geographic area
+        """
+        from flock_management.models import DailyProduction
+        from farms.models import Farm, FarmLocation
+        
+        farms = self._get_farm_queryset()
+        farm_ids = farms.values_list('id', flat=True)
+        start_date = self.today - timedelta(days=period_days)
+        
+        # Build location filter
+        location_qs = FarmLocation.objects.filter(
+            farm_id__in=farm_ids,
+            is_primary_location=True
+        )
+        
+        if parent_filter:
+            if level == 'district':
+                location_qs = location_qs.filter(region__iexact=parent_filter)
+            elif level == 'constituency':
+                location_qs = location_qs.filter(district__iexact=parent_filter)
+        
+        group_field = level
+        farm_geo_map = dict(location_qs.values_list('farm_id', group_field))
+        filtered_farm_ids = list(farm_geo_map.keys())
+        
+        # Get production by farm
+        production = DailyProduction.objects.filter(
+            farm_id__in=filtered_farm_ids,
+            production_date__gte=start_date
+        ).values('farm_id').annotate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            broken_eggs=Coalesce(Sum('broken_eggs'), 0),
+            dirty_eggs=Coalesce(Sum('dirty_eggs'), 0),
+            small_eggs=Coalesce(Sum('small_eggs'), 0),
+            soft_shell_eggs=Coalesce(Sum('soft_shell_eggs'), 0)
+        )
+        
+        # Aggregate by geographic level
+        geo_data = {}
+        for item in production:
+            geo_unit = farm_geo_map.get(item['farm_id'], 'Unknown')
+            if geo_unit not in geo_data:
+                geo_data[geo_unit] = {
+                    'total': 0, 'good': 0, 'broken': 0, 
+                    'dirty': 0, 'small': 0, 'soft_shell': 0
+                }
+            geo_data[geo_unit]['total'] += item['total_eggs']
+            geo_data[geo_unit]['good'] += item['good_eggs']
+            geo_data[geo_unit]['broken'] += item['broken_eggs']
+            geo_data[geo_unit]['dirty'] += item['dirty_eggs']
+            geo_data[geo_unit]['small'] += item['small_eggs']
+            geo_data[geo_unit]['soft_shell'] += item['soft_shell_eggs']
+        
+        result = []
+        for geo_unit, data in geo_data.items():
+            if not geo_unit or geo_unit == 'Unknown':
+                continue
+            
+            total = data['total'] or 1
+            defective = data['broken'] + data['dirty'] + data['small'] + data['soft_shell']
+            quality_score = round((data['good'] / total * 100), 1)
+            
+            # Quality rating
+            if quality_score >= 95:
+                quality_rating = 'excellent'
+            elif quality_score >= 90:
+                quality_rating = 'good'
+            elif quality_score >= 80:
+                quality_rating = 'fair'
+            else:
+                quality_rating = 'poor'
+            
+            result.append({
+                'name': geo_unit,
+                'level': level,
+                'total_eggs': data['total'],
+                'good_eggs': data['good'],
+                'good_eggs_percent': quality_score,
+                'defective_eggs': defective,
+                'defective_percent': round((defective / total * 100), 1),
+                'breakdown': {
+                    'broken': {'count': data['broken'], 'percent': round((data['broken'] / total * 100), 2)},
+                    'dirty': {'count': data['dirty'], 'percent': round((data['dirty'] / total * 100), 2)},
+                    'small': {'count': data['small'], 'percent': round((data['small'] / total * 100), 2)},
+                    'soft_shell': {'count': data['soft_shell'], 'percent': round((data['soft_shell'] / total * 100), 2)}
+                },
+                'quality_rating': quality_rating
+            })
+        
+        # Sort by quality score descending
+        result.sort(key=lambda x: -x['good_eggs_percent'])
+        
+        # Add rankings
+        for i, item in enumerate(result, 1):
+            item['rank'] = i
+        
+        # Overall statistics
+        total_all = sum(r['total_eggs'] for r in result)
+        good_all = sum(r['good_eggs'] for r in result)
+        
+        return {
+            'level': level,
+            'parent_filter': parent_filter,
+            'period_days': period_days,
+            'data': result,
+            'summary': {
+                'total_locations': len(result),
+                'total_eggs': total_all,
+                'good_eggs': good_all,
+                'overall_quality_percent': round((good_all / total_all * 100), 1) if total_all > 0 else 0,
+                'best_performer': result[0]['name'] if result else None,
+                'worst_performer': result[-1]['name'] if result else None
+            }
+        }
+    
+    def get_egg_production_by_farm(self, region=None, district=None, constituency=None,
+                                    metric='total_eggs', period_days=30, limit=50):
+        """
+        Get individual farm egg production rankings.
+        
+        Args:
+            region, district, constituency: Geographic filters
+            metric: 'total_eggs', 'production_rate', 'quality', 'efficiency'
+            period_days: Period for data
+            limit: Max farms to return
+            
+        Returns:
+            dict: Farm egg production rankings
+        """
+        from flock_management.models import DailyProduction
+        from farms.models import Farm, FarmLocation
+        
+        farms = self._get_farm_queryset()
+        start_date = self.today - timedelta(days=period_days)
+        
+        # Build location filter
+        location_qs = FarmLocation.objects.filter(
+            farm_id__in=farms.values_list('id', flat=True),
+            is_primary_location=True
+        )
+        
+        if region:
+            location_qs = location_qs.filter(region__iexact=region)
+        if district:
+            location_qs = location_qs.filter(district__iexact=district)
+        if constituency:
+            location_qs = location_qs.filter(constituency__iexact=constituency)
+        
+        filtered_farm_ids = location_qs.values_list('farm_id', flat=True)
+        
+        # Get production with farm details
+        production = DailyProduction.objects.filter(
+            farm_id__in=filtered_farm_ids,
+            production_date__gte=start_date
+        ).values(
+            'farm_id',
+            'farm__farm_name',
+            'farm__current_bird_count'
+        ).annotate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            broken_eggs=Coalesce(Sum('broken_eggs'), 0),
+            dirty_eggs=Coalesce(Sum('dirty_eggs'), 0),
+            small_eggs=Coalesce(Sum('small_eggs'), 0),
+            soft_shell_eggs=Coalesce(Sum('soft_shell_eggs'), 0),
+            avg_production_rate=Coalesce(Avg('production_rate_percent'), Decimal('0')),
+            days_recorded=Count('production_date', distinct=True)
+        )
+        
+        result = []
+        for item in production:
+            farm_id = item['farm_id']
+            total = item['total_eggs'] or 1
+            birds = item['farm__current_bird_count'] or 1
+            days = item['days_recorded'] or 1
+            defective = item['broken_eggs'] + item['dirty_eggs'] + item['small_eggs'] + item['soft_shell_eggs']
+            
+            quality_percent = round((item['good_eggs'] / total * 100), 1)
+            eggs_per_bird = round((item['total_eggs'] / birds), 2)
+            daily_average = round((item['total_eggs'] / days), 0)
+            
+            # Get location
+            loc_info = location_qs.filter(farm_id=farm_id).values(
+                'region', 'district', 'constituency'
+            ).first() or {}
+            
+            result.append({
+                'farm_id': str(farm_id),
+                'farm_name': item['farm__farm_name'],
+                'region': loc_info.get('region', 'Unknown'),
+                'district': loc_info.get('district', 'Unknown'),
+                'constituency': loc_info.get('constituency', 'Unknown'),
+                'bird_count': item['farm__current_bird_count'] or 0,
+                'production': {
+                    'total_eggs': item['total_eggs'],
+                    'daily_average': daily_average,
+                    'eggs_per_bird': eggs_per_bird,
+                    'production_rate': float(item['avg_production_rate'])
+                },
+                'quality': {
+                    'good_eggs': item['good_eggs'],
+                    'good_percent': quality_percent,
+                    'defective_eggs': defective,
+                    'defective_percent': round((defective / total * 100), 1)
+                },
+                'breakdown': {
+                    'broken': item['broken_eggs'],
+                    'dirty': item['dirty_eggs'],
+                    'small': item['small_eggs'],
+                    'soft_shell': item['soft_shell_eggs']
+                },
+                'days_recorded': item['days_recorded']
+            })
+        
+        # Sort by metric
+        metric_map = {
+            'total_eggs': ('production', 'total_eggs'),
+            'production_rate': ('production', 'production_rate'),
+            'quality': ('quality', 'good_percent'),
+            'efficiency': ('production', 'eggs_per_bird'),
+            'daily_average': ('production', 'daily_average')
+        }
+        
+        sort_keys = metric_map.get(metric, ('production', 'total_eggs'))
+        result.sort(key=lambda x: -x[sort_keys[0]][sort_keys[1]])
+        
+        # Add rankings
+        for i, item in enumerate(result[:limit], 1):
+            item['rank'] = i
+        
+        return {
+            'filters': {
+                'region': region,
+                'district': district,
+                'constituency': constituency
+            },
+            'metric': metric,
+            'period_days': period_days,
+            'total_farms': len(result),
+            'data': result[:limit]
+        }
+    
+    def get_egg_production_efficiency(self, period_days=30):
+        """
+        Get egg production efficiency metrics.
+        
+        Args:
+            period_days: Period for analysis
+            
+        Returns:
+            dict: Efficiency metrics
+        """
+        from flock_management.models import DailyProduction, Flock
+        from farms.models import Farm
+        
+        farms = self._get_farm_queryset()
+        farm_ids = farms.values_list('id', flat=True)
+        start_date = self.today - timedelta(days=period_days)
+        
+        # Get production and feed data
+        production = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=start_date
+        ).aggregate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            total_feed_kg=Coalesce(Sum('feed_consumed_kg'), Decimal('0')),
+            total_feed_cost=Coalesce(Sum('feed_cost_today'), Decimal('0')),
+            avg_production_rate=Coalesce(Avg('production_rate_percent'), Decimal('0')),
+            days=Count('production_date', distinct=True),
+            farms_count=Count('farm_id', distinct=True)
+        )
+        
+        # Bird population
+        total_birds = farms.aggregate(total=Coalesce(Sum('current_bird_count'), 0))['total']
+        
+        # Layer flocks
+        layer_flocks = Flock.objects.filter(
+            farm_id__in=farm_ids,
+            flock_type='Layers',
+            status='active'
+        ).aggregate(
+            count=Count('id'),
+            total_birds=Coalesce(Sum('current_count'), 0)
+        )
+        
+        # Calculate efficiency metrics
+        total_eggs = production['total_eggs'] or 1
+        total_feed = float(production['total_feed_kg']) or 1
+        days = production['days'] or 1
+        
+        # Feed conversion (kg feed per dozen eggs)
+        eggs_in_dozens = total_eggs / 12
+        feed_per_dozen = round((total_feed / eggs_in_dozens), 3) if eggs_in_dozens > 0 else 0
+        
+        # Cost per egg
+        total_feed_cost = float(production['total_feed_cost'])
+        cost_per_egg = round((total_feed_cost / total_eggs), 4) if total_eggs > 0 else 0
+        cost_per_dozen = round(cost_per_egg * 12, 2)
+        
+        # Eggs per bird metrics
+        eggs_per_bird_total = round((total_eggs / total_birds), 2) if total_birds > 0 else 0
+        eggs_per_bird_per_day = round((total_eggs / (total_birds * days)), 3) if (total_birds * days) > 0 else 0
+        
+        # Production rate distribution
+        rate_distribution = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=start_date
+        ).aggregate(
+            below_70=Count('id', filter=Q(production_rate_percent__lt=70)),
+            rate_70_80=Count('id', filter=Q(production_rate_percent__gte=70, production_rate_percent__lt=80)),
+            rate_80_90=Count('id', filter=Q(production_rate_percent__gte=80, production_rate_percent__lt=90)),
+            above_90=Count('id', filter=Q(production_rate_percent__gte=90))
+        )
+        
+        total_records = sum(rate_distribution.values())
+        
+        return {
+            'period_days': period_days,
+            'birds': {
+                'total': total_birds,
+                'layer_flocks': layer_flocks['count'],
+                'layers': layer_flocks['total_birds']
+            },
+            'production': {
+                'total_eggs': production['total_eggs'],
+                'good_eggs': production['good_eggs'],
+                'quality_percent': round((production['good_eggs'] / total_eggs * 100), 1),
+                'daily_average': round(production['total_eggs'] / days, 0),
+                'avg_production_rate': float(production['avg_production_rate'])
+            },
+            'efficiency': {
+                'eggs_per_bird_total': eggs_per_bird_total,
+                'eggs_per_bird_per_day': eggs_per_bird_per_day,
+                'eggs_per_layer_per_day': round((total_eggs / (layer_flocks['total_birds'] * days)), 3) if layer_flocks['total_birds'] > 0 else 0,
+                'feed_per_dozen_eggs_kg': feed_per_dozen,
+                'feed_cost_per_egg_ghs': cost_per_egg,
+                'feed_cost_per_dozen_ghs': cost_per_dozen
+            },
+            'feed': {
+                'total_consumed_kg': float(production['total_feed_kg']),
+                'total_cost_ghs': float(production['total_feed_cost']),
+                'daily_average_kg': round(float(production['total_feed_kg']) / days, 2)
+            },
+            'rate_distribution': {
+                'below_70_percent': {
+                    'count': rate_distribution['below_70'],
+                    'percent': round((rate_distribution['below_70'] / total_records * 100), 1) if total_records > 0 else 0
+                },
+                '70_to_80_percent': {
+                    'count': rate_distribution['rate_70_80'],
+                    'percent': round((rate_distribution['rate_70_80'] / total_records * 100), 1) if total_records > 0 else 0
+                },
+                '80_to_90_percent': {
+                    'count': rate_distribution['rate_80_90'],
+                    'percent': round((rate_distribution['rate_80_90'] / total_records * 100), 1) if total_records > 0 else 0
+                },
+                'above_90_percent': {
+                    'count': rate_distribution['above_90'],
+                    'percent': round((rate_distribution['above_90'] / total_records * 100), 1) if total_records > 0 else 0
+                }
+            },
+            'farms_reporting': production['farms_count'],
+            'days_analyzed': production['days']
+        }
+    
+    def get_egg_defect_analysis(self, period_days=30):
+        """
+        Get detailed egg defect analysis with trends.
+        
+        Args:
+            period_days: Period for analysis
+            
+        Returns:
+            dict: Defect analysis
+        """
+        from flock_management.models import DailyProduction
+        
+        farms = self._get_farm_queryset()
+        farm_ids = farms.values_list('id', flat=True)
+        
+        start_date = self.today - timedelta(days=period_days)
+        previous_start = start_date - timedelta(days=period_days)
+        previous_end = start_date - timedelta(days=1)
+        
+        # Current period
+        current = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=start_date
+        ).aggregate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            broken_eggs=Coalesce(Sum('broken_eggs'), 0),
+            dirty_eggs=Coalesce(Sum('dirty_eggs'), 0),
+            small_eggs=Coalesce(Sum('small_eggs'), 0),
+            soft_shell_eggs=Coalesce(Sum('soft_shell_eggs'), 0)
+        )
+        
+        # Previous period
+        previous = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=previous_start,
+            production_date__lte=previous_end
+        ).aggregate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            broken_eggs=Coalesce(Sum('broken_eggs'), 0),
+            dirty_eggs=Coalesce(Sum('dirty_eggs'), 0),
+            small_eggs=Coalesce(Sum('small_eggs'), 0),
+            soft_shell_eggs=Coalesce(Sum('soft_shell_eggs'), 0)
+        )
+        
+        # Daily breakdown for trend visualization
+        daily_defects = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=start_date
+        ).values('production_date').annotate(
+            total=Sum('eggs_collected'),
+            broken=Sum('broken_eggs'),
+            dirty=Sum('dirty_eggs'),
+            small=Sum('small_eggs'),
+            soft_shell=Sum('soft_shell_eggs')
+        ).order_by('production_date')
+        
+        current_total = current['total_eggs'] or 1
+        previous_total = previous['total_eggs'] or 1
+        
+        def calc_rate_and_trend(current_val, prev_val, curr_total, prev_total):
+            curr_rate = round((current_val / curr_total * 100), 2)
+            prev_rate = round((prev_val / prev_total * 100), 2)
+            trend = round(curr_rate - prev_rate, 2)
+            return {
+                'count': current_val,
+                'rate': curr_rate,
+                'previous_rate': prev_rate,
+                'trend': trend,
+                'improving': trend < 0  # Lower defect rate is better
+            }
+        
+        defects = {
+            'broken': calc_rate_and_trend(
+                current['broken_eggs'], previous['broken_eggs'], 
+                current_total, previous_total
+            ),
+            'dirty': calc_rate_and_trend(
+                current['dirty_eggs'], previous['dirty_eggs'],
+                current_total, previous_total
+            ),
+            'small': calc_rate_and_trend(
+                current['small_eggs'], previous['small_eggs'],
+                current_total, previous_total
+            ),
+            'soft_shell': calc_rate_and_trend(
+                current['soft_shell_eggs'], previous['soft_shell_eggs'],
+                current_total, previous_total
+            )
+        }
+        
+        total_defects = (current['broken_eggs'] + current['dirty_eggs'] + 
+                        current['small_eggs'] + current['soft_shell_eggs'])
+        
+        # Identify primary issues
+        issues = sorted(defects.items(), key=lambda x: -x[1]['rate'])
+        primary_issue = issues[0][0] if issues else None
+        
+        return {
+            'period_days': period_days,
+            'summary': {
+                'total_eggs': current['total_eggs'],
+                'good_eggs': current['good_eggs'],
+                'total_defective': total_defects,
+                'defect_rate': round((total_defects / current_total * 100), 2),
+                'quality_rate': round((current['good_eggs'] / current_total * 100), 2)
+            },
+            'defects': defects,
+            'primary_issue': primary_issue,
+            'recommendations': self._get_defect_recommendations(defects),
+            'daily_trend': [
+                {
+                    'date': item['production_date'].isoformat(),
+                    'total_defects': (item['broken'] or 0) + (item['dirty'] or 0) + 
+                                    (item['small'] or 0) + (item['soft_shell'] or 0),
+                    'defect_rate': round(
+                        ((item['broken'] or 0) + (item['dirty'] or 0) + 
+                         (item['small'] or 0) + (item['soft_shell'] or 0)) / 
+                        (item['total'] or 1) * 100, 2
+                    )
+                }
+                for item in daily_defects
+            ]
+        }
+    
+    def _get_defect_recommendations(self, defects):
+        """Generate recommendations based on defect analysis."""
+        recommendations = []
+        
+        if defects['broken']['rate'] > 2:
+            recommendations.append({
+                'issue': 'High breakage rate',
+                'possible_causes': ['Rough handling', 'Weak shells (calcium deficiency)', 'Poor collection practices'],
+                'actions': ['Review collection procedures', 'Check calcium in feed', 'Inspect egg collection equipment']
+            })
+        
+        if defects['dirty']['rate'] > 5:
+            recommendations.append({
+                'issue': 'High dirty egg rate',
+                'possible_causes': ['Infrequent collection', 'Dirty nesting boxes', 'Overcrowding'],
+                'actions': ['Increase collection frequency', 'Clean nesting boxes regularly', 'Check stocking density']
+            })
+        
+        if defects['soft_shell']['rate'] > 1:
+            recommendations.append({
+                'issue': 'Soft shell eggs',
+                'possible_causes': ['Calcium deficiency', 'Heat stress', 'Disease', 'Old laying hens'],
+                'actions': ['Supplement calcium', 'Improve ventilation', 'Check bird health', 'Review flock age']
+            })
+        
+        if defects['small']['rate'] > 3:
+            recommendations.append({
+                'issue': 'High rate of small eggs',
+                'possible_causes': ['Young pullets', 'Nutritional deficiency', 'Stress'],
+                'actions': ['Review feed formulation', 'Reduce stressors', 'Allow pullets to mature']
+            })
+        
+        return recommendations
+    
+    def get_egg_production_comparison(self, period_days=30, compare_period_days=30):
+        """
+        Compare current period with previous period.
+        
+        Args:
+            period_days: Current period
+            compare_period_days: Previous period for comparison
+            
+        Returns:
+            dict: Period comparison
+        """
+        from flock_management.models import DailyProduction
+        
+        farms = self._get_farm_queryset()
+        farm_ids = farms.values_list('id', flat=True)
+        
+        current_start = self.today - timedelta(days=period_days)
+        previous_start = current_start - timedelta(days=compare_period_days)
+        previous_end = current_start - timedelta(days=1)
+        
+        # Current period
+        current = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=current_start
+        ).aggregate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            broken_eggs=Coalesce(Sum('broken_eggs'), 0),
+            dirty_eggs=Coalesce(Sum('dirty_eggs'), 0),
+            small_eggs=Coalesce(Sum('small_eggs'), 0),
+            soft_shell_eggs=Coalesce(Sum('soft_shell_eggs'), 0),
+            avg_production_rate=Coalesce(Avg('production_rate_percent'), Decimal('0')),
+            total_feed_kg=Coalesce(Sum('feed_consumed_kg'), Decimal('0')),
+            total_feed_cost=Coalesce(Sum('feed_cost_today'), Decimal('0')),
+            farms_count=Count('farm_id', distinct=True)
+        )
+        
+        # Previous period
+        previous = DailyProduction.objects.filter(
+            farm_id__in=farm_ids,
+            production_date__gte=previous_start,
+            production_date__lte=previous_end
+        ).aggregate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            avg_production_rate=Coalesce(Avg('production_rate_percent'), Decimal('0')),
+            total_feed_kg=Coalesce(Sum('feed_consumed_kg'), Decimal('0')),
+            total_feed_cost=Coalesce(Sum('feed_cost_today'), Decimal('0'))
+        )
+        
+        def calc_change(current_val, previous_val):
+            if previous_val == 0:
+                return 100 if current_val > 0 else 0
+            return round(((current_val - previous_val) / previous_val * 100), 1)
+        
+        current_total = current['total_eggs'] or 1
+        previous_total = previous['total_eggs'] or 1
+        current_defects = (current['broken_eggs'] + current['dirty_eggs'] + 
+                          current['small_eggs'] + current['soft_shell_eggs'])
+        
+        return {
+            'current_period': {
+                'start_date': current_start.isoformat(),
+                'end_date': self.today.isoformat(),
+                'days': period_days,
+                'total_eggs': current['total_eggs'],
+                'good_eggs': current['good_eggs'],
+                'quality_percent': round((current['good_eggs'] / current_total * 100), 1),
+                'defective_eggs': current_defects,
+                'avg_production_rate': float(current['avg_production_rate']),
+                'feed_consumed_kg': float(current['total_feed_kg']),
+                'feed_cost_ghs': float(current['total_feed_cost']),
+                'farms_reporting': current['farms_count']
+            },
+            'previous_period': {
+                'start_date': previous_start.isoformat(),
+                'end_date': previous_end.isoformat(),
+                'days': compare_period_days,
+                'total_eggs': previous['total_eggs'],
+                'good_eggs': previous['good_eggs'],
+                'quality_percent': round((previous['good_eggs'] / previous_total * 100), 1),
+                'avg_production_rate': float(previous['avg_production_rate']),
+                'feed_consumed_kg': float(previous['total_feed_kg']),
+                'feed_cost_ghs': float(previous['total_feed_cost'])
+            },
+            'changes': {
+                'eggs_change': current['total_eggs'] - previous['total_eggs'],
+                'eggs_change_percent': calc_change(current['total_eggs'], previous['total_eggs']),
+                'quality_change_percent': round(
+                    (current['good_eggs'] / current_total * 100) - 
+                    (previous['good_eggs'] / previous_total * 100), 1
+                ),
+                'production_rate_change': round(
+                    float(current['avg_production_rate']) - float(previous['avg_production_rate']), 1
+                ),
+                'feed_efficiency_improving': (
+                    float(current['total_feed_kg']) / current_total < 
+                    float(previous['total_feed_kg']) / previous_total
+                ) if previous_total > 0 else False
+            },
+            'trends': {
+                'production': 'up' if current['total_eggs'] > previous['total_eggs'] else 
+                             ('down' if current['total_eggs'] < previous['total_eggs'] else 'stable'),
+                'quality': 'improving' if (current['good_eggs'] / current_total) > (previous['good_eggs'] / previous_total) else 'declining'
+            }
+        }

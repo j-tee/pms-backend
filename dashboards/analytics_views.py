@@ -440,3 +440,203 @@ class GeographicHierarchyView(APIView):
         service = YEAAnalyticsService(user=request.user)
         data = service.get_geographic_hierarchy()
         return Response(data, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# EGG PRODUCTION ANALYTICS ENDPOINTS
+# =============================================================================
+
+class EggProductionOverviewView(APIView):
+    """
+    GET /api/admin/analytics/eggs/overview/
+    
+    Comprehensive egg production overview with quality breakdown.
+    
+    Query params:
+        - days: Period for analysis (default: 30)
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        days = int(request.query_params.get('days', 30))
+        data = service.get_egg_production_overview(period_days=days)
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class EggProductionTrendView(APIView):
+    """
+    GET /api/admin/analytics/eggs/trend/
+    
+    Egg production trend over time with quality breakdown.
+    
+    Query params:
+        - days: Period for analysis (default: 30)
+        - granularity: 'daily', 'weekly', or 'monthly' (default: 'daily')
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        days = int(request.query_params.get('days', 30))
+        granularity = request.query_params.get('granularity', 'daily')
+        
+        if granularity not in ['daily', 'weekly', 'monthly']:
+            return Response(
+                {'error': 'Invalid granularity. Use daily, weekly, or monthly'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = service.get_egg_production_trend(period_days=days, granularity=granularity)
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class EggQualityAnalysisView(APIView):
+    """
+    GET /api/admin/analytics/eggs/quality/
+    
+    Egg quality breakdown by geographic level.
+    
+    Query params:
+        - days: Period for analysis (default: 30)
+        - level: 'region', 'district', or 'constituency' (default: 'region')
+        - parent: Parent filter for drill-down
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        days = int(request.query_params.get('days', 30))
+        level = request.query_params.get('level', 'region')
+        parent_filter = request.query_params.get('parent')
+        
+        if level not in ['region', 'district', 'constituency']:
+            return Response(
+                {'error': 'Invalid level. Use region, district, or constituency'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = service.get_egg_quality_analysis(
+            period_days=days,
+            level=level,
+            parent_filter=parent_filter
+        )
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class EggProductionByFarmView(APIView):
+    """
+    GET /api/admin/analytics/eggs/farms/
+    
+    Individual farm egg production rankings.
+    
+    Query params:
+        - region: Filter by region
+        - district: Filter by district
+        - constituency: Filter by constituency
+        - metric: 'total_eggs', 'production_rate', 'quality', 'efficiency', 'daily_average'
+        - days: Period for data (default: 30)
+        - limit: Max farms to return (default: 50)
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        region = request.query_params.get('region')
+        district = request.query_params.get('district')
+        constituency = request.query_params.get('constituency')
+        metric = request.query_params.get('metric', 'total_eggs')
+        days = int(request.query_params.get('days', 30))
+        limit = int(request.query_params.get('limit', 50))
+        
+        valid_metrics = ['total_eggs', 'production_rate', 'quality', 'efficiency', 'daily_average']
+        if metric not in valid_metrics:
+            return Response(
+                {'error': f'Invalid metric. Use one of: {", ".join(valid_metrics)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = service.get_egg_production_by_farm(
+            region=region,
+            district=district,
+            constituency=constituency,
+            metric=metric,
+            period_days=days,
+            limit=limit
+        )
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class EggProductionEfficiencyView(APIView):
+    """
+    GET /api/admin/analytics/eggs/efficiency/
+    
+    Egg production efficiency metrics including feed conversion.
+    
+    Query params:
+        - days: Period for analysis (default: 30)
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        days = int(request.query_params.get('days', 30))
+        data = service.get_egg_production_efficiency(period_days=days)
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class EggDefectAnalysisView(APIView):
+    """
+    GET /api/admin/analytics/eggs/defects/
+    
+    Detailed egg defect analysis with trends and recommendations.
+    
+    Query params:
+        - days: Period for analysis (default: 30)
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        days = int(request.query_params.get('days', 30))
+        data = service.get_egg_defect_analysis(period_days=days)
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class EggProductionComparisonView(APIView):
+    """
+    GET /api/admin/analytics/eggs/comparison/
+    
+    Compare current period with previous period.
+    
+    Query params:
+        - days: Current period days (default: 30)
+        - compare_days: Previous period days (default: 30)
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        days = int(request.query_params.get('days', 30))
+        compare_days = int(request.query_params.get('compare_days', 30))
+        
+        data = service.get_egg_production_comparison(
+            period_days=days,
+            compare_period_days=compare_days
+        )
+        
+        return Response(data, status=status.HTTP_200_OK)
+
