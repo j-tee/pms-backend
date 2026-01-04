@@ -260,3 +260,183 @@ class PlatformActivationStatsView(APIView):
         service = PlatformRevenueService()
         data = service.get_marketplace_activation_stats()
         return Response(data, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# GEOGRAPHIC BREAKDOWN ENDPOINTS
+# =============================================================================
+
+class GeographicBreakdownView(APIView):
+    """
+    GET /api/admin/analytics/geographic/breakdown/
+    
+    Comprehensive geographic breakdown of all metrics.
+    
+    Query params:
+        - level: 'region', 'district', or 'constituency' (default: 'region')
+        - parent: Parent filter for drill-down (e.g., region name when level='district')
+        - days: Period for production data (default: 30)
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        level = request.query_params.get('level', 'region')
+        parent_filter = request.query_params.get('parent')
+        days = int(request.query_params.get('days', 30))
+        
+        if level not in ['region', 'district', 'constituency']:
+            return Response(
+                {'error': 'Invalid level. Use region, district, or constituency'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = service.get_geographic_breakdown(
+            level=level,
+            parent_filter=parent_filter,
+            period_days=days
+        )
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class MortalityBreakdownView(APIView):
+    """
+    GET /api/admin/analytics/geographic/mortality/
+    
+    Detailed mortality breakdown by geographic level with trends.
+    
+    Query params:
+        - level: 'region', 'district', or 'constituency' (default: 'region')
+        - parent: Parent filter for drill-down
+        - days: Current period days (default: 30)
+        - comparison_days: Previous period for comparison (default: 30)
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        level = request.query_params.get('level', 'region')
+        parent_filter = request.query_params.get('parent')
+        days = int(request.query_params.get('days', 30))
+        comparison_days = int(request.query_params.get('comparison_days', 30))
+        
+        if level not in ['region', 'district', 'constituency']:
+            return Response(
+                {'error': 'Invalid level. Use region, district, or constituency'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = service.get_mortality_breakdown(
+            level=level,
+            parent_filter=parent_filter,
+            period_days=days,
+            comparison_period_days=comparison_days
+        )
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class ProductionComparisonView(APIView):
+    """
+    GET /api/admin/analytics/geographic/comparison/
+    
+    Production comparison across geographic units with rankings.
+    
+    Query params:
+        - level: 'region', 'district', or 'constituency' (default: 'region')
+        - parent: Parent filter for drill-down
+        - days: Period for data (default: 30)
+        - metric: 'eggs', 'mortality', 'production_rate', 'birds', 'farms' (default: 'eggs')
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        level = request.query_params.get('level', 'region')
+        parent_filter = request.query_params.get('parent')
+        days = int(request.query_params.get('days', 30))
+        metric = request.query_params.get('metric', 'eggs')
+        
+        if level not in ['region', 'district', 'constituency']:
+            return Response(
+                {'error': 'Invalid level. Use region, district, or constituency'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if metric not in ['eggs', 'mortality', 'production_rate', 'birds', 'farms']:
+            return Response(
+                {'error': 'Invalid metric. Use eggs, mortality, production_rate, birds, or farms'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = service.get_production_comparison(
+            level=level,
+            parent_filter=parent_filter,
+            period_days=days,
+            metric=metric
+        )
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class FarmRankingView(APIView):
+    """
+    GET /api/admin/analytics/geographic/farms/
+    
+    Individual farm performance rankings with geographic filtering.
+    
+    Query params:
+        - region: Filter by region
+        - district: Filter by district
+        - constituency: Filter by constituency
+        - metric: Ranking metric ('eggs', 'production_rate', 'mortality', 'birds')
+        - days: Period for data (default: 30)
+        - limit: Max farms to return (default: 50)
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        
+        region = request.query_params.get('region')
+        district = request.query_params.get('district')
+        constituency = request.query_params.get('constituency')
+        metric = request.query_params.get('metric', 'eggs')
+        days = int(request.query_params.get('days', 30))
+        limit = int(request.query_params.get('limit', 50))
+        
+        if metric not in ['eggs', 'production_rate', 'mortality', 'birds']:
+            return Response(
+                {'error': 'Invalid metric. Use eggs, production_rate, mortality, or birds'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = service.get_farm_performance_ranking(
+            region=region,
+            district=district,
+            constituency=constituency,
+            metric=metric,
+            period_days=days,
+            limit=limit
+        )
+        
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class GeographicHierarchyView(APIView):
+    """
+    GET /api/admin/analytics/geographic/hierarchy/
+    
+    Get available geographic hierarchy for drill-down navigation.
+    Returns regions -> districts -> constituencies structure.
+    """
+    permission_classes = [IsYEAAdmin]
+    
+    def get(self, request):
+        service = YEAAnalyticsService(user=request.user)
+        data = service.get_geographic_hierarchy()
+        return Response(data, status=status.HTTP_200_OK)

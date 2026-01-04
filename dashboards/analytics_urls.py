@@ -20,6 +20,13 @@ from .analytics_views import (
     PlatformAdvertisingView,
     PlatformPartnerPaymentsView,
     PlatformActivationStatsView,
+    
+    # Geographic Breakdown
+    GeographicBreakdownView,
+    MortalityBreakdownView,
+    ProductionComparisonView,
+    FarmRankingView,
+    GeographicHierarchyView,
 )
 
 app_name = 'analytics'
@@ -65,4 +72,23 @@ urlpatterns = [
     
     # Marketplace activation stats
     path('platform-revenue/activation/', PlatformActivationStatsView.as_view(), name='activation-stats'),
+    
+    # ==========================================================================
+    # GEOGRAPHIC BREAKDOWN - Drill-down analytics by region/district/constituency
+    # ==========================================================================
+    
+    # Comprehensive breakdown (farms, production, mortality by geographic level)
+    path('geographic/breakdown/', GeographicBreakdownView.as_view(), name='geographic-breakdown'),
+    
+    # Mortality-specific breakdown with trends and risk levels
+    path('geographic/mortality/', MortalityBreakdownView.as_view(), name='geographic-mortality'),
+    
+    # Production comparison with rankings
+    path('geographic/comparison/', ProductionComparisonView.as_view(), name='geographic-comparison'),
+    
+    # Individual farm rankings with geographic filtering
+    path('geographic/farms/', FarmRankingView.as_view(), name='farm-ranking'),
+    
+    # Geographic hierarchy for drill-down navigation
+    path('geographic/hierarchy/', GeographicHierarchyView.as_view(), name='geographic-hierarchy'),
 ]

@@ -811,3 +811,552 @@ class YEAAnalyticsService:
             })
         
         return watchlist[:limit]
+
+    # =========================================================================
+    # GEOGRAPHIC BREAKDOWN ANALYTICS
+    # =========================================================================
+    
+    def get_geographic_breakdown(self, level='region', parent_filter=None, period_days=30):
+        """
+        Get comprehensive geographic breakdown of all key metrics.
+        
+        Args:
+            level: 'region', 'district', or 'constituency'
+            parent_filter: For drill-down (e.g., region name when level='district')
+            period_days: Number of days for production data
+            
+        Returns:
+            dict: Geographic breakdown with farms, production, mortality, etc.
+        """
+        from farms.models import Farm, FarmLocation
+        from flock_management.models import DailyProduction
+        from accounts.models import User
+        
+        farms = self._get_farm_queryset()
+        start_date = self.today - timedelta(days=period_days)
+        
+        # Build farm-location mapping
+        location_qs = FarmLocation.objects.filter(
+            farm_id__in=farms.values_list('id', flat=True),
+            is_primary_location=True
+        )
+        
+        # Apply parent filter for drill-down
+        if parent_filter:
+            if level == 'district':
+                location_qs = location_qs.filter(region__iexact=parent_filter)
+            elif level == 'constituency':
+                location_qs = location_qs.filter(district__iexact=parent_filter)
+        
+        # Group by geographic level
+        group_field = level  # 'region', 'district', or 'constituency'
+        
+        # Get farm counts per geographic unit
+        farm_locations = location_qs.values(group_field).annotate(
+            farm_count=Count('farm_id', distinct=True)
+        )
+        
+        # Create mapping of farm_id to geographic location
+        farm_geo_map = dict(
+            location_qs.values_list('farm_id', group_field)
+        )
+        
+        # Get farm IDs in this filtered set
+        filtered_farm_ids = list(farm_geo_map.keys())
+        
+        # Get production data by farm
+        production_by_farm = DailyProduction.objects.filter(
+            farm_id__in=filtered_farm_ids,
+            production_date__gte=start_date
+        ).values('farm_id').annotate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            total_mortality=Coalesce(Sum('birds_died'), 0),
+            avg_production_rate=Coalesce(Avg('production_rate_percent'), Decimal('0'))
+        )
+        
+        # Aggregate production by geographic level
+        geo_production = {}
+        for item in production_by_farm:
+            geo_unit = farm_geo_map.get(item['farm_id'], 'Unknown')
+            if geo_unit not in geo_production:
+                geo_production[geo_unit] = {
+                    'eggs': 0,
+                    'good_eggs': 0,
+                    'mortality': 0,
+                    'production_rates': []
+                }
+            geo_production[geo_unit]['eggs'] += item['total_eggs'] or 0
+            geo_production[geo_unit]['good_eggs'] += item['good_eggs'] or 0
+            geo_production[geo_unit]['mortality'] += item['total_mortality'] or 0
+            if item['avg_production_rate']:
+                geo_production[geo_unit]['production_rates'].append(float(item['avg_production_rate']))
+        
+        # Get bird counts by geographic level
+        farms_with_birds = farms.filter(id__in=filtered_farm_ids).values('id', 'current_bird_count')
+        geo_birds = {}
+        for farm in farms_with_birds:
+            geo_unit = farm_geo_map.get(farm['id'], 'Unknown')
+            if geo_unit not in geo_birds:
+                geo_birds[geo_unit] = 0
+            geo_birds[geo_unit] += farm['current_bird_count'] or 0
+        
+        # Get farmer counts by geographic level
+        geo_farmers = {}
+        for loc in location_qs.select_related('farm__user'):
+            geo_unit = getattr(loc, group_field)
+            if geo_unit not in geo_farmers:
+                geo_farmers[geo_unit] = set()
+            if loc.farm.user_id:
+                geo_farmers[geo_unit].add(loc.farm.user_id)
+        
+        # Build result
+        result = []
+        for loc in farm_locations:
+            geo_unit = loc[group_field]
+            if not geo_unit:
+                continue
+            
+            prod = geo_production.get(geo_unit, {})
+            birds = geo_birds.get(geo_unit, 0)
+            farmers = len(geo_farmers.get(geo_unit, set()))
+            
+            # Calculate mortality rate
+            mortality = prod.get('mortality', 0)
+            mortality_rate = round((mortality / birds * 100), 2) if birds > 0 else 0
+            
+            # Calculate average production rate
+            rates = prod.get('production_rates', [])
+            avg_rate = round(sum(rates) / len(rates), 1) if rates else 0
+            
+            result.append({
+                'name': geo_unit,
+                'level': level,
+                'farms': loc['farm_count'],
+                'farmers': farmers,
+                'total_birds': birds,
+                'eggs_produced': prod.get('eggs', 0),
+                'good_eggs': prod.get('good_eggs', 0),
+                'mortality_count': mortality,
+                'mortality_rate': mortality_rate,
+                'avg_production_rate': avg_rate,
+                'period_days': period_days
+            })
+        
+        # Sort by eggs produced descending
+        result.sort(key=lambda x: -x['eggs_produced'])
+        
+        return {
+            'level': level,
+            'parent_filter': parent_filter,
+            'period_days': period_days,
+            'data': result,
+            'summary': {
+                'total_locations': len(result),
+                'total_farms': sum(r['farms'] for r in result),
+                'total_birds': sum(r['total_birds'] for r in result),
+                'total_eggs': sum(r['eggs_produced'] for r in result),
+                'total_mortality': sum(r['mortality_count'] for r in result)
+            }
+        }
+    
+    def get_mortality_breakdown(self, level='region', parent_filter=None, period_days=30, comparison_period_days=30):
+        """
+        Get detailed mortality breakdown by geographic level with trends.
+        
+        Args:
+            level: 'region', 'district', or 'constituency'
+            parent_filter: For drill-down filtering
+            period_days: Current period
+            comparison_period_days: Previous period for trend comparison
+            
+        Returns:
+            dict: Mortality breakdown with trends
+        """
+        from farms.models import Farm, FarmLocation
+        from flock_management.models import DailyProduction
+        
+        farms = self._get_farm_queryset()
+        
+        current_start = self.today - timedelta(days=period_days)
+        previous_start = current_start - timedelta(days=comparison_period_days)
+        previous_end = current_start - timedelta(days=1)
+        
+        # Build location filter
+        location_qs = FarmLocation.objects.filter(
+            farm_id__in=farms.values_list('id', flat=True),
+            is_primary_location=True
+        )
+        
+        if parent_filter:
+            if level == 'district':
+                location_qs = location_qs.filter(region__iexact=parent_filter)
+            elif level == 'constituency':
+                location_qs = location_qs.filter(district__iexact=parent_filter)
+        
+        group_field = level
+        
+        # Farm to geo mapping
+        farm_geo_map = dict(location_qs.values_list('farm_id', group_field))
+        filtered_farm_ids = list(farm_geo_map.keys())
+        
+        # Get bird counts
+        farms_with_birds = farms.filter(id__in=filtered_farm_ids).values('id', 'current_bird_count')
+        geo_birds = {}
+        for farm in farms_with_birds:
+            geo_unit = farm_geo_map.get(farm['id'], 'Unknown')
+            if geo_unit not in geo_birds:
+                geo_birds[geo_unit] = 0
+            geo_birds[geo_unit] += farm['current_bird_count'] or 0
+        
+        # Current period mortality
+        current_mortality = DailyProduction.objects.filter(
+            farm_id__in=filtered_farm_ids,
+            production_date__gte=current_start
+        ).values('farm_id').annotate(
+            mortality=Coalesce(Sum('birds_died'), 0)
+        )
+        
+        geo_current = {}
+        for item in current_mortality:
+            geo_unit = farm_geo_map.get(item['farm_id'], 'Unknown')
+            if geo_unit not in geo_current:
+                geo_current[geo_unit] = 0
+            geo_current[geo_unit] += item['mortality'] or 0
+        
+        # Previous period mortality
+        previous_mortality = DailyProduction.objects.filter(
+            farm_id__in=filtered_farm_ids,
+            production_date__gte=previous_start,
+            production_date__lte=previous_end
+        ).values('farm_id').annotate(
+            mortality=Coalesce(Sum('birds_died'), 0)
+        )
+        
+        geo_previous = {}
+        for item in previous_mortality:
+            geo_unit = farm_geo_map.get(item['farm_id'], 'Unknown')
+            if geo_unit not in geo_previous:
+                geo_previous[geo_unit] = 0
+            geo_previous[geo_unit] += item['mortality'] or 0
+        
+        # Build result with trends
+        result = []
+        all_units = set(geo_current.keys()) | set(geo_previous.keys()) | set(geo_birds.keys())
+        
+        for geo_unit in all_units:
+            if not geo_unit or geo_unit == 'Unknown':
+                continue
+            
+            current = geo_current.get(geo_unit, 0)
+            previous = geo_previous.get(geo_unit, 0)
+            birds = geo_birds.get(geo_unit, 0)
+            
+            current_rate = round((current / birds * 100), 2) if birds > 0 else 0
+            previous_rate = round((previous / birds * 100), 2) if birds > 0 else 0
+            
+            # Trend calculation
+            if previous > 0:
+                trend_pct = round(((current - previous) / previous * 100), 1)
+            else:
+                trend_pct = 100 if current > 0 else 0
+            
+            trend_direction = 'up' if current > previous else ('down' if current < previous else 'stable')
+            
+            # Risk level
+            if current_rate >= 5:
+                risk_level = 'critical'
+            elif current_rate >= 3:
+                risk_level = 'high'
+            elif current_rate >= 1:
+                risk_level = 'medium'
+            else:
+                risk_level = 'low'
+            
+            result.append({
+                'name': geo_unit,
+                'level': level,
+                'total_birds': birds,
+                'current_period': {
+                    'mortality_count': current,
+                    'mortality_rate': current_rate,
+                    'days': period_days
+                },
+                'previous_period': {
+                    'mortality_count': previous,
+                    'mortality_rate': previous_rate,
+                    'days': comparison_period_days
+                },
+                'trend': {
+                    'direction': trend_direction,
+                    'change_percent': trend_pct,
+                    'is_improving': trend_direction == 'down'
+                },
+                'risk_level': risk_level
+            })
+        
+        # Sort by current mortality rate descending (worst first)
+        result.sort(key=lambda x: -x['current_period']['mortality_rate'])
+        
+        # Summary statistics
+        total_current = sum(r['current_period']['mortality_count'] for r in result)
+        total_previous = sum(r['previous_period']['mortality_count'] for r in result)
+        critical_count = sum(1 for r in result if r['risk_level'] == 'critical')
+        high_count = sum(1 for r in result if r['risk_level'] == 'high')
+        
+        return {
+            'level': level,
+            'parent_filter': parent_filter,
+            'data': result,
+            'summary': {
+                'total_locations': len(result),
+                'current_total_mortality': total_current,
+                'previous_total_mortality': total_previous,
+                'overall_trend': 'improving' if total_current < total_previous else 'worsening',
+                'critical_areas': critical_count,
+                'high_risk_areas': high_count
+            }
+        }
+    
+    def get_production_comparison(self, level='region', parent_filter=None, period_days=30, metric='eggs'):
+        """
+        Get production comparison across geographic units.
+        
+        Args:
+            level: 'region', 'district', or 'constituency'
+            parent_filter: For drill-down
+            period_days: Period for comparison
+            metric: 'eggs', 'mortality', 'production_rate', 'birds'
+            
+        Returns:
+            dict: Production comparison with rankings
+        """
+        breakdown = self.get_geographic_breakdown(level, parent_filter, period_days)
+        data = breakdown['data']
+        
+        # Sort by requested metric
+        metric_map = {
+            'eggs': 'eggs_produced',
+            'mortality': 'mortality_rate',
+            'production_rate': 'avg_production_rate',
+            'birds': 'total_birds',
+            'farms': 'farms'
+        }
+        
+        sort_field = metric_map.get(metric, 'eggs_produced')
+        reverse = metric != 'mortality'  # Lower mortality is better
+        
+        data.sort(key=lambda x: x.get(sort_field, 0), reverse=reverse)
+        
+        # Add rankings
+        for i, item in enumerate(data, 1):
+            item['rank'] = i
+        
+        # Calculate statistics
+        if data:
+            values = [d.get(sort_field, 0) for d in data]
+            avg = sum(values) / len(values)
+            top_value = max(values)
+            bottom_value = min(values)
+            
+            stats = {
+                'average': round(avg, 2),
+                'highest': top_value,
+                'lowest': bottom_value,
+                'top_performer': data[0]['name'] if data else None,
+                'bottom_performer': data[-1]['name'] if data else None
+            }
+        else:
+            stats = {}
+        
+        return {
+            'level': level,
+            'parent_filter': parent_filter,
+            'metric': metric,
+            'period_days': period_days,
+            'data': data,
+            'statistics': stats
+        }
+    
+    def get_farm_performance_ranking(self, region=None, district=None, constituency=None, 
+                                     metric='eggs', period_days=30, limit=50):
+        """
+        Get individual farm performance rankings with geographic filtering.
+        
+        Args:
+            region: Filter by region
+            district: Filter by district
+            constituency: Filter by constituency
+            metric: Ranking metric
+            period_days: Period for data
+            limit: Max farms to return
+            
+        Returns:
+            dict: Farm rankings
+        """
+        from farms.models import Farm, FarmLocation
+        from flock_management.models import DailyProduction
+        
+        farms = self._get_farm_queryset()
+        start_date = self.today - timedelta(days=period_days)
+        
+        # Build location filter
+        location_qs = FarmLocation.objects.filter(
+            farm_id__in=farms.values_list('id', flat=True),
+            is_primary_location=True
+        )
+        
+        if region:
+            location_qs = location_qs.filter(region__iexact=region)
+        if district:
+            location_qs = location_qs.filter(district__iexact=district)
+        if constituency:
+            location_qs = location_qs.filter(constituency__iexact=constituency)
+        
+        filtered_farm_ids = location_qs.values_list('farm_id', flat=True)
+        
+        # Get production data with farm details
+        production = DailyProduction.objects.filter(
+            farm_id__in=filtered_farm_ids,
+            production_date__gte=start_date
+        ).values(
+            'farm_id',
+            'farm__farm_name',
+            'farm__primary_constituency',
+            'farm__current_bird_count'
+        ).annotate(
+            total_eggs=Coalesce(Sum('eggs_collected'), 0),
+            good_eggs=Coalesce(Sum('good_eggs'), 0),
+            total_mortality=Coalesce(Sum('birds_died'), 0),
+            avg_production_rate=Coalesce(Avg('production_rate_percent'), Decimal('0')),
+            days_recorded=Count('id')
+        )
+        
+        result = []
+        for item in production:
+            farm_id = item['farm_id']
+            birds = item['farm__current_bird_count'] or 0
+            mortality = item['total_mortality'] or 0
+            
+            mortality_rate = round((mortality / birds * 100), 2) if birds > 0 else 0
+            
+            # Get location from separate query
+            loc_info = location_qs.filter(farm_id=farm_id).values(
+                'region', 'district', 'constituency'
+            ).first() or {}
+            
+            result.append({
+                'farm_id': str(farm_id),
+                'farm_name': item['farm__farm_name'],
+                'region': loc_info.get('region', 'Unknown'),
+                'district': loc_info.get('district', 'Unknown'),
+                'constituency': loc_info.get('constituency', item['farm__primary_constituency'] or 'Unknown'),
+                'total_birds': birds,
+                'eggs_produced': item['total_eggs'],
+                'good_eggs': item['good_eggs'],
+                'mortality_count': mortality,
+                'mortality_rate': mortality_rate,
+                'avg_production_rate': float(item['avg_production_rate']),
+                'days_recorded': item['days_recorded']
+            })
+        
+        # Sort by metric
+        metric_map = {
+            'eggs': ('eggs_produced', True),
+            'production_rate': ('avg_production_rate', True),
+            'mortality': ('mortality_rate', False),  # Lower is better
+            'birds': ('total_birds', True)
+        }
+        
+        sort_field, reverse = metric_map.get(metric, ('eggs_produced', True))
+        result.sort(key=lambda x: x.get(sort_field, 0), reverse=reverse)
+        
+        # Add rankings
+        for i, item in enumerate(result[:limit], 1):
+            item['rank'] = i
+        
+        return {
+            'filters': {
+                'region': region,
+                'district': district,
+                'constituency': constituency
+            },
+            'metric': metric,
+            'period_days': period_days,
+            'total_farms': len(result),
+            'data': result[:limit]
+        }
+    
+    def get_geographic_hierarchy(self):
+        """
+        Get available geographic hierarchy for drill-down navigation.
+        
+        Returns:
+            dict: Hierarchy of regions -> districts -> constituencies
+        """
+        from farms.models import FarmLocation
+        
+        farms = self._get_farm_queryset()
+        
+        locations = FarmLocation.objects.filter(
+            farm_id__in=farms.values_list('id', flat=True),
+            is_primary_location=True
+        ).values('region', 'district', 'constituency').distinct()
+        
+        # Build hierarchy
+        hierarchy = {}
+        for loc in locations:
+            region = loc['region'] or 'Unknown'
+            district = loc['district'] or 'Unknown'
+            constituency = loc['constituency'] or 'Unknown'
+            
+            if region not in hierarchy:
+                hierarchy[region] = {'districts': {}, 'farm_count': 0}
+            
+            if district not in hierarchy[region]['districts']:
+                hierarchy[region]['districts'][district] = {'constituencies': [], 'farm_count': 0}
+            
+            if constituency not in hierarchy[region]['districts'][district]['constituencies']:
+                hierarchy[region]['districts'][district]['constituencies'].append(constituency)
+        
+        # Add farm counts
+        farm_counts = FarmLocation.objects.filter(
+            farm_id__in=farms.values_list('id', flat=True),
+            is_primary_location=True
+        ).values('region', 'district').annotate(
+            count=Count('farm_id', distinct=True)
+        )
+        
+        for fc in farm_counts:
+            region = fc['region'] or 'Unknown'
+            district = fc['district'] or 'Unknown'
+            if region in hierarchy and district in hierarchy[region]['districts']:
+                hierarchy[region]['districts'][district]['farm_count'] = fc['count']
+                hierarchy[region]['farm_count'] += fc['count']
+        
+        # Convert to list format
+        result = []
+        for region, data in sorted(hierarchy.items()):
+            districts = []
+            for district, d_data in sorted(data['districts'].items()):
+                districts.append({
+                    'name': district,
+                    'constituencies': sorted(d_data['constituencies']),
+                    'farm_count': d_data['farm_count']
+                })
+            
+            result.append({
+                'name': region,
+                'districts': districts,
+                'farm_count': data['farm_count']
+            })
+        
+        return {
+            'regions': result,
+            'total_regions': len(result),
+            'total_districts': sum(len(r['districts']) for r in result),
+            'total_constituencies': sum(
+                len(d['constituencies']) for r in result for d in r['districts']
+            )
+        }
+
