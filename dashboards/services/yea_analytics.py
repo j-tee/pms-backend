@@ -311,10 +311,10 @@ class YEAAnalyticsService:
             batch_stats.append({
                 'id': str(batch.id),
                 'name': batch.batch_name,
-                'target_capacity': batch.target_enrollment or 0,
+                'target_capacity': batch.total_slots or 0,
                 'approved': approved,
                 'pending': pending,
-                'fill_rate': round((approved / batch.target_enrollment * 100), 1) if batch.target_enrollment else 0
+                'fill_rate': round((approved / batch.total_slots * 100), 1) if batch.total_slots else 0
             })
         
         return {
