@@ -547,6 +547,9 @@ class FinanceDashboardView(APIView):
             'paid_at': p.created_at.isoformat(),
         } for p in recent_payments]
         
+        # Get AdSense data if available
+        adsense_data = self._get_adsense_summary()
+        
         return Response({
             'today': today_stats,
             'this_week': week_stats,
@@ -561,7 +564,43 @@ class FinanceDashboardView(APIView):
                 'in_30_days': expiring_30_days,
             },
             'recent_payments': recent_payments_list,
+            'adsense': adsense_data,
         })
+    
+    def _get_adsense_summary(self):
+        """Get AdSense earnings summary if connected"""
+        try:
+            from core.adsense_service import get_adsense_service
+            
+            service = get_adsense_service()
+            
+            if not service.is_available():
+                return {
+                    'connected': False,
+                    'message': 'AdSense not connected'
+                }
+            
+            summary = service.get_earnings_summary()
+            
+            # Convert Decimals to strings
+            for key in ['today', 'yesterday', 'this_week', 'this_month', 'last_month']:
+                if key in summary and isinstance(summary[key], Decimal):
+                    summary[key] = str(summary[key])
+            
+            return {
+                'connected': True,
+                'today': summary.get('today', '0.00'),
+                'this_week': summary.get('this_week', '0.00'),
+                'this_month': summary.get('this_month', '0.00'),
+                'currency': summary.get('currency', 'USD'),
+            }
+            
+        except Exception as e:
+            logger.warning(f"Failed to get AdSense data: {e}")
+            return {
+                'connected': False,
+                'error': str(e)
+            }
     
     def _get_period_stats(self, start_date, end_date):
         """Get financial stats for a date range"""

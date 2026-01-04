@@ -47,6 +47,17 @@ from .financial_admin_views import (
     FinanceDashboardView,
 )
 
+# AdSense admin views
+from .adsense_admin_views import (
+    AdSenseStatusView,
+    AdSenseConnectView,
+    AdSenseCallbackView,
+    AdSenseDisconnectView,
+    AdSenseEarningsView,
+    AdSenseReportsView,
+    AdSensePaymentsView,
+)
+
 app_name = 'admin_api'
 
 urlpatterns = [
@@ -114,4 +125,19 @@ urlpatterns = [
     
     # Financial Dashboard
     path('finance/dashboard/', FinanceDashboardView.as_view(), name='admin-finance-dashboard'),
+    
+    # ========================================
+    # AdSense Integration
+    # ========================================
+    
+    # Connection Management (Super Admin only)
+    path('adsense/status/', AdSenseStatusView.as_view(), name='admin-adsense-status'),
+    path('adsense/connect/', AdSenseConnectView.as_view(), name='admin-adsense-connect'),
+    path('adsense/callback/', AdSenseCallbackView.as_view(), name='admin-adsense-callback'),
+    path('adsense/disconnect/', AdSenseDisconnectView.as_view(), name='admin-adsense-disconnect'),
+    
+    # AdSense Data (Finance Viewers)
+    path('adsense/earnings/', AdSenseEarningsView.as_view(), name='admin-adsense-earnings'),
+    path('adsense/reports/', AdSenseReportsView.as_view(), name='admin-adsense-reports'),
+    path('adsense/payments/', AdSensePaymentsView.as_view(), name='admin-adsense-payments'),
 ]
