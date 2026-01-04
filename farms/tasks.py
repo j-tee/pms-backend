@@ -60,7 +60,7 @@ def send_enrollment_reminders():
                     from core.tasks import send_sms_async
                     send_sms_async.delay(
                         str(farm.owner.phone_number),
-                        f"YEA Poultry: {batch.name} enrollment closes in {days_until_close} day(s)! "
+                        f"YEA Poultry: {batch.batch_name} enrollment closes in {days_until_close} day(s)! "
                         f"Apply now to join this batch. Visit your dashboard."
                     )
                     reminders_sent += 1
@@ -135,7 +135,7 @@ def notify_batch_enrollment_status(enrollment_id: str, new_status: str, message:
         ).get(pk=enrollment_id)
         
         farmer_phone = enrollment.farm.owner.phone_number if enrollment.farm.owner else None
-        batch_name = enrollment.batch.name if enrollment.batch else "the program"
+        batch_name = enrollment.batch.batch_name if enrollment.batch else "the program"
         
         default_messages = {
             'approved': f"Your enrollment in {batch_name} has been approved! "

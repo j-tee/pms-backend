@@ -310,7 +310,7 @@ class YEAAnalyticsService:
             
             batch_stats.append({
                 'id': str(batch.id),
-                'name': batch.name,
+                'name': batch.batch_name,
                 'target_capacity': batch.target_enrollment or 0,
                 'approved': approved,
                 'pending': pending,
