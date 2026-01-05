@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.utils import timezone
+import secrets
 
 
 class SubscriptionPlan(models.Model):
@@ -232,13 +233,19 @@ class Subscription(models.Model):
         
         self.save()
         
-        # TODO: Re-enable farm marketplace listings
+        # Enable farm marketplace access
+        if self.farm:
+            self.farm.marketplace_enabled = True
+            self.farm.save(update_fields=['marketplace_enabled', 'updated_at'])
 
 
 class SubscriptionPayment(models.Model):
     """
     Record of subscription payments (manual or automated).
     All farmers pay the same price for marketplace access.
+    
+    This is the recurring monthly subscription payment for marketplace access.
+    The activation fee and monthly subscription fee are the same amount.
     """
     PAYMENT_METHOD_CHOICES = [
         ('mobile_money', 'Mobile Money'),
@@ -247,10 +254,20 @@ class SubscriptionPayment(models.Model):
         ('card', 'Card Payment'),
     ]
     
+    MOMO_PROVIDER_CHOICES = [
+        ('mtn', 'MTN Mobile Money'),
+        ('vodafone', 'Vodafone Cash'),
+        ('airteltigo', 'AirtelTigo Money'),
+        ('telecel', 'Telecel Cash'),
+    ]
+    
     STATUS_CHOICES = [
         ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('send_otp', 'Awaiting OTP'),
         ('completed', 'Completed'),
         ('failed', 'Failed'),
+        ('abandoned', 'Abandoned'),
         ('refunded', 'Refunded'),
     ]
     
@@ -266,9 +283,23 @@ class SubscriptionPayment(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     payment_method = models.CharField(max_length=30, choices=PAYMENT_METHOD_CHOICES)
     payment_reference = models.CharField(
-        max_length=200,
+        max_length=100,
+        unique=True,
+        db_index=True,
+        help_text="Unique payment reference (format: SUB-YYYYMMDD-XXXXXXXX)"
+    )
+    
+    # Mobile Money Details
+    momo_phone = models.CharField(
+        max_length=15,
         blank=True,
-        help_text="Transaction reference/receipt number"
+        help_text="Mobile money phone number used for payment"
+    )
+    momo_provider = models.CharField(
+        max_length=20,
+        choices=MOMO_PROVIDER_CHOICES,
+        blank=True,
+        help_text="Mobile money provider"
     )
     
     # Status
@@ -278,19 +309,46 @@ class SubscriptionPayment(models.Model):
         default='pending',
         db_index=True
     )
+    failure_reason = models.TextField(
+        blank=True,
+        help_text="Reason for payment failure"
+    )
     
     # Period Covered
     period_start = models.DateField()
     period_end = models.DateField()
     
-    # Payment Gateway (if used)
+    # Payment Gateway Details (Paystack)
     gateway_provider = models.CharField(
         max_length=50,
-        blank=True,
-        help_text="Paystack, Flutterwave, etc."
+        default='paystack',
+        help_text="Payment gateway provider"
     )
-    gateway_transaction_id = models.CharField(max_length=200, blank=True)
-    gateway_response = models.JSONField(default=dict, blank=True)
+    gateway_transaction_id = models.CharField(
+        max_length=200, 
+        blank=True,
+        db_index=True
+    )
+    gateway_access_code = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Paystack access code for authorization"
+    )
+    gateway_authorization_url = models.URLField(
+        blank=True,
+        help_text="URL for payment authorization (if applicable)"
+    )
+    gateway_response = models.JSONField(
+        default=dict, 
+        blank=True,
+        help_text="Full gateway response for debugging"
+    )
+    gateway_fees = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Payment gateway fees (pesewas converted to GHS)"
+    )
     
     # Verification
     verified_by = models.ForeignKey(
@@ -305,6 +363,11 @@ class SubscriptionPayment(models.Model):
     
     # Timestamps
     payment_date = models.DateField()
+    paid_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Actual timestamp when payment was confirmed"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -316,11 +379,68 @@ class SubscriptionPayment(models.Model):
         indexes = [
             models.Index(fields=['subscription', '-payment_date']),
             models.Index(fields=['status']),
+            models.Index(fields=['payment_reference']),
+            models.Index(fields=['gateway_transaction_id']),
         ]
     
     def __str__(self):
         method_display = dict(self.PAYMENT_METHOD_CHOICES).get(self.payment_method, self.payment_method)
         return f"Payment GHS {self.amount} - {self.subscription.farm.farm_name} ({method_display})"
+    
+    @classmethod
+    def generate_reference(cls) -> str:
+        """
+        Generate unique payment reference
+        Format: SUB-YYYYMMDD-XXXXXXXX
+        """
+        date_str = timezone.now().strftime('%Y%m%d')
+        random_part = secrets.token_hex(4).upper()
+        return f"SUB-{date_str}-{random_part}"
+    
+    def mark_as_completed(self, gateway_response: dict = None):
+        """
+        Mark payment as completed and activate subscription
+        """
+        from dateutil.relativedelta import relativedelta
+        
+        self.status = 'completed'
+        self.paid_at = timezone.now()
+        if gateway_response:
+            self.gateway_response = gateway_response
+            if 'id' in gateway_response:
+                self.gateway_transaction_id = str(gateway_response['id'])
+            if 'fees' in gateway_response:
+                # Convert pesewas to GHS
+                self.gateway_fees = Decimal(gateway_response['fees']) / 100
+        
+        self.save()
+        
+        # Activate/extend subscription
+        subscription = self.subscription
+        subscription.status = 'active'
+        subscription.last_payment_date = self.payment_date
+        subscription.last_payment_amount = self.amount
+        subscription.current_period_start = self.period_start
+        subscription.current_period_end = self.period_end
+        subscription.next_billing_date = self.period_end
+        subscription.reminder_count = 0
+        subscription.suspension_date = None
+        subscription.save()
+        
+        # Enable marketplace on the farm
+        if subscription.farm:
+            subscription.farm.marketplace_enabled = True
+            subscription.farm.subscription_type = 'standard'
+            subscription.farm.save(update_fields=['marketplace_enabled', 'subscription_type', 'updated_at'])
+    
+    def mark_as_failed(self, reason: str = None, gateway_response: dict = None):
+        """Mark payment as failed"""
+        self.status = 'failed'
+        if reason:
+            self.failure_reason = reason
+        if gateway_response:
+            self.gateway_response = gateway_response
+        self.save()
 
 
 class SubscriptionInvoice(models.Model):

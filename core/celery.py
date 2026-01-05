@@ -83,6 +83,34 @@ app.conf.beat_schedule = {
     },
     
     # ==========================================================================
+    # SUBSCRIPTION PAYMENTS (MoMo via Paystack)
+    # ==========================================================================
+    
+    # Check for expiring subscriptions and send reminders (run at 9 AM daily)
+    'check-expiring-subscriptions': {
+        'task': 'subscriptions.tasks.check_expiring_subscriptions',
+        'schedule': crontab(hour=9, minute=0),
+    },
+    
+    # Process subscription expirations and suspensions (run at 12:05 AM daily)
+    'process-subscription-expirations': {
+        'task': 'subscriptions.tasks.process_subscription_expirations',
+        'schedule': crontab(hour=0, minute=5),
+    },
+    
+    # Send overdue payment reminders (run at 10 AM daily)
+    'send-overdue-payment-reminders': {
+        'task': 'subscriptions.tasks.send_overdue_payment_reminders',
+        'schedule': crontab(hour=10, minute=0),
+    },
+    
+    # Generate monthly invoices (run on the 1st of each month at 6 AM)
+    'generate-monthly-invoices': {
+        'task': 'subscriptions.tasks.generate_monthly_invoices',
+        'schedule': crontab(hour=6, minute=0, day_of_month=1),
+    },
+    
+    # ==========================================================================
     # FARMS & ENROLLMENT (Weekday mornings)
     # ==========================================================================
     
