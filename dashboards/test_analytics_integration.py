@@ -49,12 +49,14 @@ def complete_ecosystem(db):
     
     # Create batches
     batch = Batch.objects.create(
-        name='2025 Q1 Batch',
+        batch_name='2025 Q1 Batch',
+        batch_code='YEA-2025-Q1',
         description='First quarter recruitment',
-        region='Greater Accra',
+        implementing_agency='Youth Employment Agency',
+        target_region='Greater Accra',
         start_date=timezone.now().date() - timedelta(days=90),
         end_date=timezone.now().date() + timedelta(days=90),
-        target_enrollment=100,
+        total_slots=100,
         is_active=True,
         is_published=True
     )
@@ -80,8 +82,7 @@ def complete_ecosystem(db):
         farm = Farm.objects.create(
             user=farmer,
             farm_name=f'Farm {i}',
-            region='Greater Accra' if i < 7 else 'Ashanti',
-            constituency='Ayawaso West' if i < 4 else ('Ablekuma Central' if i < 7 else 'Kumasi Central'),
+            primary_constituency='Ayawaso West' if i < 4 else ('Ablekuma Central' if i < 7 else 'Kumasi Central'),
             farm_status='OPERATIONAL' if i < 8 else 'PENDING',
             total_bird_capacity=1000 * (i + 1),
             subscription_type='government_subsidized' if i < 5 else 'standard',
@@ -466,8 +467,7 @@ class TestErrorRecovery:
         Farm.objects.create(
             user=farmer,
             farm_name='No Flock Farm',
-            region='Northern',
-            constituency='Tamale',
+            primary_constituency='Tamale',
             farm_status='OPERATIONAL',
             total_bird_capacity=1000
         )
