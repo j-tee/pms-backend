@@ -63,7 +63,8 @@ def farmer_with_farm(db, farmer_user):
         date_of_birth='1990-01-01',
         years_in_poultry=2,
         number_of_poultry_houses=3,
-        total_infrastructure_value_ghs=35000
+        total_infrastructure_value_ghs=35000,
+        planned_production_start_date='2024-01-01'
     )
     
     # Create multiple flocks with different ages
@@ -209,7 +210,8 @@ def farm_without_data(db, farmer_user):
         date_of_birth='1990-01-01',
         years_in_poultry=1,
         number_of_poultry_houses=1,
-        total_infrastructure_value_ghs=5000
+        total_infrastructure_value_ghs=5000,
+        planned_production_start_date='2026-03-01'
     )
     return farm
 
@@ -234,7 +236,8 @@ class TestFarmerAnalyticsPermissions:
             date_of_birth='1990-01-01',
             years_in_poultry=3,
             number_of_poultry_houses=4,
-            total_infrastructure_value_ghs=50000
+            total_infrastructure_value_ghs=50000,
+            planned_production_start_date='2023-06-01'
         )
         
         # Authenticate as first farmer
@@ -566,6 +569,7 @@ class TestEdgeCases:
             date_of_birth='1990-01-01',
             years_in_poultry=1,
             number_of_poultry_houses=1,
+            planned_production_start_date='2025-09-01',
             total_infrastructure_value_ghs=8000
         )
         
