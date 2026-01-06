@@ -61,8 +61,7 @@ def farmer_with_farm(db, farmer_user):
         subscription_type='government_subsidized',
         marketplace_enabled=True,
         date_of_birth='1990-01-01',
-        years_in_poultry=1,
-        number_of_poultry_houses=1,
+        years_in_poultry=2,
         number_of_poultry_houses=3
     )
     
