@@ -86,7 +86,8 @@ def complete_ecosystem(db):
             farm_status='OPERATIONAL' if i < 8 else 'PENDING',
             total_bird_capacity=1000 * (i + 1),
             subscription_type='government_subsidized' if i < 5 else 'standard',
-            marketplace_enabled=i < 6
+            marketplace_enabled=i < 6,
+            date_of_birth='1990-01-01'
         )
         farms.append(farm)
         
@@ -469,7 +470,8 @@ class TestErrorRecovery:
             farm_name='No Flock Farm',
             primary_constituency='Tamale',
             farm_status='OPERATIONAL',
-            total_bird_capacity=1000
+            total_bird_capacity=1000,
+            date_of_birth='1990-01-01'
         )
         
         # Should handle gracefully

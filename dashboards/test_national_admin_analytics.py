@@ -125,7 +125,8 @@ def sample_farm(db, farmer_user):
         farm_status='OPERATIONAL',
         total_bird_capacity=1000,
         subscription_type='government_subsidized',
-        marketplace_enabled=True
+        marketplace_enabled=True,
+        date_of_birth='1990-01-01'
     )
     
     # Create active flock
@@ -205,7 +206,8 @@ def multiple_farms(db):
             primary_constituency='Ayawaso West' if i < 3 else 'Ablekuma Central',
             farm_status='OPERATIONAL',
             total_bird_capacity=1000,
-            subscription_type='government_subsidized'
+            subscription_type='government_subsidized',
+            date_of_birth='1990-01-01'
         )
         
         # Create flock with production
@@ -247,7 +249,8 @@ def multiple_farms(db):
             primary_constituency='Kumasi Central',
             farm_status='OPERATIONAL',
             total_bird_capacity=800,
-            subscription_type='standard'
+            subscription_type='standard',
+            date_of_birth='1990-01-01'
         )
         farms.append(farm)
     
