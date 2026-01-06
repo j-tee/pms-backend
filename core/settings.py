@@ -130,6 +130,8 @@ INSTALLED_APPS = [
     'sales_revenue',
     'subscriptions',
     'advertising',
+    'contact',
+    'cms',  # Content Management System (About Us, Privacy Policy, etc.)
 ]
 
 SITE_ID = 1  # Required for django.contrib.sites
@@ -620,4 +622,21 @@ AIRTELTIGO_MONEY_ENABLED = os.getenv('AIRTELTIGO_MONEY_ENABLED', 'True') == 'Tru
 # Free tier: 40,000 requests/month
 # Get your API key: https://console.cloud.google.com/google/maps-apis/credentials
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
+
+
+# =============================================================================
+# CONTACT FORM SETTINGS
+# =============================================================================
+
+# Contact form email configuration
+CONTACT_EMAIL_TO = os.getenv('CONTACT_EMAIL_TO', 'support@yeapms.com')
+CONTACT_EMAIL_FROM = os.getenv('CONTACT_EMAIL_FROM', 'noreply@yeapms.com')
+CONTACT_EMAIL_REPLY_TO = os.getenv('CONTACT_EMAIL_REPLY_TO', 'support@yeapms.com')
+
+# Rate limiting for contact form
+CONTACT_FORM_RATE_LIMIT_PER_HOUR = int(os.getenv('CONTACT_FORM_RATE_LIMIT_PER_HOUR', 5))
+CONTACT_FORM_RATE_LIMIT_PER_DAY = int(os.getenv('CONTACT_FORM_RATE_LIMIT_PER_DAY', 20))
+
+# Admin URL for contact management (used in email links)
+ADMIN_URL = os.getenv('ADMIN_URL', 'http://localhost:3000')
 

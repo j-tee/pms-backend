@@ -1,0 +1,19 @@
+Dear {{ name }},
+
+Thank you for contacting the YEA Poultry Management System. We have received your message and will respond as soon as possible.
+
+Your Ticket ID: {{ ticket_id }}
+
+Please keep this ticket ID for your records. You can reference it in any future communications regarding this inquiry.
+
+Your Message:
+{{ message_preview }}...
+
+We typically respond within 24-48 hours during business days (Monday-Friday, 8:00 AM - 5:00 PM GMT).
+
+Best regards,
+YEA Poultry Management System Support Team
+
+---
+This is an automated message. Please do not reply directly to this email.
+For urgent matters, please call our support line: +233 XXX XXX XXX
