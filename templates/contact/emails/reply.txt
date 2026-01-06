@@ -1,0 +1,20 @@
+Dear {{ name }},
+
+Thank you for your patience. We have reviewed your inquiry and here is our response:
+
+Ticket ID: {{ ticket_id }}
+From: {{ staff_name }}
+
+Response:
+{{ reply_message }}
+
+---
+
+If you have any further questions, please feel free to reply to this email or submit a new inquiry through our contact form.
+
+Best regards,
+{{ staff_name }}
+YEA Poultry Management System Support Team
+
+---
+Ticket ID: {{ ticket_id }}

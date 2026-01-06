@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #2c5282; color: white; padding: 20px; text-align: center; }
+        .content { background: #f7fafc; padding: 30px; border: 1px solid #e2e8f0; }
+        .ticket-id { background: #edf2f7; padding: 15px; margin: 20px 0; border-left: 4px solid #2c5282; }
+        .message-box { background: white; padding: 15px; margin: 20px 0; border: 1px solid #cbd5e0; }
+        .footer { text-align: center; padding: 20px; color: #718096; font-size: 0.9em; }
+        .button { display: inline-block; padding: 12px 24px; background: #2c5282; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>YEA Poultry Management System</h1>
+            <p>Contact Form Confirmation</p>
+        </div>
+        
+        <div class="content">
+            <h2>Dear {{ name }},</h2>
+            
+            <p>Thank you for contacting the YEA Poultry Management System. We have received your message and will respond as soon as possible.</p>
+            
+            <div class="ticket-id">
+                <strong>Your Ticket ID:</strong> <span style="font-size: 1.2em; color: #2c5282;">{{ ticket_id }}</span>
+            </div>
+            
+            <p>Please keep this ticket ID for your records. You can reference it in any future communications regarding this inquiry.</p>
+            
+            <div class="message-box">
+                <strong>Your Message:</strong>
+                <p>{{ message_preview }}...</p>
+            </div>
+            
+            <p><strong>Response Time:</strong> We typically respond within 24-48 hours during business days (Monday-Friday, 8:00 AM - 5:00 PM GMT).</p>
+        </div>
+        
+        <div class="footer">
+            <p>Best regards,<br>YEA Poultry Management System Support Team</p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+            <p style="font-size: 0.85em;">This is an automated message. Please do not reply directly to this email.<br>
+            For urgent matters, please call our support line: <strong>+233 XXX XXX XXX</strong></p>
+        </div>
+    </div>
+</body>
+</html>

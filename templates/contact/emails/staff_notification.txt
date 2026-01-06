@@ -1,0 +1,23 @@
+NEW CONTACT FORM SUBMISSION
+
+Ticket ID: {{ ticket_id }}
+Received: {{ created_at }}
+
+From:
+Name: {{ name }}
+Email: {{ email }}
+{% if phone_number %}Phone: {{ phone_number }}{% endif %}
+
+Subject: {{ subject_display }}
+
+Message:
+{{ message }}
+
+---
+IP Address: {{ ip_address }}
+User Agent: {{ user_agent }}
+
+---
+View in Admin Dashboard: {{ admin_url }}
+
+This is an automated notification from the YEA Poultry Management System.

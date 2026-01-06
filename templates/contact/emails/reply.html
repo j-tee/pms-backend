@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #38a169; color: white; padding: 20px; text-align: center; }
+        .content { background: #f7fafc; padding: 30px; border: 1px solid #e2e8f0; }
+        .ticket-ref { background: #edf2f7; padding: 10px; margin: 15px 0; font-size: 0.9em; color: #4a5568; }
+        .reply-box { background: white; padding: 20px; margin: 20px 0; border-left: 4px solid #38a169; white-space: pre-wrap; }
+        .staff-signature { margin-top: 30px; padding-top: 20px; border-top: 2px solid #e2e8f0; }
+        .footer { text-align: center; padding: 20px; color: #718096; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Response to Your Inquiry</h1>
+            <p>YEA Poultry Management System</p>
+        </div>
+        
+        <div class="content">
+            <h2>Dear {{ name }},</h2>
+            
+            <p>Thank you for your patience. We have reviewed your inquiry and here is our response:</p>
+            
+            <div class="ticket-ref">
+                <strong>Ticket ID:</strong> {{ ticket_id }}
+            </div>
+            
+            <h3>Our Response:</h3>
+            <div class="reply-box">{{ reply_message }}</div>
+            
+            <div class="staff-signature">
+                <p>Best regards,<br>
+                <strong>{{ staff_name }}</strong><br>
+                YEA Poultry Management System Support Team</p>
+            </div>
+            
+            <p style="margin-top: 30px;">If you have any further questions, please feel free to reply to this email or submit a new inquiry through our contact form.</p>
+        </div>
+        
+        <div class="footer">
+            <p>Reference: {{ ticket_id }}</p>
+        </div>
+    </div>
+</body>
+</html>

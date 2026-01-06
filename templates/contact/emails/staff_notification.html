@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 700px; margin: 0 auto; padding: 20px; }
+        .header { background: #c53030; color: white; padding: 20px; }
+        .alert { background: #fed7d7; border-left: 4px solid #c53030; padding: 15px; margin: 20px 0; }
+        .content { background: #f7fafc; padding: 20px; border: 1px solid #e2e8f0; }
+        .info-grid { display: grid; grid-template-columns: 150px 1fr; gap: 10px; margin: 20px 0; }
+        .info-label { font-weight: bold; color: #4a5568; }
+        .message-box { background: white; padding: 20px; margin: 20px 0; border: 1px solid #cbd5e0; white-space: pre-wrap; }
+        .button { display: inline-block; padding: 12px 24px; background: #c53030; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+        .metadata { font-size: 0.85em; color: #718096; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔔 New Contact Form Submission</h1>
+            <p>YEA Poultry Management System</p>
+        </div>
+        
+        <div class="alert">
+            <strong>⚠️ ACTION REQUIRED</strong> - New message received
+        </div>
+        
+        <div class="content">
+            <h2>Ticket: {{ ticket_id }}</h2>
+            <p><strong>Received:</strong> {{ created_at|date:"F j, Y \a\t g:i A" }}</p>
+            
+            <div class="info-grid">
+                <div class="info-label">From:</div>
+                <div>{{ name }}</div>
+                
+                <div class="info-label">Email:</div>
+                <div><a href="mailto:{{ email }}">{{ email }}</a></div>
+                
+                {% if phone_number %}
+                <div class="info-label">Phone:</div>
+                <div><a href="tel:{{ phone_number }}">{{ phone_number }}</a></div>
+                {% endif %}
+                
+                <div class="info-label">Subject:</div>
+                <div><strong>{{ subject_display }}</strong></div>
+            </div>
+            
+            <h3>Message:</h3>
+            <div class="message-box">{{ message }}</div>
+            
+            <a href="{{ admin_url }}" class="button">View in Admin Dashboard →</a>
+            
+            <div class="metadata">
+                <strong>Technical Details:</strong><br>
+                IP Address: {{ ip_address }}<br>
+                User Agent: {{ user_agent }}
+            </div>
+        </div>
+    </div>
+</body>
+</html>
