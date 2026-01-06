@@ -194,6 +194,18 @@ class PlatformSettings(models.Model):
         help_text="Enable Google AdSense ads on platform"
     )
     
+    # AdSense Integration (OAuth token stored securely)
+    adsense_oauth_token = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Google AdSense OAuth token (encrypted in production)"
+    )
+    adsense_connected_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When AdSense was connected"
+    )
+    
     # Free Tier Feature Flags
     free_tier_can_view_marketplace = models.BooleanField(
         default=True,

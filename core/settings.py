@@ -129,6 +129,7 @@ INSTALLED_APPS = [
     'medication_management',
     'sales_revenue',
     'subscriptions',
+    'advertising',
 ]
 
 SITE_ID = 1  # Required for django.contrib.sites
@@ -464,6 +465,25 @@ HUBTEL_SENDER_ID = os.getenv('HUBTEL_SENDER_ID', 'YEA-PMS')
 
 # SMS provider (for backwards compatibility)
 SMS_PROVIDER = os.getenv('SMS_PROVIDER', 'console')  # Options: 'console', 'hubtel'
+
+
+# =============================================================================
+# GOOGLE ADSENSE SETTINGS
+# =============================================================================
+
+# AdSense Management API credentials
+# Get these from: https://console.cloud.google.com/
+# 1. Create a project and enable AdSense Management API
+# 2. Create OAuth 2.0 credentials (Web Application type)
+# 3. Set authorized redirect URI to: {BACKEND_URL}/api/admin/adsense/callback/
+
+GOOGLE_ADSENSE_CLIENT_ID = os.getenv('GOOGLE_ADSENSE_CLIENT_ID', '')
+GOOGLE_ADSENSE_CLIENT_SECRET = os.getenv('GOOGLE_ADSENSE_CLIENT_SECRET', '')
+GOOGLE_ADSENSE_ACCOUNT_ID = os.getenv('GOOGLE_ADSENSE_ACCOUNT_ID', '')
+GOOGLE_ADSENSE_REDIRECT_URI = os.getenv(
+    'GOOGLE_ADSENSE_REDIRECT_URI', 
+    f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/api/admin/adsense/callback/"
+)
 
 
 # =============================================================================

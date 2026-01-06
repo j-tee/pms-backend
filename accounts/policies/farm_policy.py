@@ -65,11 +65,19 @@ class FarmPolicy(BasePolicy):
         Check if user can create new farm.
         
         Access Rules:
-        - Only through application approval process
-        - System creates farms automatically after approval
+        - Super Admin / National Admin: Can create any farm
+        - Field Officers (Extension, Vet, Constituency): Can register farmers in their jurisdiction
+        - System creates farms automatically after application approval
         """
-        # Only super admin or national admin can manually create farms
-        return cls.is_super_admin(user) or cls.is_national_admin(user)
+        # Admins can manually create farms
+        if cls.is_super_admin(user) or cls.is_national_admin(user):
+            return True
+        
+        # Field officers can register farmers (create farms on behalf)
+        if cls.is_field_officer(user):
+            return True
+        
+        return False
     
     @classmethod
     def can_edit(cls, user, farm):
@@ -191,11 +199,38 @@ class FarmPolicy(BasePolicy):
             ]
         
         if cls.is_constituency_official(user):
+            # Constituency officials can update more fields + assign officers
             return [
+                'farm_name',
                 'extension_officer',
                 'assigned_extension_officer',
                 'current_bird_count',
-                'number_of_poultry_houses'
+                'number_of_poultry_houses',
+                'total_bird_capacity',
+                'housing_type',
+                'primary_production_type',
+                'farm_status',
+                'farm_readiness_score',
+                'biosecurity_score',
+                'residential_address',
+                'town',
+            ]
+        
+        if cls.is_extension_officer(user) or cls.is_veterinary_officer(user):
+            # Extension/Vet officers can update farm details after field visits
+            return [
+                'farm_name',
+                'current_bird_count',
+                'number_of_poultry_houses',
+                'total_bird_capacity',
+                'housing_type',
+                'primary_production_type',
+                'monthly_operating_budget',
+                'expected_monthly_revenue',
+                'farm_readiness_score',
+                'biosecurity_score',
+                'residential_address',
+                'town',
             ]
         
         if cls.is_farmer(user) and farm.owner == user:

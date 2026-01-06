@@ -18,6 +18,19 @@ from .admin_views import (
     AdminStaffInvitationCancelView,
 )
 
+# User Management views (suspend, unlock, etc.)
+from .user_management_views import (
+    AdminUserSuspendView,
+    AdminUserUnsuspendView,
+    AdminUserResetPasswordView,
+    AdminUserUnlockView,
+    AdminUserForceLogoutView,
+    AdminUserLoginAttemptsView,
+    AdminUserLoginHistoryView,
+    AdminUserReset2FAView,
+    AdminUserSuspensionStatusView,
+)
+
 # Batch management views
 from .batch_admin_views import (
     AdminBatchListView,
@@ -39,18 +52,59 @@ from .batch_action_views import (
     AdminBatchDuplicateView,
 )
 
+# Financial admin views
+from .financial_admin_views import (
+    PaymentHistoryView,
+    RevenueSummaryView,
+    ActiveSubscribersView,
+    FinanceDashboardView,
+)
+
+# AdSense admin views
+from .adsense_admin_views import (
+    AdSenseStatusView,
+    AdSenseConnectView,
+    AdSenseCallbackView,
+    AdSenseDisconnectView,
+    AdSenseEarningsView,
+    AdSenseReportsView,
+    AdSensePaymentsView,
+)
+
 app_name = 'admin_api'
 
 urlpatterns = [
     # Dashboard Overview
     path('dashboard/overview/', AdminDashboardOverviewView.as_view(), name='admin-overview'),
     
-    # User Management
+    # ========================================
+    # User Management - CRUD
+    # ========================================
     path('users/', AdminUserListView.as_view(), name='admin-user-list'),
     path('users/create/', AdminUserCreateView.as_view(), name='admin-user-create'),
     path('users/<uuid:user_id>/', AdminUserDetailView.as_view(), name='admin-user-detail'),
     
+    # ========================================
+    # User Management - Actions
+    # ========================================
+    # Suspension
+    path('users/<uuid:user_id>/suspend/', AdminUserSuspendView.as_view(), name='admin-user-suspend'),
+    path('users/<uuid:user_id>/unsuspend/', AdminUserUnsuspendView.as_view(), name='admin-user-unsuspend'),
+    path('users/<uuid:user_id>/suspension-status/', AdminUserSuspensionStatusView.as_view(), name='admin-user-suspension-status'),
+    
+    # Account Security
+    path('users/<uuid:user_id>/unlock/', AdminUserUnlockView.as_view(), name='admin-user-unlock'),
+    path('users/<uuid:user_id>/force-logout/', AdminUserForceLogoutView.as_view(), name='admin-user-force-logout'),
+    path('users/<uuid:user_id>/reset-password/', AdminUserResetPasswordView.as_view(), name='admin-user-reset-password'),
+    path('users/<uuid:user_id>/reset-2fa/', AdminUserReset2FAView.as_view(), name='admin-user-reset-2fa'),
+    
+    # Login History & Attempts
+    path('users/<uuid:user_id>/login-attempts/', AdminUserLoginAttemptsView.as_view(), name='admin-user-login-attempts'),
+    path('users/<uuid:user_id>/login-history/', AdminUserLoginHistoryView.as_view(), name='admin-user-login-history'),
+    
+    # ========================================
     # Staff Invitation Management
+    # ========================================
     path('staff/<uuid:user_id>/resend-invitation/', AdminStaffInvitationResendView.as_view(), name='admin-staff-resend-invitation'),
     path('staff/<uuid:user_id>/cancel-invitation/', AdminStaffInvitationCancelView.as_view(), name='admin-staff-cancel-invitation'),
     
@@ -90,4 +144,35 @@ urlpatterns = [
     
     # System Configuration
     path('config/', AdminSystemConfigView.as_view(), name='admin-config'),
+    
+    # ========================================
+    # Financial Reporting
+    # ========================================
+    
+    # Payment History
+    path('payments/', PaymentHistoryView.as_view(), name='admin-payments'),
+    
+    # Revenue Summary
+    path('revenue/summary/', RevenueSummaryView.as_view(), name='admin-revenue-summary'),
+    
+    # Subscribers Management
+    path('subscribers/', ActiveSubscribersView.as_view(), name='admin-subscribers'),
+    
+    # Financial Dashboard
+    path('finance/dashboard/', FinanceDashboardView.as_view(), name='admin-finance-dashboard'),
+    
+    # ========================================
+    # AdSense Integration
+    # ========================================
+    
+    # Connection Management (Super Admin only)
+    path('adsense/status/', AdSenseStatusView.as_view(), name='admin-adsense-status'),
+    path('adsense/connect/', AdSenseConnectView.as_view(), name='admin-adsense-connect'),
+    path('adsense/callback/', AdSenseCallbackView.as_view(), name='admin-adsense-callback'),
+    path('adsense/disconnect/', AdSenseDisconnectView.as_view(), name='admin-adsense-disconnect'),
+    
+    # AdSense Data (Finance Viewers)
+    path('adsense/earnings/', AdSenseEarningsView.as_view(), name='admin-adsense-earnings'),
+    path('adsense/reports/', AdSenseReportsView.as_view(), name='admin-adsense-reports'),
+    path('adsense/payments/', AdSensePaymentsView.as_view(), name='admin-adsense-payments'),
 ]
