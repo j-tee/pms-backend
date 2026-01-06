@@ -17,6 +17,7 @@ from django.db.models import Count, Sum, Avg, F, Q
 from django.utils import timezone
 from datetime import timedelta
 
+from farms.models import Farm
 from .processing_models import (
     ProcessingBatch,
     ProcessingOutput,
@@ -461,8 +462,9 @@ class StaleStockReportView(APIView):
     """
     API endpoint for stale stock reporting.
     
-    Used by government admins to identify farms with old/stale processed stock
-    that may need intervention (sales assistance, price reduction, etc.)
+    Used by:
+    - Government admins: See all farms with old/stale processed stock
+    - Farmers: See their own farm's stale stock
     """
     
     permission_classes = [permissions.IsAuthenticated]
@@ -473,18 +475,26 @@ class StaleStockReportView(APIView):
         
         Query params:
         - days_threshold: Days since production to consider stale (default: 7)
-        - region: Filter by region
-        - constituency: Filter by constituency
+        - include_expired: Include already expired items (default: true)
+        - region: Filter by region (admin only)
+        - constituency: Filter by constituency (admin only)
         """
-        # Only allow admins to access
-        if request.user.role not in ['super_admin', 'national_admin', 'regional_admin', 'constituency_admin']:
-            return Response({
-                'error': 'Admin access required'
-            }, status=status.HTTP_403_FORBIDDEN)
-        
         days_threshold = int(request.query_params.get('days_threshold', 7))
+        include_expired = request.query_params.get('include_expired', 'true').lower() == 'true'
         threshold_date = timezone.now().date() - timedelta(days=days_threshold)
         
+        # Check if user is admin or farmer (using uppercase role values)
+        from accounts.models import User
+        is_admin = request.user.role in [
+            User.UserRole.SUPER_ADMIN,
+            User.UserRole.NATIONAL_ADMIN,
+            User.UserRole.REGIONAL_COORDINATOR,
+            User.UserRole.CONSTITUENCY_OFFICIAL,
+            User.UserRole.YEA_OFFICIAL,
+        ]
+        is_farmer = request.user.role == User.UserRole.FARMER
+        
+        # Base query
         stale_outputs = ProcessingOutput.objects.filter(
             inventory_updated=True,
             production_date__lte=threshold_date,
@@ -494,24 +504,47 @@ class StaleStockReportView(APIView):
             'processing_batch__source_flock'
         )
         
-        # Regional filtering for regional admins
-        if request.user.role == 'regional_admin' and hasattr(request.user, 'region'):
+        # Filter by expiry if requested
+        if not include_expired:
             stale_outputs = stale_outputs.filter(
-                processing_batch__farm__primary_region=request.user.region
+                expiry_date__gte=timezone.now().date()
             )
         
-        # Query param region filter
-        region = request.query_params.get('region')
-        if region:
-            stale_outputs = stale_outputs.filter(
-                processing_batch__farm__primary_region=region
-            )
-        
-        constituency = request.query_params.get('constituency')
-        if constituency:
-            stale_outputs = stale_outputs.filter(
-                processing_batch__farm__primary_constituency=constituency
-            )
+        if is_farmer:
+            # Farmers only see their own farm's stale stock
+            try:
+                farm = Farm.objects.get(user=request.user)
+                stale_outputs = stale_outputs.filter(processing_batch__farm=farm)
+            except Farm.DoesNotExist:
+                return Response({
+                    'error': 'No farm found for this user',
+                    'code': 'NO_FARM'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        elif is_admin:
+            # Regional filtering for regional coordinators
+            if request.user.role == User.UserRole.REGIONAL_COORDINATOR and hasattr(request.user, 'region'):
+                stale_outputs = stale_outputs.filter(
+                    processing_batch__farm__primary_region=request.user.region
+                )
+            
+            # Query param region filter
+            region = request.query_params.get('region')
+            if region:
+                stale_outputs = stale_outputs.filter(
+                    processing_batch__farm__primary_region=region
+                )
+            
+            constituency = request.query_params.get('constituency')
+            if constituency:
+                stale_outputs = stale_outputs.filter(
+                    processing_batch__farm__primary_constituency=constituency
+                )
+        else:
+            # Other roles don't have access
+            return Response({
+                'error': 'Access denied. Only farmers and admins can view stale stock reports.',
+                'code': 'ACCESS_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
         
         # Build report
         report_data = []

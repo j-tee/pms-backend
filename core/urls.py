@@ -32,13 +32,21 @@ from subscriptions.urls import urlpatterns as subscription_urls
 from subscriptions.urls import webhook_urlpatterns as subscription_webhook_urls
 from subscriptions.urls import admin_urlpatterns as subscription_admin_urls
 
+# Import farmer analytics URL patterns
+from dashboards.farmer_analytics_urls import urlpatterns as farmer_analytics_urls
+
+# Import National Admin reports URL patterns
+from dashboards.national_admin_urls import urlpatterns as national_admin_reports_urls
+
 urlpatterns = [
     path('', RedirectView.as_view(url='/admin/', permanent=False)),
     path('admin/', yea_admin_site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/dashboards/', include('dashboards.urls')),
+    path('api/analytics/farmer/', include((farmer_analytics_urls, 'farmer_analytics'))),  # Farmer analytics
     path('api/admin/', include('accounts.admin_urls')),
     path('api/admin/analytics/', include('dashboards.analytics_urls', namespace='admin-analytics')),  # YEA Admin analytics
+    path('api/admin/reports/', include((national_admin_reports_urls, 'national_admin_reports'))),  # National Admin / Minister reports
     path('api/admin/inventory/', include('sales_revenue.inventory_urls', namespace='admin-inventory')),  # Government inventory analytics
     path('api/admin/platform-settings/', include((platform_settings_admin_urls, 'platform_settings'))),  # Platform settings (Super Admin)
     path('api/admin/subscriptions/', include((subscription_admin_urls, 'admin_subscriptions'))),  # Admin subscription management

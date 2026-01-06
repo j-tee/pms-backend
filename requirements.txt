@@ -59,6 +59,10 @@ pytest>=7.4.0
 pytest-django>=4.7.0
 pytest-cov>=4.1.0
 
+# Export Libraries (Excel & PDF)
+openpyxl>=3.1.0  # Excel file generation
+reportlab>=4.0.0  # PDF generation
+
 # Production Server
 gunicorn>=21.0.0
 

@@ -294,3 +294,183 @@ Report generated on {timezone.now().strftime('%Y-%m-%d %H:%M')}
     except Exception as exc:
         logger.error(f"Failed to generate production report: {exc}")
         return {'status': 'error', 'error': str(exc)}
+
+
+# =============================================================================
+# NATIONAL ADMIN / MINISTER REPORT TASKS
+# =============================================================================
+
+@shared_task
+def precompute_national_admin_reports():
+    """
+    Pre-compute all National Admin reports for fast access.
+    
+    Scheduled via Celery Beat to run at 2 AM daily.
+    This ensures the Minister/National Admin dashboard loads instantly.
+    """
+    from dashboards.services.national_admin_analytics import NationalAdminAnalyticsService
+    from farms.models import FarmLocation
+    
+    logger.info("Starting National Admin reports pre-computation...")
+    
+    try:
+        service = NationalAdminAnalyticsService(use_cache=False)
+        
+        # Pre-compute national-level reports
+        reports = {
+            'executive_dashboard': service.get_executive_dashboard(),
+            'program_performance': service.get_program_performance_overview(),
+            'production_overview': service.get_production_overview(days=30),
+            'regional_comparison': service.get_regional_production_comparison(),
+            'financial_overview': service.get_financial_overview(days=30),
+            'flock_health': service.get_flock_health_overview(days=30),
+            'food_security': service.get_food_security_metrics(),
+            'farmer_welfare': service.get_farmer_welfare_metrics(),
+            'operational': service.get_operational_metrics(),
+            'enrollment_trend': service.get_enrollment_trend(months=12),
+        }
+        
+        # Cache each report with appropriate TTL
+        for key, data in reports.items():
+            cache.set(f'national_admin:{key}', data, timeout=86400)
+        
+        logger.info("National-level reports pre-computed successfully")
+        
+        # Pre-compute regional reports for each region
+        regions = list(
+            FarmLocation.objects.filter(is_primary_location=True)
+            .values_list('region', flat=True)
+            .distinct()
+        )
+        
+        for region in regions:
+            if not region:
+                continue
+            try:
+                regional_service = NationalAdminAnalyticsService(use_cache=False)
+                regional_data = {
+                    'executive_dashboard': regional_service.get_executive_dashboard(region=region),
+                    'production_overview': regional_service.get_production_overview(region=region, days=30),
+                    'financial_overview': regional_service.get_financial_overview(region=region, days=30),
+                }
+                for key, data in regional_data.items():
+                    cache.set(f'national_admin:{key}:{region}', data, timeout=86400)
+            except Exception as region_exc:
+                logger.warning(f"Failed to pre-compute for region {region}: {region_exc}")
+        
+        logger.info(f"Regional reports pre-computed for {len(regions)} regions")
+        
+        return {
+            'status': 'success',
+            'national_reports': list(reports.keys()),
+            'regions_processed': len([r for r in regions if r]),
+            'timestamp': timezone.now().isoformat(),
+        }
+        
+    except Exception as exc:
+        logger.error(f"National Admin reports pre-computation failed: {exc}")
+        return {'status': 'error', 'error': str(exc)}
+
+
+@shared_task
+def generate_minister_report(
+    report_type: str,
+    region: str = None,
+    constituency: str = None,
+    format: str = 'json'
+) -> dict:
+    """
+    Generate on-demand report for Minister/National Admin.
+    
+    Args:
+        report_type: Type of report to generate
+        region: Optional region filter
+        constituency: Optional constituency filter
+        format: Output format (json, for caching)
+    
+    Returns:
+        dict: Report data or cache key
+    """
+    from dashboards.services.national_admin_analytics import NationalAdminAnalyticsService
+    
+    logger.info(f"Generating {report_type} report (region={region}, constituency={constituency})")
+    
+    try:
+        service = NationalAdminAnalyticsService(use_cache=False)
+        
+        report_methods = {
+            'executive_dashboard': lambda: service.get_executive_dashboard(region, constituency),
+            'program_performance': lambda: service.get_program_performance_overview(region, constituency),
+            'production': lambda: service.get_production_overview(region, constituency),
+            'financial': lambda: service.get_financial_overview(region, constituency),
+            'flock_health': lambda: service.get_flock_health_overview(region, constituency),
+            'food_security': lambda: service.get_food_security_metrics(region, constituency),
+            'procurement': lambda: service.get_procurement_overview(region, constituency),
+            'farmer_welfare': lambda: service.get_farmer_welfare_metrics(region, constituency),
+            'operational': lambda: service.get_operational_metrics(region, constituency),
+            'regional_comparison': lambda: service.get_regional_production_comparison(),
+            'enrollment_trend': lambda: service.get_enrollment_trend(12, region, constituency),
+        }
+        
+        if report_type not in report_methods:
+            return {'status': 'error', 'error': f'Unknown report type: {report_type}'}
+        
+        data = report_methods[report_type]()
+        
+        # Cache the result
+        cache_key = f"national_admin:ondemand:{report_type}:{region or 'national'}:{constituency or 'all'}"
+        cache.set(cache_key, data, timeout=1800)  # 30 minutes
+        
+        logger.info(f"Report {report_type} generated and cached")
+        return {
+            'status': 'success',
+            'cache_key': cache_key,
+            'data': data,
+        }
+        
+    except Exception as exc:
+        logger.error(f"Report generation failed: {exc}")
+        return {'status': 'error', 'error': str(exc)}
+
+
+@shared_task
+def refresh_national_admin_cache(report_types: list = None, region: str = None):
+    """
+    Manually refresh specific National Admin cache entries.
+    
+    Usage:
+        from dashboards.tasks import refresh_national_admin_cache
+        refresh_national_admin_cache.delay(['executive_dashboard', 'production'])
+        refresh_national_admin_cache.delay(region='Greater Accra')
+    """
+    from dashboards.services.national_admin_analytics import NationalAdminAnalyticsService
+    
+    service = NationalAdminAnalyticsService(use_cache=False)
+    
+    all_reports = {
+        'executive_dashboard': lambda: service.get_executive_dashboard(region),
+        'program_performance': lambda: service.get_program_performance_overview(region),
+        'production_overview': lambda: service.get_production_overview(region=region),
+        'financial_overview': lambda: service.get_financial_overview(region=region),
+        'flock_health': lambda: service.get_flock_health_overview(region=region),
+        'food_security': lambda: service.get_food_security_metrics(region),
+        'farmer_welfare': lambda: service.get_farmer_welfare_metrics(region),
+        'operational': lambda: service.get_operational_metrics(region),
+    }
+    
+    types_to_refresh = report_types or list(all_reports.keys())
+    refreshed = []
+    
+    for report_type in types_to_refresh:
+        if report_type in all_reports:
+            try:
+                data = all_reports[report_type]()
+                cache_key = f'national_admin:{report_type}'
+                if region:
+                    cache_key += f':{region}'
+                cache.set(cache_key, data, timeout=86400)
+                refreshed.append(report_type)
+            except Exception as exc:
+                logger.error(f"Failed to refresh {report_type}: {exc}")
+    
+    return {'refreshed': refreshed, 'requested': types_to_refresh}

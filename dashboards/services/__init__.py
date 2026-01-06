@@ -7,6 +7,7 @@ from .officer import OfficerDashboardService
 from .farmer import FarmerDashboardService
 from .yea_analytics import YEAAnalyticsService
 from .platform_revenue import PlatformRevenueService
+from .national_admin_analytics import NationalAdminAnalyticsService
 
 __all__ = [
     'ExecutiveDashboardService',
@@ -14,4 +15,5 @@ __all__ = [
     'FarmerDashboardService',
     'YEAAnalyticsService',
     'PlatformRevenueService',
+    'NationalAdminAnalyticsService',
 ]

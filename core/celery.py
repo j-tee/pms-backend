@@ -48,6 +48,12 @@ app.conf.beat_schedule = {
         'schedule': crontab(hour=1, minute=30),
     },
     
+    # Pre-compute National Admin/Minister reports (run at 2 AM)
+    'precompute-national-admin-reports': {
+        'task': 'dashboards.tasks.precompute_national_admin_reports',
+        'schedule': crontab(hour=2, minute=0),
+    },
+    
     # Generate weekly reports (run Monday 6 AM)
     'generate-weekly-reports': {
         'task': 'dashboards.tasks.generate_weekly_report',
