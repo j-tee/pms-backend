@@ -87,7 +87,8 @@ def complete_ecosystem(db):
             total_bird_capacity=1000 * (i + 1),
             subscription_type='government_subsidized' if i < 5 else 'standard',
             marketplace_enabled=i < 6,
-            date_of_birth='1990-01-01'
+            date_of_birth='1990-01-01',
+            years_in_poultry=2
         )
         farms.append(farm)
         
@@ -471,7 +472,8 @@ class TestErrorRecovery:
             primary_constituency='Tamale',
             farm_status='OPERATIONAL',
             total_bird_capacity=1000,
-            date_of_birth='1990-01-01'
+            date_of_birth='1990-01-01',
+            years_in_poultry=2
         )
         
         # Should handle gracefully
