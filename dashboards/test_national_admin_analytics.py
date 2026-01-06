@@ -121,8 +121,7 @@ def sample_farm(db, farmer_user):
     farm = Farm.objects.create(
         user=farmer_user,
         farm_name='Test Farm',
-        region='Greater Accra',
-        constituency='Ayawaso West',
+        primary_constituency='Ayawaso West',
         farm_status='OPERATIONAL',
         total_bird_capacity=1000,
         subscription_type='government_subsidized',
@@ -203,8 +202,7 @@ def multiple_farms(db):
         farm = Farm.objects.create(
             user=user,
             farm_name=f'GA Farm {i}',
-            region='Greater Accra',
-            constituency='Ayawaso West' if i < 3 else 'Ablekuma Central',
+            primary_constituency='Ayawaso West' if i < 3 else 'Ablekuma Central',
             farm_status='OPERATIONAL',
             total_bird_capacity=1000,
             subscription_type='government_subsidized'
@@ -246,8 +244,7 @@ def multiple_farms(db):
         farm = Farm.objects.create(
             user=user,
             farm_name=f'AR Farm {i}',
-            region='Ashanti',
-            constituency='Kumasi Central',
+            primary_constituency='Kumasi Central',
             farm_status='OPERATIONAL',
             total_bird_capacity=800,
             subscription_type='standard'

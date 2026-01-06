@@ -55,8 +55,7 @@ def farmer_with_farm(db, farmer_user):
     farm = Farm.objects.create(
         user=farmer_user,
         farm_name='Test Farm',
-        region='Greater Accra',
-        constituency='Ayawaso West',
+        primary_constituency='Ayawaso West',
         farm_status='OPERATIONAL',
         total_bird_capacity=2000,
         subscription_type='government_subsidized',
@@ -198,8 +197,7 @@ def farm_without_data(db, farmer_user):
     farm = Farm.objects.create(
         user=farmer_user,
         farm_name='Empty Farm',
-        region='Ashanti',
-        constituency='Kumasi Central',
+        primary_constituency='Kumasi Central',
         farm_status='PENDING',
         total_bird_capacity=500,
         subscription_type='none',
@@ -222,8 +220,7 @@ class TestFarmerAnalyticsPermissions:
         other_farm = Farm.objects.create(
             user=another_farmer,
             farm_name='Other Farm',
-            region='Ashanti',
-            constituency='Kumasi',
+            primary_constituency='Kumasi',
             farm_status='OPERATIONAL',
             total_bird_capacity=1000
         )
@@ -238,6 +235,7 @@ class TestFarmerAnalyticsPermissions:
         # Should only see own farm data
         assert data['farm']['farm_name'] == 'Test Farm'
     
+    @pytest.mark.django_db
     def test_admin_cannot_access_farmer_analytics(self, api_client):
         """Test that admin users cannot access farmer analytics endpoints."""
         admin = User.objects.create_user(
@@ -514,6 +512,7 @@ class TestEdgeCases:
         assert data['production_summary']['total_eggs_30d'] == 0
         assert data['flock_summary']['total_birds'] == 0
     
+    @pytest.mark.django_db
     def test_farmer_without_farm(self, api_client):
         """Test farmer with no farm."""
         farmer = User.objects.create_user(
@@ -549,8 +548,7 @@ class TestEdgeCases:
         farm = Farm.objects.create(
             user=farmer_user,
             farm_name='Inactive Farm',
-            region='Western',
-            constituency='Takoradi',
+            primary_constituency='Takoradi',
             farm_status='SUSPENDED',
             total_bird_capacity=500
         )
