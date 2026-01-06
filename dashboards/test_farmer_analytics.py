@@ -20,20 +20,15 @@ User = get_user_model()
 
 
 @pytest.fixture
-def api_client():
-    """API client for making requests."""
-    return APIClient()
-
-
-@pytest.fixture
 def farmer_user(db):
     """Create farmer user."""
     user = User.objects.create_user(
+        username='farmer_test',
         email='farmer@test.com',
         password='testpass123',
         first_name='John',
         last_name='Farmer',
-        phone_number='+233200000001',
+        phone='+233200000001',
         role='FARMER'
     )
     return user
@@ -43,11 +38,12 @@ def farmer_user(db):
 def another_farmer(db):
     """Create another farmer user for cross-farm testing."""
     user = User.objects.create_user(
+        username='other_farmer',
         email='other@test.com',
         password='testpass123',
         first_name='Jane',
         last_name='Farmer',
-        phone_number='+233200000002',
+        phone='+233200000002',
         role='FARMER'
     )
     return user
@@ -158,11 +154,12 @@ def farmer_with_farm(db, farmer_user):
     
     # Create orders
     buyer = User.objects.create_user(
+        username='buyer_test',
         email='buyer@test.com',
         password='testpass123',
         first_name='Buyer',
         last_name='Test',
-        phone_number='+233200000099',
+        phone='+233200000099',
         role='FARMER'
     )
     
@@ -244,11 +241,12 @@ class TestFarmerAnalyticsPermissions:
     def test_admin_cannot_access_farmer_analytics(self, api_client):
         """Test that admin users cannot access farmer analytics endpoints."""
         admin = User.objects.create_user(
+            username='admin_test',
             email='admin@test.com',
             password='testpass123',
             first_name='Admin',
             last_name='User',
-            phone_number='+233200000010',
+            phone='+233200000010',
             role='NATIONAL_ADMIN'
         )
         
@@ -519,11 +517,12 @@ class TestEdgeCases:
     def test_farmer_without_farm(self, api_client):
         """Test farmer with no farm."""
         farmer = User.objects.create_user(
+            username='nofarm_test',
             email='nofarm@test.com',
             password='testpass123',
             first_name='No',
             last_name='Farm',
-            phone_number='+233200000020',
+            phone='+233200000020',
             role='FARMER'
         )
         

@@ -26,20 +26,22 @@ def complete_ecosystem(db):
     
     # Create admin users
     super_admin = User.objects.create_user(
+        username='superadmin_test',
         email='superadmin@test.com',
         password='testpass123',
         first_name='Super',
         last_name='Admin',
-        phone_number='+233500000001',
+        phone='+233500000001',
         role='SUPER_ADMIN'
     )
     
     regional_coord = User.objects.create_user(
+        username='regional_coord_test',
         email='regional@test.com',
         password='testpass123',
         first_name='Regional',
         last_name='Coordinator',
-        phone_number='+233500000002',
+        phone='+233500000002',
         role='REGIONAL_COORDINATOR'
     )
     regional_coord.assigned_region = 'Greater Accra'
@@ -64,11 +66,12 @@ def complete_ecosystem(db):
     for i in range(10):
         # Create farmer user
         farmer = User.objects.create_user(
+            username=f'farmer{i}_test',
             email=f'farmer{i}@test.com',
             password='testpass123',
             first_name=f'Farmer{i}',
             last_name='Test',
-            phone_number=f'+23350000{1000+i}',
+            phone=f'+23350000{1000+i}',
             role='FARMER'
         )
         farmers.append(farmer)
@@ -451,11 +454,12 @@ class TestErrorRecovery:
         
         # Create farm without flocks
         farmer = User.objects.create_user(
+            username='noflock_farmer',
             email='noflock@test.com',
             password='testpass123',
             first_name='No',
             last_name='Flock',
-            phone_number='+233500009999',
+            phone='+233500009999',
             role='FARMER'
         )
         

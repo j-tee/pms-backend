@@ -21,20 +21,15 @@ User = get_user_model()
 
 
 @pytest.fixture
-def api_client():
-    """API client for making requests."""
-    return APIClient()
-
-
-@pytest.fixture
 def super_admin(db):
     """Create super admin user."""
     user = User.objects.create_user(
+        username='superadmin',
         email='superadmin@test.com',
         password='testpass123',
         first_name='Super',
         last_name='Admin',
-        phone_number='+233200000001',
+        phone='+233200000001',
         role='SUPER_ADMIN'
     )
     return user
@@ -44,11 +39,12 @@ def super_admin(db):
 def national_admin(db):
     """Create national admin user."""
     user = User.objects.create_user(
+        username='nationaladmin',
         email='nationaladmin@test.com',
         password='testpass123',
         first_name='National',
         last_name='Admin',
-        phone_number='+233200000002',
+        phone='+233200000002',
         role='NATIONAL_ADMIN'
     )
     return user
@@ -58,11 +54,12 @@ def national_admin(db):
 def yea_official(db):
     """Create YEA official user."""
     user = User.objects.create_user(
+        username='yea_official',
         email='yea@test.com',
         password='testpass123',
         first_name='YEA',
         last_name='Official',
-        phone_number='+233200000003',
+        phone='+233200000003',
         role='YEA_OFFICIAL'
     )
     return user
@@ -72,11 +69,12 @@ def yea_official(db):
 def regional_coordinator(db):
     """Create regional coordinator user."""
     user = User.objects.create_user(
+        username='regional_coord',
         email='regional@test.com',
         password='testpass123',
         first_name='Regional',
         last_name='Coordinator',
-        phone_number='+233200000004',
+        phone='+233200000004',
         role='REGIONAL_COORDINATOR'
     )
     user.assigned_region = 'Greater Accra'
@@ -88,11 +86,12 @@ def regional_coordinator(db):
 def constituency_official(db):
     """Create constituency official user."""
     user = User.objects.create_user(
+        username='constituency_off',
         email='constituency@test.com',
         password='testpass123',
         first_name='Constituency',
         last_name='Official',
-        phone_number='+233200000005',
+        phone='+233200000005',
         role='CONSTITUENCY_OFFICIAL'
     )
     user.assigned_region = 'Greater Accra'
@@ -105,11 +104,12 @@ def constituency_official(db):
 def farmer_user(db):
     """Create farmer user."""
     user = User.objects.create_user(
+        username='farmer_user',
         email='farmer@test.com',
         password='testpass123',
         first_name='Farmer',
         last_name='Test',
-        phone_number='+233200000006',
+        phone='+233200000006',
         role='FARMER'
     )
     return user
@@ -192,11 +192,12 @@ def multiple_farms(db):
     # Greater Accra farms
     for i in range(5):
         user = User.objects.create_user(
+            username=f'farmer_ga_{i}',
             email=f'farmer_ga_{i}@test.com',
             password='testpass123',
             first_name=f'Farmer{i}',
             last_name='GA',
-            phone_number=f'+23320000{100+i}',
+            phone=f'+23320000{100+i}',
             role='FARMER'
         )
         farm = Farm.objects.create(
@@ -234,11 +235,12 @@ def multiple_farms(db):
     # Ashanti Region farms
     for i in range(3):
         user = User.objects.create_user(
+            username=f'farmer_ar_{i}',
             email=f'farmer_ar_{i}@test.com',
             password='testpass123',
             first_name=f'Farmer{i}',
             last_name='AR',
-            phone_number=f'+23320000{200+i}',
+            phone=f'+23320000{200+i}',
             role='FARMER'
         )
         farm = Farm.objects.create(
