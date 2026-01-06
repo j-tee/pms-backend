@@ -746,12 +746,13 @@ class Farm(models.Model):
             ) * 100
         
         # Auto-calculate experience level
-        if self.years_in_poultry <= 1:
-            self.experience_level = 'Beginner'
-        elif self.years_in_poultry <= 5:
-            self.experience_level = 'Intermediate'
-        else:
-            self.experience_level = 'Expert'
+        if self.years_in_poultry is not None:
+            if self.years_in_poultry <= 1:
+                self.experience_level = 'Beginner'
+            elif self.years_in_poultry <= 5:
+                self.experience_level = 'Intermediate'
+            else:
+                self.experience_level = 'Expert'
         
         super().save(*args, **kwargs)
     
