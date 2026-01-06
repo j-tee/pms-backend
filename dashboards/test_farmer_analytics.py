@@ -13,7 +13,7 @@ from rest_framework import status
 from farms.models import Farm
 from flock_management.models import Flock, DailyProduction, MortalityRecord
 from sales_revenue.marketplace_models import Product, MarketplaceOrder, OrderItem
-from sales_revenue.processing_models import ProcessedProduct
+from sales_revenue.processing_models import ProcessingOutput
 from feed_inventory.models import FeedPurchase
 
 User = get_user_model()
@@ -149,7 +149,7 @@ def farmer_with_farm(db, farmer_user):
     )
     
     # Create processed products
-    ProcessedProduct.objects.create(
+    ProcessingOutput.objects.create(
         farm=farm,
         product_name='Culled Hens',
         stock_quantity=10,
