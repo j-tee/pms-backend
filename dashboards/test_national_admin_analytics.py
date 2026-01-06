@@ -130,7 +130,8 @@ def sample_farm(db, farmer_user):
         years_in_poultry=2,
         number_of_poultry_houses=2,
         total_infrastructure_value_ghs=25000,
-        planned_production_start_date='2024-03-01'
+        planned_production_start_date='2024-03-01',
+        initial_investment_amount=30000
     )
     
     # Create active flock
@@ -215,7 +216,8 @@ def multiple_farms(db):
             years_in_poultry=2,
             number_of_poultry_houses=2,
             total_infrastructure_value_ghs=22000,
-            planned_production_start_date='2024-06-01'
+            planned_production_start_date='2024-06-01',
+            initial_investment_amount=28000
         )
         
         # Create flock with production
@@ -262,7 +264,8 @@ def multiple_farms(db):
             years_in_poultry=3,
             number_of_poultry_houses=3,
             total_infrastructure_value_ghs=30000,
-            planned_production_start_date='2023-09-01'
+            planned_production_start_date='2023-09-01',
+            initial_investment_amount=35000
         )
         farms.append(farm)
     
