@@ -127,7 +127,8 @@ def sample_farm(db, farmer_user):
         subscription_type='government_subsidized',
         marketplace_enabled=True,
         date_of_birth='1990-01-01',
-        years_in_poultry=2
+        years_in_poultry=2,
+        number_of_poultry_houses=2
     )
     
     # Create active flock
@@ -209,7 +210,8 @@ def multiple_farms(db):
             total_bird_capacity=1000,
             subscription_type='government_subsidized',
             date_of_birth='1990-01-01',
-            years_in_poultry=2
+            years_in_poultry=2,
+            number_of_poultry_houses=2
         )
         
         # Create flock with production
@@ -253,7 +255,8 @@ def multiple_farms(db):
             total_bird_capacity=800,
             subscription_type='standard',
             date_of_birth='1990-01-01',
-            years_in_poultry=3
+            years_in_poultry=3,
+            number_of_poultry_houses=3
         )
         farms.append(farm)
     
