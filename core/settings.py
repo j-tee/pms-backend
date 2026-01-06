@@ -131,6 +131,7 @@ INSTALLED_APPS = [
     'subscriptions',
     'advertising',
     'contact',
+    'cms',  # Content Management System (About Us, Privacy Policy, etc.)
 ]
 
 SITE_ID = 1  # Required for django.contrib.sites

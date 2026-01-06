@@ -16,6 +16,8 @@ class User(AbstractUser, RoleMixin):
     class UserRole(models.TextChoices):
         # System Administration (Highest Level)
         SUPER_ADMIN = 'SUPER_ADMIN', 'Super Administrator'
+        # Platform Owner (Alphalogique Technologies)
+        COMPANY_ADMIN = 'COMPANY_ADMIN', 'Company Administrator'
         # YEA Officials (Elevated Administrators)
         YEA_OFFICIAL = 'YEA_OFFICIAL', 'YEA Official'
         # Standard Administrative Roles

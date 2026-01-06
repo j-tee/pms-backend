@@ -42,6 +42,10 @@ from dashboards.national_admin_urls import urlpatterns as national_admin_reports
 from contact.urls import urlpatterns as contact_public_urls
 from contact.admin_urls import urlpatterns as contact_admin_urls
 
+# Import CMS URL patterns
+from cms.urls import urlpatterns as cms_public_urls
+from cms.admin_urls import urlpatterns as cms_admin_urls
+
 urlpatterns = [
     path('', RedirectView.as_view(url='/admin/', permanent=False)),
     path('admin/', yea_admin_site.urls),
@@ -70,6 +74,8 @@ urlpatterns = [
     path('api/admin/advertising/', include((advertising_admin_urls, 'admin_advertising'))),  # Admin advertising management
     path('api/contact/', include((contact_public_urls, 'contact'))),  # Public contact form
     path('api/admin/', include((contact_admin_urls, 'contact_admin'))),  # Admin contact management
+    path('api/cms/', include((cms_admin_urls, 'cms_admin'))),  # CMS management (SUPER_ADMIN only)
+    path('api/public/cms/', include((cms_public_urls, 'cms_public'))),  # Public content pages (About Us, etc.)
     path('api/', include('farms.urls')),  # Public farm application endpoints
 ]
 

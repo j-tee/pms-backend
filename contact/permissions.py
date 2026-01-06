@@ -9,44 +9,35 @@ from rest_framework import permissions
 class IsAdminOrStaff(permissions.BasePermission):
     """
     Permission for admin/staff users to access contact messages.
+    ONLY SUPER_ADMIN can read contact messages.
     """
     
     def has_permission(self, request, view):
-        """Check if user is authenticated and is admin/staff."""
+        """Check if user is SUPER_ADMIN."""
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.role in [
-                'SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL',
-                'REGIONAL_COORDINATOR', 'CONSTITUENCY_OFFICIAL'
-            ]
+            request.user.role == 'SUPER_ADMIN'
         )
 
 
 class CanManageContactMessages(permissions.BasePermission):
     """
     Permission to manage (assign, update, reply) contact messages.
+    ONLY SUPER_ADMIN can read and manage contact messages.
     """
     
     def has_permission(self, request, view):
-        """Check if user can manage contact messages."""
+        """Check if user can manage contact messages - SUPER_ADMIN only."""
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.role in [
-                'SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL'
-            ]
+            request.user.role == 'SUPER_ADMIN'
         )
     
     def has_object_permission(self, request, view, obj):
-        """Check object-level permissions."""
-        # Super admin and national admin can manage all
-        if request.user.role in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL']:
-            return True
-        
-        # Regional coordinators can only manage assigned messages
-        if request.user.role == 'REGIONAL_COORDINATOR':
-            return obj.assigned_to == request.user
+        """Check object-level permissions - SUPER_ADMIN only."""
+        return request.user.role == 'SUPER_ADMIN'
         
         return False
 
