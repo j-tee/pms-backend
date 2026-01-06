@@ -61,7 +61,9 @@ def farmer_with_farm(db, farmer_user):
         subscription_type='government_subsidized',
         marketplace_enabled=True,
         date_of_birth='1990-01-01',
-        years_in_poultry=2
+        years_in_poultry=1,
+        number_of_poultry_houses=1,
+        number_of_poultry_houses=3
     )
     
     # Create multiple flocks with different ages
@@ -205,7 +207,8 @@ def farm_without_data(db, farmer_user):
         subscription_type='none',
         marketplace_enabled=False,
         date_of_birth='1990-01-01',
-        years_in_poultry=1
+        years_in_poultry=1,
+        number_of_poultry_houses=1
     )
     return farm
 
@@ -228,7 +231,8 @@ class TestFarmerAnalyticsPermissions:
             farm_status='OPERATIONAL',
             total_bird_capacity=1000,
             date_of_birth='1990-01-01',
-            years_in_poultry=3
+            years_in_poultry=3,
+            number_of_poultry_houses=4
         )
         
         # Authenticate as first farmer
@@ -558,7 +562,8 @@ class TestEdgeCases:
             farm_status='SUSPENDED',
             total_bird_capacity=500,
             date_of_birth='1990-01-01',
-            years_in_poultry=1
+            years_in_poultry=1,
+            number_of_poultry_houses=1
         )
         
         api_client.force_authenticate(user=farmer_user)
