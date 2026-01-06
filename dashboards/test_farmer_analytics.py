@@ -66,7 +66,7 @@ def farmer_with_farm(db, farmer_user):
         total_infrastructure_value_ghs=35000,
         planned_production_start_date='2024-01-01',
         initial_investment_amount=40000,
-        funding_source='government_grant'
+        funding_source=['government_grant']
     )
     
     # Create multiple flocks with different ages
@@ -215,7 +215,7 @@ def farm_without_data(db, farmer_user):
         total_infrastructure_value_ghs=5000,
         planned_production_start_date='2026-03-01',
         initial_investment_amount=8000,
-        funding_source='family_support'
+        funding_source=['family_support']
     )
     return farm
 
@@ -243,7 +243,7 @@ class TestFarmerAnalyticsPermissions:
             total_infrastructure_value_ghs=50000,
             planned_production_start_date='2023-06-01',
             initial_investment_amount=60000,
-            funding_source='self_funded'
+            funding_source=['self_funded']
         )
         
         # Authenticate as first farmer
@@ -578,7 +578,7 @@ class TestEdgeCases:
             planned_production_start_date='2025-09-01',
             total_infrastructure_value_ghs=8000,
             initial_investment_amount=10000,
-            funding_source='loan'
+            funding_source=['loan']
         )
         
         api_client.force_authenticate(user=farmer_user)
