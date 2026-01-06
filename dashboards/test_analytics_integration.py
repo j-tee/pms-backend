@@ -89,7 +89,8 @@ def complete_ecosystem(db):
             marketplace_enabled=i < 6,
             date_of_birth='1990-01-01',
             years_in_poultry=2,
-            number_of_poultry_houses=2
+            number_of_poultry_houses=2,
+            total_infrastructure_value_ghs=20000
         )
         farms.append(farm)
         
@@ -475,7 +476,8 @@ class TestErrorRecovery:
             total_bird_capacity=1000,
             date_of_birth='1990-01-01',
             years_in_poultry=2,
-            number_of_poultry_houses=1
+            number_of_poultry_houses=1,
+            total_infrastructure_value_ghs=15000
         )
         
         # Should handle gracefully
