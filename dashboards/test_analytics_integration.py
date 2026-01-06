@@ -91,7 +91,8 @@ def complete_ecosystem(db):
             years_in_poultry=2,
             number_of_poultry_houses=2,
             total_infrastructure_value_ghs=20000,
-            planned_production_start_date='2025-01-01'
+            planned_production_start_date='2025-01-01',
+            initial_investment_amount=25000
         )
         farms.append(farm)
         
@@ -479,7 +480,8 @@ class TestErrorRecovery:
             years_in_poultry=2,
             number_of_poultry_houses=1,
             total_infrastructure_value_ghs=15000,
-            planned_production_start_date='2024-06-01'
+            planned_production_start_date='2024-06-01',
+            initial_investment_amount=18000
         )
         
         # Should handle gracefully

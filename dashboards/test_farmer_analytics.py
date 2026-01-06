@@ -64,7 +64,8 @@ def farmer_with_farm(db, farmer_user):
         years_in_poultry=2,
         number_of_poultry_houses=3,
         total_infrastructure_value_ghs=35000,
-        planned_production_start_date='2024-01-01'
+        planned_production_start_date='2024-01-01',
+        initial_investment_amount=40000
     )
     
     # Create multiple flocks with different ages
@@ -211,7 +212,8 @@ def farm_without_data(db, farmer_user):
         years_in_poultry=1,
         number_of_poultry_houses=1,
         total_infrastructure_value_ghs=5000,
-        planned_production_start_date='2026-03-01'
+        planned_production_start_date='2026-03-01',
+        initial_investment_amount=8000
     )
     return farm
 
@@ -237,7 +239,8 @@ class TestFarmerAnalyticsPermissions:
             years_in_poultry=3,
             number_of_poultry_houses=4,
             total_infrastructure_value_ghs=50000,
-            planned_production_start_date='2023-06-01'
+            planned_production_start_date='2023-06-01',
+            initial_investment_amount=60000
         )
         
         # Authenticate as first farmer
@@ -570,7 +573,8 @@ class TestEdgeCases:
             years_in_poultry=1,
             number_of_poultry_houses=1,
             planned_production_start_date='2025-09-01',
-            total_infrastructure_value_ghs=8000
+            total_infrastructure_value_ghs=8000,
+            initial_investment_amount=10000
         )
         
         api_client.force_authenticate(user=farmer_user)
