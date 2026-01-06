@@ -92,7 +92,8 @@ def complete_ecosystem(db):
             number_of_poultry_houses=2,
             total_infrastructure_value_ghs=20000,
             planned_production_start_date='2025-01-01',
-            initial_investment_amount=25000
+            initial_investment_amount=25000,
+            funding_source='government_grant' if i < 5 else 'self_funded'
         )
         farms.append(farm)
         
@@ -481,7 +482,8 @@ class TestErrorRecovery:
             number_of_poultry_houses=1,
             total_infrastructure_value_ghs=15000,
             planned_production_start_date='2024-06-01',
-            initial_investment_amount=18000
+            initial_investment_amount=18000,
+            funding_source='loan'
         )
         
         # Should handle gracefully
