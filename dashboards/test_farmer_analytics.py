@@ -13,6 +13,7 @@ from rest_framework import status
 from farms.models import Farm
 from flock_management.models import Flock, DailyProduction, MortalityRecord
 from sales_revenue.marketplace_models import Product, ProductCategory, MarketplaceOrder, OrderItem
+from sales_revenue.models import Customer
 from sales_revenue.processing_models import ProcessingOutput
 from feed_inventory.models import FeedPurchase
 
@@ -184,21 +185,22 @@ def farmer_with_farm(db, farmer_user):
     )
     
     # Create orders
-    buyer = User.objects.create_user(
-        username='buyer_test',
-        email='buyer@test.com',
-        password='testpass123',
+    customer = Customer.objects.create(
+        farm=farm,
+        customer_type='individual',
         first_name='Buyer',
         last_name='Test',
-        phone='+233200000099',
-        role='FARMER'
+        phone_number='+233200000099',
+        mobile_money_number='+233200000099',
+        mobile_money_provider='mtn',
+        mobile_money_account_name='Buyer Test'
     )
     
     for i in range(5):
         order = MarketplaceOrder.objects.create(
             farm=farm,
-            buyer=buyer,
-            status='COMPLETED',
+            customer=customer,
+            status='completed',
             total_amount=Decimal('350.00'),
             created_at=timezone.now() - timedelta(days=i*5)
         )
