@@ -633,10 +633,11 @@ class TestExportFunctionality:
         """Test CSV export for different sections."""
         api_client.force_authenticate(user=farmer_with_farm['user'])
         
+        # section is a query parameter, not a path parameter
         sections = ['production', 'financial', 'flock-health']
         
         for section in sections:
-            response = api_client.get(f'/api/farms/analytics/export/csv/{section}/')
+            response = api_client.get(f'/api/farms/analytics/export/csv/?section={section}')
             assert response.status_code == status.HTTP_200_OK
             assert 'csv' in response['Content-Type'].lower()
 

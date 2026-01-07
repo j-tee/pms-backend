@@ -711,7 +711,8 @@ class TestExportEndpoints:
         """Test CSV export for different sections."""
         api_client.force_authenticate(user=super_admin)
         
-        sections = ['production', 'regional', 'financial', 'farms']
+        # Valid report types according to ExportReportCSVView
+        sections = ['production', 'enrollment', 'regional', 'farms']
         
         for section in sections:
             response = api_client.get(f'/api/admin/reports/export/csv/{section}/')

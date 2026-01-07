@@ -277,8 +277,8 @@ class TestEndToEndWorkflows:
         response = api_client.get('/api/admin/reports/export/pdf/executive/')
         assert response.status_code == status.HTTP_200_OK
         
-        # CSV exports
-        for section in ['production', 'regional', 'financial']:
+        # CSV exports - valid report types only
+        for section in ['production', 'enrollment', 'regional', 'farms']:
             response = api_client.get(f'/api/admin/reports/export/csv/{section}/')
             assert response.status_code == status.HTTP_200_OK
 
