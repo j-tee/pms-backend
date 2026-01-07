@@ -51,7 +51,7 @@ urlpatterns = [
     path('admin/', yea_admin_site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/dashboards/', include('dashboards.urls')),
-    path('api/analytics/farmer/', include((farmer_analytics_urls, 'farmer_analytics'))),  # Farmer analytics
+    path('api/farms/analytics/', include((farmer_analytics_urls, 'farmer_analytics'))),  # Farmer analytics
     path('api/admin/', include('accounts.admin_urls')),
     path('api/admin/analytics/', include('dashboards.analytics_urls', namespace='admin-analytics')),  # YEA Admin analytics
     path('api/admin/reports/', include((national_admin_reports_urls, 'national_admin_reports'))),  # National Admin / Minister reports
