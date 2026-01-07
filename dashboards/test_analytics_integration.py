@@ -104,7 +104,7 @@ def complete_ecosystem(db):
             BatchEnrollmentApplication.objects.create(
                 farm=farm,
                 batch=batch,
-                applicant=farmer_user,
+                applicant=farmer,
                 motivation="Seeking to expand production capacity and improve farm efficiency",
                 current_challenges="Limited technical knowledge and access to quality inputs",
                 expected_benefits="Training, mentorship, and improved access to market opportunities",
@@ -118,12 +118,13 @@ def complete_ecosystem(db):
         if i < 8:
             flock = Flock.objects.create(
                 farm=farm,
-                batch_number=f'BATCH-{i}',
+                flock_number=f'FLOCK-{i}',
+                flock_type='Layers',
+                breed='Isa Brown',
+                source='YEA Program',
+                arrival_date=timezone.now().date() - timedelta(days=60),
                 initial_count=500 * (i + 1),
-                current_count=450 * (i + 1),
-                breed='Layer',
-                placement_date=timezone.now().date() - timedelta(days=60),
-                status='ACTIVE'
+                age_at_arrival_weeks=0
             )
             
             # Create 30 days of production
@@ -452,12 +453,13 @@ class TestErrorRecovery:
         farm = complete_ecosystem['farms'][0]
         Flock.objects.create(
             farm=farm,
-            batch_number='CORRUPT',
+            flock_number='FLOCK-CORRUPT',
+            flock_type='Layers',
+            breed='Isa Brown',
+            source='YEA Program',
+            arrival_date=timezone.now().date(),
             initial_count=100,
-            current_count=200,  # More than initial (shouldn't happen)
-            breed='Layer',
-            placement_date=timezone.now().date(),
-            status='ACTIVE'
+            age_at_arrival_weeks=0
         )
         
         # Should still return data without crashing

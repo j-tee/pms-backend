@@ -140,12 +140,13 @@ def sample_farm(db, farmer_user):
     # Create active flock
     flock = Flock.objects.create(
         farm=farm,
-        batch_number='BATCH-001',
+        flock_number='FLOCK-001',
+        flock_type='Layers',
+        breed='Isa Brown',
+        source='YEA Program',
+        arrival_date=timezone.now().date() - timedelta(days=90),
         initial_count=500,
-        current_count=450,
-        breed='Layer',
-        placement_date=timezone.now().date() - timedelta(days=90),
-        status='ACTIVE'
+        age_at_arrival_weeks=0
     )
     
     # Create production records for last 30 days
@@ -229,12 +230,13 @@ def multiple_farms(db):
         # Create flock with production
         flock = Flock.objects.create(
             farm=farm,
-            batch_number=f'BATCH-GA-{i}',
+            flock_number=f'FLOCK-GA-{i}',
+            flock_type='Layers',
+            breed='Isa Brown',
+            source='YEA Program',
+            arrival_date=timezone.now().date() - timedelta(days=60),
             initial_count=500,
-            current_count=480,
-            breed='Layer',
-            placement_date=timezone.now().date() - timedelta(days=60),
-            status='ACTIVE'
+            age_at_arrival_weeks=0
         )
         
         # Add daily production

@@ -77,24 +77,26 @@ def farmer_with_farm(db, farmer_user):
     # Active young flock (30 weeks old)
     flock1 = Flock.objects.create(
         farm=farm,
-        batch_number='BATCH-001',
+        flock_number='FLOCK-001',
+        flock_type='Layers',
+        breed='Isa Brown',
+        source='YEA Program',
+        arrival_date=timezone.now().date() - timedelta(weeks=30),
         initial_count=500,
-        current_count=480,
-        breed='Layer',
-        placement_date=timezone.now().date() - timedelta(weeks=30),
-        status='ACTIVE'
+        age_at_arrival_weeks=0
     )
     flocks.append(flock1)
     
     # Active peak flock (50 weeks old)
     flock2 = Flock.objects.create(
         farm=farm,
-        batch_number='BATCH-002',
+        flock_number='FLOCK-002',
+        flock_type='Layers',
+        breed='Isa Brown',
+        source='YEA Program',
+        arrival_date=timezone.now().date() - timedelta(weeks=50),
         initial_count=600,
-        current_count=550,
-        breed='Layer',
-        placement_date=timezone.now().date() - timedelta(weeks=50),
-        status='ACTIVE'
+        age_at_arrival_weeks=0
     )
     flocks.append(flock2)
     
