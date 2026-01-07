@@ -110,22 +110,22 @@ def farmer_with_farm(db, farmer_user):
         DailyProduction.objects.create(
             flock=flock1,
             production_date=date,
-            total_eggs=250 + (i % 30),
+            eggs_collected=250 + (i % 30),
             good_eggs=230 + (i % 25),
             small_eggs=15,
             soft_shell_eggs=5,
-            mortality_count=i % 2  # 0-1 deaths
+            birds_died=i % 2  # 0-1 deaths
         )
         
         # Flock 2 production (higher production)
         DailyProduction.objects.create(
             flock=flock2,
             production_date=date,
-            total_eggs=350 + (i % 40),
+            eggs_collected=350 + (i % 40),
             good_eggs=320 + (i % 35),
             small_eggs=20,
             soft_shell_eggs=10,
-            mortality_count=i % 3  # 0-2 deaths
+            birds_died=i % 3  # 0-2 deaths
         )
     
     # Create mortality records
