@@ -28,6 +28,7 @@ app_name = 'farmer_analytics'
 urlpatterns = [
     # Full dashboard (all analytics combined)
     path('', FarmerAnalyticsDashboardView.as_view(), name='dashboard'),
+    path('overview/', FarmerAnalyticsDashboardView.as_view(), name='overview'),  # Alias for tests
     
     # Lightweight summary for dashboard cards
     path('summary/', FarmerAnalyticsSummaryView.as_view(), name='summary'),

@@ -588,6 +588,8 @@ class NationalAdminAnalyticsService:
         activation_fee = settings.marketplace_activation_fee if settings else Decimal('50.00')
         # Use tier 1 commission as default rate for display
         commission_rate = settings.commission_tier_1_percentage if settings else Decimal('5.00')
+        # Ensure commission_rate is Decimal (it may come as float from model default)
+        commission_rate = Decimal(str(commission_rate))
         
         # Estimate commission based on average tier rate
         # In production, this should be calculated from actual transaction records
