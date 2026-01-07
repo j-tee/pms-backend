@@ -104,7 +104,8 @@ def complete_ecosystem(db):
             BatchEnrollmentApplication.objects.create(
                 farm=farm,
                 batch=batch,
-                status='APPROVED'
+                status='APPROVED',
+                current_bird_count=500 * (i + 1)
             )
         
         # Create flocks and production for operational farms
