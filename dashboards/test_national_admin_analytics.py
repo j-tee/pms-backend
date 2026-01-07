@@ -156,11 +156,11 @@ def sample_farm(db, farmer_user):
         DailyProduction.objects.create(
             flock=flock,
             production_date=date,
-            total_eggs=200 + (i % 20),
+            eggs_collected=200 + (i % 20),
             good_eggs=180 + (i % 15),
             small_eggs=15,
             soft_shell_eggs=5,
-            mortality_count=i % 3  # 0-2 deaths per day
+            birds_died=i % 3  # 0-2 deaths per day
         )
     
     # Create mortality records
@@ -245,9 +245,9 @@ def multiple_farms(db):
         DailyProduction.objects.create(
             flock=flock,
             production_date=timezone.now().date(),
-            total_eggs=200,
+            eggs_collected=200,
             good_eggs=180,
-            mortality_count=1
+            birds_died=1
         )
         
         farms.append(farm)

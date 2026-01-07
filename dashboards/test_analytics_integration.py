@@ -134,11 +134,11 @@ def complete_ecosystem(db):
                 DailyProduction.objects.create(
                     flock=flock,
                     production_date=date,
-                    total_eggs=200 * (i + 1) + (day % 20),
+                    eggs_collected=200 * (i + 1) + (day % 20),
                     good_eggs=180 * (i + 1) + (day % 15),
                     small_eggs=15,
                     soft_shell_eggs=5,
-                    mortality_count=day % 2
+                    birds_died=day % 2
                 )
             
             # Create marketplace items for enabled farms
@@ -292,7 +292,7 @@ class TestCaching:
         DailyProduction.objects.create(
             flock=flock,
             production_date=timezone.now().date(),
-            total_eggs=500,
+            eggs_collected=500,
             good_eggs=450
         )
         
