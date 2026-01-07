@@ -165,12 +165,22 @@ def farmer_with_farm(db, farmer_user):
         unit='crate'
     )
     
+    # Create processing batch for traceability
+    from sales_revenue.processing_models import ProcessingBatch, ProcessingOutput
+    processing_batch = ProcessingBatch.objects.create(
+        farm=farm,
+        source_flock=flock1,
+        processing_date=timezone.now().date(),
+        birds_processed=20,
+        batch_number='BATCH-001'
+    )
+    
     # Create processed products
     ProcessingOutput.objects.create(
-        farm=farm,
-        product_name='Culled Hens',
-        stock_quantity=10,
-        unit_price=Decimal('80.00')
+        processing_batch=processing_batch,
+        product_category='whole_bird',
+        weight_kg=Decimal('80.00'),
+        grade='B'
     )
     
     # Create orders
