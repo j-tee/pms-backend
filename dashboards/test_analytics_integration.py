@@ -89,6 +89,8 @@ def complete_ecosystem(db):
             marketplace_enabled=i < 6,
             ghana_card_number=f'GHA-100000{i:03d}-{i % 10}',
             tin=f'C000100{i:04d}',
+            primary_phone=f'+23350100{1000+i:03d}',
+            paystack_subaccount_code=f'SUBAC_100{i:04d}',
             date_of_birth='1990-01-01',
             years_in_poultry=2,
             number_of_poultry_houses=2,
