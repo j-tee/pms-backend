@@ -651,7 +651,7 @@ class TestDataAccuracy:
         quality = data['quality']
         
         # Quality rate should be between 0 and 100
-        assert 0 <= quality['quality_rate_percent'] <= 100
+        assert 0 <= quality['good_percentage'] <= 100
     
     def test_capacity_utilization_calculation(self, api_client, farmer_with_farm):
         """Test capacity utilization is accurate."""
