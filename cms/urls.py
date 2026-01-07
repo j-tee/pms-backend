@@ -13,3 +13,4 @@ urlpatterns = [
     path('privacy-policy/', views.PrivacyPolicyView.as_view(), name='privacy-policy'),
     path('terms-of-service/', views.TermsOfServiceView.as_view(), name='terms-of-service'),
 ]
+#UPDATE UPDATE
