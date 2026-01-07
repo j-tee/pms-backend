@@ -232,7 +232,7 @@ class TestEndToEndWorkflows:
         # Step 6: Get farm list
         response = api_client.get('/api/admin/reports/farms/?region=Greater%20Accra&constituency=Ayawaso%20West')
         assert response.status_code == status.HTTP_200_OK
-        farms = response.json()['results']
+        farms = response.json()['farms']
         assert len(farms) == 4
     
     def test_farmer_analytics_full_workflow(self, api_client, complete_ecosystem):
@@ -417,8 +417,8 @@ class TestDataConsistency:
         response = api_client.get('/api/admin/reports/production/regional-comparison/')
         regional_data = response.json()
         
-        # Sum regional totals
-        regional_sum = sum(r['total_eggs'] for r in regional_data['regions'])
+        # Sum regional totals (uses eggs_30d key)
+        regional_sum = sum(r['eggs_30d'] for r in regional_data['regions'])
         
         # Should match (or be very close accounting for rounding)
         assert abs(national_eggs - regional_sum) < 10
