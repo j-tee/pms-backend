@@ -987,3 +987,9 @@ class FraudAlert(models.Model):
         self.audit_scheduled = True
         self.audit_date = audit_date
         self.save(update_fields=['audit_scheduled', 'audit_date', 'updated_at'])
+
+
+# Import additional model modules to ensure Django's model registry discovers them
+# These are split into separate files for organization but must be registered here
+from .inventory_models import *  # noqa: F401, F403
+from .processing_models import *  # noqa: F401, F403

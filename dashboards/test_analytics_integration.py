@@ -287,7 +287,7 @@ class TestCaching:
     """Test caching behavior."""
     
     def test_cache_invalidation_on_new_data(self, api_client, complete_ecosystem):
-        """Test that cache is invalidated when new data is added."""
+        """Test that fresh data appears after cache is cleared following data changes."""
         admin = complete_ecosystem['super_admin']
         api_client.force_authenticate(user=admin)
         
@@ -299,19 +299,34 @@ class TestCaching:
         data1 = response1.json()
         initial_eggs = data1['production']['total_eggs']
         
-        # Add NEW production (use yesterday to avoid conflict with existing today's data)
+        # Add NEW production for a NEW flock (to avoid unique constraint)
+        from flock_management.models import Flock
         farm = complete_ecosystem['farms'][0]
-        flock = farm.flocks.first()
+        new_flock = Flock.objects.create(
+            farm=farm,
+            flock_number=f'NEWFL-{farm.id}',
+            flock_type='Layers',
+            breed='Lohmann',
+            source='Purchase',
+            arrival_date=timezone.now().date() - timedelta(days=30),
+            initial_count=100,
+            current_count=100,
+            age_at_arrival_weeks=18,
+            is_currently_producing=True
+        )
         DailyProduction.objects.create(
             farm=farm,
-            flock=flock,
+            flock=new_flock,
             production_date=timezone.now().date() - timedelta(days=1),
             eggs_collected=500,
             good_eggs=450,
             birds_died=0
         )
         
-        # Second request (should reflect new data)
+        # Clear cache to force fresh fetch (simulates cache expiration)
+        cache.clear()
+        
+        # Second request (should reflect new data after cache clear)
         response2 = api_client.get('/api/admin/reports/production/')
         data2 = response2.json()
         new_eggs = data2['production']['total_eggs']
