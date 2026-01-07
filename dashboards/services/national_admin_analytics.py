@@ -204,7 +204,7 @@ class NationalAdminAnalyticsService:
         
         # Farmer counts
         total_farms = farms.count()
-        operational_farms = farms.filter(farm_status='Operational').count()
+        operational_farms = farms.filter(farm_status='Active').count()
         government_farms = farms.filter(
             registration_source__in=['YEA Program', 'Government Initiative']
         ).count()
@@ -232,15 +232,16 @@ class NationalAdminAnalyticsService:
             is_published=True
         ).count()
         
+        # Count approved or enrolled batch applications
         total_enrollments = BatchEnrollmentApplication.objects.filter(
-            status='approved'
+            status__in=['approved', 'enrolled']
         ).count()
         
         # Retention (farms operational for > 6 months)
         six_months_ago = self.now - timedelta(days=180)
         mature_farms = farms.filter(created_at__lte=six_months_ago)
         still_operational = mature_farms.filter(
-            farm_status='Operational'
+            farm_status='Active'
         ).count()
         
         retention_rate = 0
@@ -393,7 +394,7 @@ class NationalAdminAnalyticsService:
         ).count()
         
         # Calculate averages
-        operational_farms = farms.filter(farm_status='Operational').count()
+        operational_farms = farms.filter(farm_status='Active').count()
         avg_eggs_per_farm = 0
         if operational_farms > 0:
             avg_eggs_per_farm = round(stats['total_eggs'] / operational_farms)
