@@ -166,11 +166,12 @@ def sample_farm(db, farmer_user):
     
     # Create mortality records
     MortalityRecord.objects.create(
+        farm=farm,
         flock=flock,
-        date=timezone.now().date() - timedelta(days=5),
-        count=10,
-        reason='Disease',
-        notes='Test mortality'
+        date_discovered=timezone.now().date() - timedelta(days=5),
+        number_of_birds=10,
+        probable_cause='Disease - Viral',
+        symptoms_description='Test mortality'
     )
     
     # Create marketplace items
@@ -218,6 +219,7 @@ def multiple_farms(db):
             farm_status='OPERATIONAL',
             total_bird_capacity=1000,
             subscription_type='government_subsidized',
+            ghana_card_number=f'GHA-200000{100+i:03d}-{i % 10}',
             date_of_birth='1990-01-01',
             years_in_poultry=2,
             number_of_poultry_houses=2,
@@ -272,6 +274,7 @@ def multiple_farms(db):
             farm_status='OPERATIONAL',
             total_bird_capacity=800,
             subscription_type='standard',
+            ghana_card_number=f'GHA-300000{200+i:03d}-{i % 10}',
             date_of_birth='1990-01-01',
             years_in_poultry=3,
             number_of_poultry_houses=3,
