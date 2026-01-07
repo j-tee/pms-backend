@@ -124,6 +124,7 @@ def complete_ecosystem(db):
                 source='YEA Program',
                 arrival_date=timezone.now().date() - timedelta(days=60),
                 initial_count=500 * (i + 1),
+                current_count=500 * (i + 1),
                 age_at_arrival_weeks=0
             )
             
@@ -459,6 +460,7 @@ class TestErrorRecovery:
             source='YEA Program',
             arrival_date=timezone.now().date(),
             initial_count=100,
+            current_count=100,
             age_at_arrival_weeks=0
         )
         
