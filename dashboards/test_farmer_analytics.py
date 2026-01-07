@@ -207,7 +207,7 @@ def farmer_with_farm(db, farmer_user):
         
         OrderItem.objects.create(
             order=order,
-            item=egg_item,
+            product=egg_item,
             quantity=10,
             unit_price=Decimal('35.00')
         )

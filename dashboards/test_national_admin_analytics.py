@@ -203,7 +203,7 @@ def sample_farm(db, farmer_user):
         farm=farm,
         feed_type=feed_type,
         quantity_kg=500,
-        unit_price_ghs=Decimal('2.50'),
+        unit_cost_ghs=Decimal('2.50'),
         purchase_date=timezone.now().date()
     )
     
