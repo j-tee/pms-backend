@@ -15,7 +15,7 @@ from flock_management.models import Flock, DailyProduction, MortalityRecord
 from sales_revenue.marketplace_models import Product, ProductCategory, MarketplaceOrder, OrderItem
 from sales_revenue.models import Customer
 from sales_revenue.processing_models import ProcessingOutput
-from feed_inventory.models import FeedPurchase
+from feed_inventory.models import FeedPurchase, FeedType
 
 User = get_user_model()
 
@@ -213,12 +213,21 @@ def farmer_with_farm(db, farmer_user):
         )
     
     # Create feed purchases
+    feed_type, _ = FeedType.objects.get_or_create(
+        name='Layer Mash',
+        defaults={
+            'category': 'LAYER',
+            'description': 'Standard layer mash feed',
+            'protein_content': Decimal('16.0'),
+            'recommended_age_weeks_min': 18
+        }
+    )
     for i in range(3):
         FeedPurchase.objects.create(
             farm=farm,
-            feed_type='Layer Mash',
+            feed_type=feed_type,
             quantity_kg=1000,
-            unit_price_ghs=Decimal('2.80'),
+            unit_cost_ghs=Decimal('2.80'),
             purchase_date=timezone.now().date() - timedelta(days=i*10)
         )
     

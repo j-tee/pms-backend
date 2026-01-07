@@ -568,10 +568,12 @@ class TestFlockHealthReports:
         # Add high mortality
         for i in range(5):
             MortalityRecord.objects.create(
+                farm=flock.farm,
                 flock=flock,
-                date=timezone.now().date() - timedelta(days=i),
-                count=20,
-                reason='Disease'
+                date_discovered=timezone.now().date() - timedelta(days=i),
+                number_of_birds=20,
+                probable_cause='Disease',
+                symptoms_description='High mortality event'
             )
         
         api_client.force_authenticate(user=super_admin)
