@@ -14,7 +14,7 @@ from rest_framework import status
 from farms.models import Farm
 from farms.batch_enrollment_models import Batch, BatchEnrollmentApplication
 from flock_management.models import Flock, DailyProduction
-from sales_revenue.marketplace_models import Product, MarketplaceOrder, OrderItem
+from sales_revenue.marketplace_models import Product, ProductCategory, MarketplaceOrder, OrderItem
 from accounts.models import Role
 
 User = get_user_model()
@@ -144,13 +144,19 @@ def complete_ecosystem(db):
             
             # Create marketplace items for enabled farms
             if farm.marketplace_enabled:
-                item = MarketplaceItem.objects.create(
+                # Create a product category if needed
+                category, _ = ProductCategory.objects.get_or_create(
+                    name='Eggs',
+                    defaults={'slug': 'eggs', 'description': 'Fresh farm eggs'}
+                )
+                item = Product.objects.create(
                     farm=farm,
-                    item_type='EGGS',
-                    title=f'Eggs from Farm {i}',
-                    unit_price=Decimal('30.00'),
+                    category=category,
+                    name=f'Fresh Eggs from Farm {i}',
+                    price=Decimal('30.00'),
                     stock_quantity=100,
-                    is_active=True
+                    status='active',
+                    unit='crate'
                 )
                 
                 # Create orders

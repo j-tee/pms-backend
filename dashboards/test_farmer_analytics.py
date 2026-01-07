@@ -132,19 +132,21 @@ def farmer_with_farm(db, farmer_user):
     
     # Create mortality records
     MortalityRecord.objects.create(
+        farm=farm,
         flock=flock1,
-        date=timezone.now().date() - timedelta(days=10),
-        count=5,
-        reason='Disease',
-        notes='Minor respiratory issue'
+        date_discovered=timezone.now().date() - timedelta(days=10),
+        number_of_birds=5,
+        probable_cause='Disease - Viral',
+        symptoms_description='Minor respiratory issue'
     )
     
     MortalityRecord.objects.create(
+        farm=farm,
         flock=flock2,
-        date=timezone.now().date() - timedelta(days=5),
-        count=8,
-        reason='Unknown',
-        notes='Sudden deaths'
+        date_discovered=timezone.now().date() - timedelta(days=5),
+        number_of_birds=8,
+        probable_cause='Unknown',
+        symptoms_description='Sudden deaths'
     )
     
     # Create marketplace items
