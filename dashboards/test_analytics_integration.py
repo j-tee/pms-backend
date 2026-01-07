@@ -230,13 +230,13 @@ class TestEndToEndWorkflows:
         # Production details
         response = api_client.get('/api/farms/analytics/production/')
         assert response.status_code == status.HTTP_200_OK
-        production = response.json()
+        production = response.json()['data']
         assert 'daily_trend' in production
         
         # Financial analytics
         response = api_client.get('/api/farms/analytics/financial/')
         assert response.status_code == status.HTTP_200_OK
-        financial = response.json()
+        financial = response.json()['data']
         assert 'revenue' in financial
         
         # Flock health
