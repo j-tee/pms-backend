@@ -105,7 +105,8 @@ def complete_ecosystem(db):
                 farm=farm,
                 batch=batch,
                 status='APPROVED',
-                current_bird_count=500 * (i + 1)
+                current_bird_count=500 * (i + 1),
+                years_operational=1.5 if i < 5 else 2.0
             )
         
         # Create flocks and production for operational farms
