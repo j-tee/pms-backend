@@ -14,7 +14,7 @@ from accounts.models import Role
 from farms.models import Farm
 from farms.batch_enrollment_models import Batch, BatchEnrollmentApplication
 from flock_management.models import Flock, DailyProduction, MortalityRecord
-from sales_revenue.marketplace_models import Product, MarketplaceOrder, OrderItem
+from sales_revenue.marketplace_models import Product, ProductCategory, MarketplaceOrder, OrderItem
 from feed_inventory.models import FeedPurchase
 
 User = get_user_model()
@@ -175,13 +175,18 @@ def sample_farm(db, farmer_user):
     )
     
     # Create marketplace items
-    MarketplaceItem.objects.create(
+    category, _ = ProductCategory.objects.get_or_create(
+        name='Eggs',
+        defaults={'slug': 'eggs', 'description': 'Fresh farm eggs'}
+    )
+    Product.objects.create(
         farm=farm,
-        item_type='EGGS',
-        title='Fresh Eggs',
-        unit_price=Decimal('30.00'),
+        category=category,
+        name='Fresh Eggs',
+        price=Decimal('30.00'),
         stock_quantity=100,
-        is_active=True
+        status='active',
+        unit='crate'
     )
     
     # Create feed purchase
@@ -220,6 +225,7 @@ def multiple_farms(db):
             total_bird_capacity=1000,
             subscription_type='government_subsidized',
             ghana_card_number=f'GHA-200000{100+i:03d}-{i % 10}',
+            primary_phone=f'+23320100{100+i:03d}',
             date_of_birth='1990-01-01',
             years_in_poultry=2,
             number_of_poultry_houses=2,
@@ -275,6 +281,7 @@ def multiple_farms(db):
             total_bird_capacity=800,
             subscription_type='standard',
             ghana_card_number=f'GHA-300000{200+i:03d}-{i % 10}',
+            primary_phone=f'+23320200{200+i:03d}',
             date_of_birth='1990-01-01',
             years_in_poultry=3,
             number_of_poultry_houses=3,
