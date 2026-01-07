@@ -66,7 +66,7 @@ class ExportAnalyticsExcelView(BaseExportView):
             )
         
         days = self.get_days(request)
-        service = FarmerAnalyticsService(farm)
+        service = FarmerAnalyticsService(request.user)
         
         # Get all analytics data
         analytics = service.get_full_analytics(days)
@@ -567,7 +567,7 @@ class ExportAnalyticsPDFView(BaseExportView):
             )
         
         days = self.get_days(request)
-        service = FarmerAnalyticsService(farm)
+        service = FarmerAnalyticsService(request.user)
         
         # Get all analytics data
         analytics = service.get_full_analytics(days)
