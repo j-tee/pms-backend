@@ -207,7 +207,7 @@ class InitiateSubscriptionPaymentView(APIView):
             farm=farm,
             defaults={
                 'plan': plan,
-                'status': 'pending' if created else 'past_due',
+                'status': 'pending',
                 'start_date': timezone.now().date(),
                 'current_period_start': timezone.now().date(),
                 'current_period_end': timezone.now().date() + relativedelta(months=1),
