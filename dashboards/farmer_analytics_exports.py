@@ -41,7 +41,7 @@ class BaseExportView(APIView):
     def get_farm(self, request):
         """Get farm for authenticated user"""
         try:
-            return Farm.objects.get(owner=request.user)
+            return Farm.objects.get(user=request.user)
         except Farm.DoesNotExist:
             return None
     
