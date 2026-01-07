@@ -283,7 +283,11 @@ class TestFarmerAnalyticsPermissions:
             initial_investment_amount=60000,
             funding_source=['self_funded'],
             monthly_operating_budget=6000,
-            expected_monthly_revenue=25000
+            expected_monthly_revenue=25000,
+            ghana_card_number='GHA-987654321-0',
+            primary_phone='+233501234567',
+            tin='P0987654321',
+            paystack_subaccount_code='ACCT_other_farm_123'
         )
         
         # Authenticate as first farmer
