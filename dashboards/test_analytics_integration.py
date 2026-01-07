@@ -11,11 +11,12 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from farms.models import Farm
+from farms.models import Farm, FarmLocation
 from farms.batch_enrollment_models import Batch, BatchEnrollmentApplication
 from flock_management.models import Flock, DailyProduction
 from sales_revenue.marketplace_models import Product, ProductCategory, MarketplaceOrder, OrderItem
 from accounts.models import Role
+from django.contrib.gis.geos import Point
 
 User = get_user_model()
 
@@ -129,7 +130,8 @@ def complete_ecosystem(db):
                 arrival_date=timezone.now().date() - timedelta(days=60),
                 initial_count=500 * (i + 1),
                 current_count=500 * (i + 1),
-                age_at_arrival_weeks=0
+                age_at_arrival_weeks=0,
+                is_currently_producing=True
             )
             
             # Create 30 days of production
@@ -162,6 +164,23 @@ def complete_ecosystem(db):
                     status='active',
                     unit='crate'
                 )
+        
+        # Create FarmLocation for regional analytics
+        region = 'Greater Accra' if i < 7 else 'Ashanti'
+        constituency = farm.primary_constituency
+        FarmLocation.objects.create(
+            farm=farm,
+            gps_address_string=f'TEST-{i:03d}-{1000+i}',
+            location=Point(0.0 + i * 0.01, 0.0 + i * 0.01),
+            region=region,
+            district='Accra Metro' if region == 'Greater Accra' else 'Kumasi',
+            constituency=constituency,
+            community=f'Test Community {i}',
+            road_accessibility='All Year',
+            land_size_acres=Decimal('2.0'),
+            land_ownership_status='Leased',
+            is_primary_location=True
+        )
     
     return {
         'super_admin': super_admin,

@@ -85,7 +85,8 @@ def farmer_with_farm(db, farmer_user):
         arrival_date=timezone.now().date() - timedelta(weeks=30),
         initial_count=500,
         current_count=480,
-        age_at_arrival_weeks=0
+        age_at_arrival_weeks=0,
+        is_currently_producing=True
     )
     flocks.append(flock1)
     
@@ -99,7 +100,8 @@ def farmer_with_farm(db, farmer_user):
         arrival_date=timezone.now().date() - timedelta(weeks=50),
         initial_count=600,
         current_count=550,
-        age_at_arrival_weeks=0
+        age_at_arrival_weeks=0,
+        is_currently_producing=True
     )
     flocks.append(flock2)
     

@@ -11,11 +11,12 @@ from rest_framework.test import APIClient
 from rest_framework import status
 
 from accounts.models import Role
-from farms.models import Farm
+from farms.models import Farm, FarmLocation
 from farms.batch_enrollment_models import Batch, BatchEnrollmentApplication
 from flock_management.models import Flock, DailyProduction, MortalityRecord
 from sales_revenue.marketplace_models import Product, ProductCategory, MarketplaceOrder, OrderItem
 from feed_inventory.models import FeedPurchase, FeedType
+from django.contrib.gis.geos import Point
 
 User = get_user_model()
 
@@ -147,7 +148,8 @@ def sample_farm(db, farmer_user):
         arrival_date=timezone.now().date() - timedelta(days=90),
         initial_count=500,
         current_count=450,
-        age_at_arrival_weeks=0
+        age_at_arrival_weeks=0,
+        is_currently_producing=True
     )
     
     # Create production records for last 30 days
@@ -207,6 +209,21 @@ def sample_farm(db, farmer_user):
         purchase_date=timezone.now().date()
     )
     
+    # Create FarmLocation (required for regional analytics)
+    FarmLocation.objects.create(
+        farm=farm,
+        gps_address_string='GA-0123-4567',
+        location=Point(0.0, 0.0),  # Simple point for testing
+        region='Greater Accra',
+        district='Accra Metro',
+        constituency='Ayawaso West',
+        community='Test Community',
+        road_accessibility='All Year',
+        land_size_acres=Decimal('2.5'),
+        land_ownership_status='Leased',
+        is_primary_location=True
+    )
+    
     return farm
 
 
@@ -258,7 +275,8 @@ def multiple_farms(db):
             arrival_date=timezone.now().date() - timedelta(days=60),
             initial_count=500,
             current_count=480,
-            age_at_arrival_weeks=0
+            age_at_arrival_weeks=0,
+            is_currently_producing=True
         )
         
         # Add daily production
@@ -269,6 +287,22 @@ def multiple_farms(db):
             eggs_collected=200,
             good_eggs=180,
             birds_died=1
+        )
+        
+        # Create FarmLocation for regional scoping
+        constituency = 'Ayawaso West' if i < 3 else 'Ablekuma Central'
+        FarmLocation.objects.create(
+            farm=farm,
+            gps_address_string=f'GA-010{i}-{1000+i}',
+            location=Point(0.0 + i * 0.01, 0.0 + i * 0.01),
+            region='Greater Accra',
+            district='Accra Metro',
+            constituency=constituency,
+            community=f'GA Community {i}',
+            road_accessibility='All Year',
+            land_size_acres=Decimal('2.0'),
+            land_ownership_status='Leased',
+            is_primary_location=True
         )
         
         farms.append(farm)
@@ -305,6 +339,22 @@ def multiple_farms(db):
             funding_source=['self_funded'],
             monthly_operating_budget=4500
         )
+        
+        # Create FarmLocation for regional scoping
+        FarmLocation.objects.create(
+            farm=farm,
+            gps_address_string=f'AR-020{i}-{2000+i}',
+            location=Point(1.0 + i * 0.01, 1.0 + i * 0.01),
+            region='Ashanti',
+            district='Kumasi',
+            constituency='Kumasi Central',
+            community=f'AR Community {i}',
+            road_accessibility='All Year',
+            land_size_acres=Decimal('3.0'),
+            land_ownership_status='Owned',
+            is_primary_location=True
+        )
+        
         farms.append(farm)
     
     return farms
