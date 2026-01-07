@@ -104,9 +104,14 @@ def complete_ecosystem(db):
             BatchEnrollmentApplication.objects.create(
                 farm=farm,
                 batch=batch,
-                status='APPROVED',
+                applicant=farmer_user,
+                motivation="Seeking to expand production capacity and improve farm efficiency",
+                current_challenges="Limited technical knowledge and access to quality inputs",
+                expected_benefits="Training, mentorship, and improved access to market opportunities",
                 current_bird_count=500 * (i + 1),
-                years_operational=1.5 if i < 5 else 2.0
+                current_production_type='Layers',
+                years_operational=1.5 if i < 5 else 2.0,
+                status='APPROVED'
             )
         
         # Create flocks and production for operational farms
