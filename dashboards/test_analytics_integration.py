@@ -84,7 +84,7 @@ def complete_ecosystem(db):
             user=farmer,
             farm_name=f'Farm {i}',
             primary_constituency='Ayawaso West' if i < 4 else ('Ablekuma Central' if i < 7 else 'Kumasi Central'),
-            farm_status='OPERATIONAL' if i < 8 else 'PENDING',
+            farm_status='Active' if i < 8 else 'Inactive',
             total_bird_capacity=1000 * (i + 1),
             subscription_type='government_subsidized' if i < 5 else 'standard',
             marketplace_enabled=i < 6,
@@ -116,7 +116,7 @@ def complete_ecosystem(db):
                 current_bird_count=500 * (i + 1),
                 current_production_type='Layers',
                 years_operational=1.5 if i < 5 else 2.0,
-                status='APPROVED'
+                status='approved'  # Use lowercase to match model choices
             )
         
         # Create flocks and production for operational farms
@@ -299,17 +299,16 @@ class TestCaching:
         data1 = response1.json()
         initial_eggs = data1['production']['total_eggs']
         
-        # Add new production
+        # Add NEW production (use yesterday to avoid conflict with existing today's data)
         farm = complete_ecosystem['farms'][0]
         flock = farm.flocks.first()
-        DailyProduction.objects.get_or_create(
+        DailyProduction.objects.create(
             farm=farm,
             flock=flock,
-            production_date=timezone.now().date(),
-            defaults={
-                'eggs_collected': 500,
-                'good_eggs': 450
-            }
+            production_date=timezone.now().date() - timedelta(days=1),
+            eggs_collected=500,
+            good_eggs=450,
+            birds_died=0
         )
         
         # Second request (should reflect new data)
@@ -504,7 +503,7 @@ class TestErrorRecovery:
             user=farmer,
             farm_name='No Flock Farm',
             primary_constituency='Tamale',
-            farm_status='OPERATIONAL',
+            farm_status='Active',
             total_bird_capacity=1000,
             date_of_birth='1990-01-01',
             years_in_poultry=2,
