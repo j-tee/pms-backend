@@ -391,7 +391,8 @@ class TestProductionAnalytics:
         response = api_client.get('/api/farms/analytics/production/')
         
         assert response.status_code == status.HTTP_200_OK
-        data = response.json()
+        response_data = response.json()
+        data = response_data['data']
         
         assert 'summary' in data
         assert 'daily_trend' in data
@@ -404,7 +405,7 @@ class TestProductionAnalytics:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/production/')
         
-        data = response.json()
+        data = response.json()['data']
         daily_trend = data['daily_trend']
         
         assert len(daily_trend) == 30  # Default 30 days
@@ -419,12 +420,12 @@ class TestProductionAnalytics:
         
         # Test 7-day period
         response = api_client.get('/api/farms/analytics/production/?days=7')
-        data = response.json()
+        data = response.json()['data']
         assert len(data['daily_trend']) == 7
         
         # Test 90-day period
         response = api_client.get('/api/farms/analytics/production/?days=90')
-        data = response.json()
+        data = response.json()['data']
         # Should have data for 30 days (that's what we created)
         assert len(data['daily_trend']) <= 90
     
@@ -433,7 +434,7 @@ class TestProductionAnalytics:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/production/')
         
-        data = response.json()
+        data = response.json()['data']
         flocks = data['flock_breakdown']
         
         assert len(flocks) == 2
@@ -455,7 +456,8 @@ class TestFinancialAnalytics:
         response = api_client.get('/api/farms/analytics/financial/')
         
         assert response.status_code == status.HTTP_200_OK
-        data = response.json()
+        response_data = response.json()
+        data = response_data['data']
         
         assert 'summary' in data
         assert 'revenue' in data
@@ -468,7 +470,7 @@ class TestFinancialAnalytics:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/financial/')
         
-        data = response.json()
+        data = response.json()['data']
         revenue = data['revenue']
         
         assert 'total_revenue_30d' in revenue
@@ -481,7 +483,7 @@ class TestFinancialAnalytics:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/financial/')
         
-        data = response.json()
+        data = response.json()['data']
         expenses = data['expenses']
         
         assert 'total_expenses_30d' in expenses
@@ -493,7 +495,7 @@ class TestFinancialAnalytics:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/financial/')
         
-        data = response.json()
+        data = response.json()['data']
         profit = data['profitability']
         
         assert 'gross_profit' in profit
@@ -510,7 +512,8 @@ class TestFlockHealthAnalytics:
         response = api_client.get('/api/farms/analytics/flock-health/')
         
         assert response.status_code == status.HTTP_200_OK
-        data = response.json()
+        response_data = response.json()
+        data = response_data['data']
         
         assert 'mortality_summary' in data
         assert 'mortality_by_reason' in data
@@ -523,7 +526,7 @@ class TestFlockHealthAnalytics:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/flock-health/')
         
-        data = response.json()
+        data = response.json()['data']
         mortality = data['mortality_summary']
         
         assert 'total_deaths_30d' in mortality
@@ -536,7 +539,7 @@ class TestFlockHealthAnalytics:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/flock-health/')
         
-        data = response.json()
+        data = response.json()['data']
         by_reason = data['mortality_by_reason']
         
         assert isinstance(by_reason, list)
@@ -549,7 +552,7 @@ class TestFlockHealthAnalytics:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/flock-health/')
         
-        data = response.json()
+        data = response.json()['data']
         ages = data['flock_ages']
         
         assert 'pullets_0_18_weeks' in ages
@@ -678,7 +681,7 @@ class TestDataAccuracy:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/production/')
         
-        data = response.json()
+        data = response.json()['data']
         quality_metrics = data['quality_metrics']
         
         # Quality rate should be between 0 and 100
@@ -705,7 +708,7 @@ class TestDataAccuracy:
         api_client.force_authenticate(user=farmer_with_farm['user'])
         response = api_client.get('/api/farms/analytics/flock-health/')
         
-        data = response.json()
+        data = response.json()['data']
         mortality = data['mortality_summary']
         
         # Mortality rate should be reasonable
