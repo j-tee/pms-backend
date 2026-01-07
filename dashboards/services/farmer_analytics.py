@@ -790,7 +790,7 @@ class FarmerAnalyticsService:
         ).filter(order_count__gt=1).count()
         
         # Products performance
-        products = Product.objects.filter(farm=self.farm, is_active=True)
+        products = Product.objects.filter(farm=self.farm, status='active')
         
         product_stats = []
         for product in products[:10]:  # Top 10

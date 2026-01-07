@@ -1230,7 +1230,7 @@ class NationalAdminAnalyticsService:
             return cached
             
         result = {
-            'current_scope': 'region' if region else 'national',
+            'current_scope': 'regional' if region else 'national',
         }
         
         if region:
@@ -1283,6 +1283,7 @@ class NationalAdminAnalyticsService:
                 }
                 for f in farm_list
             ],
+            'count': total,  # For backward compatibility with tests
             'pagination': {
                 'page': page,
                 'page_size': page_size,
