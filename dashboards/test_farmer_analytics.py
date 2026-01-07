@@ -12,7 +12,7 @@ from rest_framework import status
 
 from farms.models import Farm
 from flock_management.models import Flock, DailyProduction, MortalityRecord
-from sales_revenue.marketplace_models import Product, MarketplaceOrder, OrderItem
+from sales_revenue.marketplace_models import Product, ProductCategory, MarketplaceOrder, OrderItem
 from sales_revenue.processing_models import ProcessingOutput
 from feed_inventory.models import FeedPurchase
 
@@ -150,14 +150,19 @@ def farmer_with_farm(db, farmer_user):
     )
     
     # Create marketplace items
-    egg_item = MarketplaceItem.objects.create(
+    category, _ = ProductCategory.objects.get_or_create(
+        name='Eggs',
+        defaults={'slug': 'eggs', 'description': 'Fresh farm eggs'}
+    )
+    egg_item = Product.objects.create(
         farm=farm,
-        item_type='EGGS',
-        title='Fresh Layer Eggs',
+        category=category,
+        name='Fresh Layer Eggs',
         description='Grade A eggs',
-        unit_price=Decimal('35.00'),
+        price=Decimal('35.00'),
         stock_quantity=150,
-        is_active=True
+        status='active',
+        unit='crate'
     )
     
     # Create processed products

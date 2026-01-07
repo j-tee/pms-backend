@@ -158,23 +158,6 @@ def complete_ecosystem(db):
                     status='active',
                     unit='crate'
                 )
-                
-                # Create orders
-                if i < 4:
-                    buyer = farmers[(i + 1) % 10]
-                    for order_num in range(3):
-                        order = Order.objects.create(
-                            farm=farm,
-                            buyer=buyer,
-                            status='COMPLETED',
-                            total_amount=Decimal('300.00')
-                        )
-                        OrderItem.objects.create(
-                            order=order,
-                            item=item,
-                            quantity=10,
-                            unit_price=Decimal('30.00')
-                        )
     
     return {
         'super_admin': super_admin,
