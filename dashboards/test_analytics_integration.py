@@ -237,13 +237,13 @@ class TestEndToEndWorkflows:
         response = api_client.get('/api/farms/analytics/financial/')
         assert response.status_code == status.HTTP_200_OK
         financial = response.json()['data']
-        assert 'revenue' in financial
+        assert 'revenue_breakdown' in financial
         
         # Flock health
         response = api_client.get('/api/farms/analytics/flock-health/')
         assert response.status_code == status.HTTP_200_OK
-        health = response.json()
-        assert 'mortality_summary' in health
+        health = response.json()['data']
+        assert 'summary' in health
     
     def test_export_workflow(self, api_client, complete_ecosystem):
         """Test exporting reports in different formats."""
