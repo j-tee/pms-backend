@@ -133,7 +133,8 @@ def sample_farm(db, farmer_user):
         planned_production_start_date='2024-03-01',
         initial_investment_amount=30000,
         funding_source=['government_grant'],
-        monthly_operating_budget=3500
+        monthly_operating_budget=3500,
+        expected_monthly_revenue=10000
     )
     
     # Create active flock
@@ -221,7 +222,8 @@ def multiple_farms(db):
             planned_production_start_date='2024-06-01',
             initial_investment_amount=28000,
             funding_source=['government_grant'],
-            monthly_operating_budget=3200
+            monthly_operating_budget=3200,
+            expected_monthly_revenue=9000
         )
         
         # Create flock with production
@@ -269,6 +271,7 @@ def multiple_farms(db):
             number_of_poultry_houses=3,
             total_infrastructure_value_ghs=30000,
             planned_production_start_date='2023-09-01',
+            expected_monthly_revenue=12000,
             initial_investment_amount=35000,
             funding_source=['self_funded'],
             monthly_operating_budget=4500

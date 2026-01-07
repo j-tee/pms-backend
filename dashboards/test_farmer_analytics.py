@@ -67,7 +67,8 @@ def farmer_with_farm(db, farmer_user):
         planned_production_start_date='2024-01-01',
         initial_investment_amount=40000,
         funding_source=['government_grant'],
-        monthly_operating_budget=4500
+        monthly_operating_budget=4500,
+        expected_monthly_revenue=18000
     )
     
     # Create multiple flocks with different ages
@@ -217,7 +218,8 @@ def farm_without_data(db, farmer_user):
         planned_production_start_date='2026-03-01',
         initial_investment_amount=8000,
         funding_source=['family_support'],
-        monthly_operating_budget=1500
+        monthly_operating_budget=1500,
+        expected_monthly_revenue=4000
     )
     return farm
 
@@ -246,7 +248,8 @@ class TestFarmerAnalyticsPermissions:
             planned_production_start_date='2023-06-01',
             initial_investment_amount=60000,
             funding_source=['self_funded'],
-            monthly_operating_budget=6000
+            monthly_operating_budget=6000,
+            expected_monthly_revenue=25000
         )
         
         # Authenticate as first farmer
@@ -582,7 +585,8 @@ class TestEdgeCases:
             total_infrastructure_value_ghs=8000,
             initial_investment_amount=10000,
             funding_source=['loan'],
-            monthly_operating_budget=2500
+            monthly_operating_budget=2500,
+            expected_monthly_revenue=3500
         )
         
         api_client.force_authenticate(user=farmer_user)
