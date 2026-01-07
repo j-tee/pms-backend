@@ -283,12 +283,14 @@ class TestCaching:
         # Add new production
         farm = complete_ecosystem['farms'][0]
         flock = farm.flocks.first()
-        DailyProduction.objects.create(
+        DailyProduction.objects.get_or_create(
             farm=farm,
             flock=flock,
             production_date=timezone.now().date(),
-            eggs_collected=500,
-            good_eggs=450
+            defaults={
+                'eggs_collected': 500,
+                'good_eggs': 450
+            }
         )
         
         # Second request (should reflect new data)

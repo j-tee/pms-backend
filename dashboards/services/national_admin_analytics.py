@@ -591,7 +591,7 @@ class NationalAdminAnalyticsService:
         
         # Estimate commission based on average tier rate
         # In production, this should be calculated from actual transaction records
-        estimated_commission = order_stats['total_volume'] * (commission_rate / 100)
+        estimated_commission = order_stats['total_volume'] * (commission_rate / Decimal('100'))
         
         # Estimated farmer earnings (volume - estimated commission)
         farmer_earnings = order_stats['total_volume'] - estimated_commission
@@ -1272,7 +1272,7 @@ class NationalAdminAnalyticsService:
                 {
                     'id': str(f.id),
                     'farm_name': f.farm_name,
-                    'farmer_name': f.farmer_full_name,
+                    'farmer_name': f.user.get_full_name() if f.user else 'Unknown',
                     'constituency': f.primary_constituency,
                     'status': f.farm_status,
                     'bird_count': f.current_bird_count or 0,
