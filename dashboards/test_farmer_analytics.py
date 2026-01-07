@@ -195,7 +195,7 @@ def farmer_with_farm(db, farmer_user):
     )
     
     for i in range(5):
-        order = Order.objects.create(
+        order = MarketplaceOrder.objects.create(
             farm=farm,
             buyer=buyer,
             status='COMPLETED',

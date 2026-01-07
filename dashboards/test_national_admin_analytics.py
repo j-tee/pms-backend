@@ -15,7 +15,7 @@ from farms.models import Farm
 from farms.batch_enrollment_models import Batch, BatchEnrollmentApplication
 from flock_management.models import Flock, DailyProduction, MortalityRecord
 from sales_revenue.marketplace_models import Product, ProductCategory, MarketplaceOrder, OrderItem
-from feed_inventory.models import FeedPurchase
+from feed_inventory.models import FeedPurchase, FeedType
 
 User = get_user_model()
 
@@ -190,9 +190,18 @@ def sample_farm(db, farmer_user):
     )
     
     # Create feed purchase
+    feed_type, _ = FeedType.objects.get_or_create(
+        name='Layer Mash',
+        defaults={
+            'category': 'LAYER',
+            'description': 'Standard layer mash feed',
+            'protein_percentage': Decimal('16.0'),
+            'recommended_age_weeks_min': 18
+        }
+    )
     FeedPurchase.objects.create(
         farm=farm,
-        feed_type='Layer Mash',
+        feed_type=feed_type,
         quantity_kg=500,
         unit_price_ghs=Decimal('2.50'),
         purchase_date=timezone.now().date()
@@ -227,6 +236,7 @@ def multiple_farms(db):
             ghana_card_number=f'GHA-200000{100+i:03d}-{i % 10}',
             primary_phone=f'+23320100{100+i:03d}',
             tin=f'C000200{100+i:03d}',
+            paystack_subaccount_code=f'SUBAC_200{100+i:03d}',
             date_of_birth='1990-01-01',
             years_in_poultry=2,
             number_of_poultry_houses=2,
@@ -284,6 +294,7 @@ def multiple_farms(db):
             ghana_card_number=f'GHA-300000{200+i:03d}-{i % 10}',
             primary_phone=f'+23320200{200+i:03d}',
             tin=f'C000300{200+i:03d}',
+            paystack_subaccount_code=f'SUBAC_300{200+i:03d}',
             date_of_birth='1990-01-01',
             years_in_poultry=3,
             number_of_poultry_houses=3,
