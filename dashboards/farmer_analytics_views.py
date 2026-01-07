@@ -80,7 +80,8 @@ class FarmerAnalyticsDashboardView(BaseFarmerAnalyticsView):
         analytics = service.get_full_analytics(days=days)
         
         if 'error' in analytics:
-            return Response(analytics, status=status.HTTP_400_BAD_REQUEST)
+            status_code = status.HTTP_404_NOT_FOUND if analytics.get('code') == 'NO_FARM' else status.HTTP_400_BAD_REQUEST
+            return Response(analytics, status=status_code)
         
         return Response(analytics)
 
@@ -111,7 +112,7 @@ class ProductionAnalyticsView(BaseFarmerAnalyticsView):
             return Response({
                 'error': 'No farm found for this user',
                 'code': 'NO_FARM'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_production_analytics(days=days)
         return Response({
@@ -145,7 +146,7 @@ class FlockHealthAnalyticsView(BaseFarmerAnalyticsView):
             return Response({
                 'error': 'No farm found for this user',
                 'code': 'NO_FARM'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_flock_health_analytics(days=days)
         return Response({
@@ -178,7 +179,7 @@ class FinancialAnalyticsView(BaseFarmerAnalyticsView):
             return Response({
                 'error': 'No farm found for this user',
                 'code': 'NO_FARM'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_financial_analytics(days=days)
         return Response({
@@ -211,7 +212,7 @@ class FeedAnalyticsView(BaseFarmerAnalyticsView):
             return Response({
                 'error': 'No farm found for this user',
                 'code': 'NO_FARM'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_feed_analytics(days=days)
         return Response({
@@ -244,7 +245,7 @@ class MarketplaceAnalyticsView(BaseFarmerAnalyticsView):
             return Response({
                 'error': 'No farm found for this user',
                 'code': 'NO_FARM'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_marketplace_analytics(days=days)
         return Response({
@@ -273,7 +274,7 @@ class InventoryAnalyticsView(BaseFarmerAnalyticsView):
             return Response({
                 'error': 'No farm found for this user',
                 'code': 'NO_FARM'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_inventory_analytics()
         return Response({'data': analytics})
@@ -301,7 +302,7 @@ class BenchmarkAnalyticsView(BaseFarmerAnalyticsView):
             return Response({
                 'error': 'No farm found for this user',
                 'code': 'NO_FARM'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_benchmark_analytics(days=days)
         return Response({
@@ -326,7 +327,7 @@ class FarmerAnalyticsSummaryView(BaseFarmerAnalyticsView):
             return Response({
                 'error': 'No farm found for this user',
                 'code': 'NO_FARM'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_404_NOT_FOUND)
         
         # Get lightweight data
         production = service.get_production_analytics(days=days)
