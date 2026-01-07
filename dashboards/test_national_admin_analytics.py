@@ -195,7 +195,7 @@ def sample_farm(db, farmer_user):
         defaults={
             'category': 'LAYER',
             'description': 'Standard layer mash feed',
-            'protein_percentage': Decimal('16.0'),
+            'protein_content': Decimal('16.0'),
             'recommended_age_weeks_min': 18
         }
     )
