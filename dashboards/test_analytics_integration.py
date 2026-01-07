@@ -434,9 +434,9 @@ class TestPerformance:
         data = response.json()
         
         assert 'count' in data
-        assert 'next' in data
-        assert 'previous' in data
-        assert 'results' in data
+        assert 'farms' in data
+        assert 'pagination' in data
+        assert data['pagination']['page'] == 1
 
 
 class TestErrorRecovery:
