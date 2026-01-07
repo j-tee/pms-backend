@@ -146,6 +146,7 @@ def sample_farm(db, farmer_user):
         source='YEA Program',
         arrival_date=timezone.now().date() - timedelta(days=90),
         initial_count=500,
+        current_count=450,
         age_at_arrival_weeks=0
     )
     
@@ -236,6 +237,7 @@ def multiple_farms(db):
             source='YEA Program',
             arrival_date=timezone.now().date() - timedelta(days=60),
             initial_count=500,
+            current_count=480,
             age_at_arrival_weeks=0
         )
         
