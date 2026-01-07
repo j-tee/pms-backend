@@ -45,7 +45,7 @@ def complete_ecosystem(db):
         phone='+233500000002',
         role='REGIONAL_COORDINATOR'
     )
-    regional_coord.assigned_region = 'Greater Accra'
+    regional_coord.region = 'Greater Accra'
     regional_coord.save()
     
     # Create batches
