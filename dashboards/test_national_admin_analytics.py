@@ -78,7 +78,7 @@ def regional_coordinator(db):
         phone='+233200000004',
         role='REGIONAL_COORDINATOR'
     )
-    user.assigned_region = 'Greater Accra'
+    user.region = 'Greater Accra'
     user.save()
     return user
 
@@ -95,8 +95,8 @@ def constituency_official(db):
         phone='+233200000005',
         role='CONSTITUENCY_OFFICIAL'
     )
-    user.assigned_region = 'Greater Accra'
-    user.assigned_constituency = 'Ayawaso West'
+    user.region = 'Greater Accra'
+    user.constituency = 'Ayawaso West'
     user.save()
     return user
 

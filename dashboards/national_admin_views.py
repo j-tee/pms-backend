@@ -14,6 +14,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 from django.core.cache import cache
 from django.utils import timezone
 import logging
@@ -99,16 +100,26 @@ class BaseNationalAdminView(APIView):
     
     def get_scope_params(self, request):
         """Extract region/constituency scope from request."""
-        region = request.query_params.get('region')
-        constituency = request.query_params.get('constituency')
+        requested_region = request.query_params.get('region')
+        requested_constituency = request.query_params.get('constituency')
         
-        # Auto-scope based on user role
+        # Validate and enforce geographic scoping
         if request.user.role == 'REGIONAL_COORDINATOR':
+            # Regional coordinators can only access their assigned region
+            if requested_region and requested_region != request.user.region:
+                raise PermissionDenied("Regional coordinators can only access their assigned region")
             region = request.user.region
             constituency = None
         elif request.user.role == 'CONSTITUENCY_OFFICIAL':
+            # Constituency officials can only access their assigned constituency
+            if requested_constituency and requested_constituency != request.user.constituency:
+                raise PermissionDenied("Constituency officials can only access their assigned constituency")
             constituency = request.user.constituency
-            # Keep region if specified for context
+            region = requested_region  # Keep region for context
+        else:
+            # National-level users can access any region
+            region = requested_region
+            constituency = requested_constituency
         
         return region, constituency
     
