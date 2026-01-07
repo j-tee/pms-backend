@@ -125,6 +125,7 @@ def sample_farm(db, farmer_user):
         primary_constituency='Ayawaso West',
         farm_status='OPERATIONAL',
         total_bird_capacity=1000,
+        current_bird_count=450,  # Set current birds
         subscription_type='government_subsidized',
         marketplace_enabled=True,
         date_of_birth='1990-01-01',
@@ -558,15 +559,16 @@ class TestProductionReports:
         data = response.json()
         
         assert 'regions' in data
-        assert 'totals' in data
+        assert 'total_regions' in data
+        assert 'top_producer' in data
         assert len(data['regions']) == 2  # Greater Accra and Ashanti
         
         # Find Greater Accra region
         ga_region = next(r for r in data['regions'] if r['region'] == 'Greater Accra')
-        assert ga_region['farms_count'] == 5
+        assert ga_region['farms'] == 5
         
-        # Check totals
-        assert data['totals']['farms'] == 8
+        # Check total count
+        assert data['total_regions'] == 2
 
 
 class TestFinancialReports:
