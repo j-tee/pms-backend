@@ -802,7 +802,7 @@ class FarmerAnalyticsService:
             
             stats = product_orders.aggregate(
                 quantity_sold=Coalesce(Sum('quantity'), Decimal('0')),
-                revenue=Coalesce(Sum('total_price'), Decimal('0')),
+                revenue=Coalesce(Sum('line_total'), Decimal('0')),
                 orders=Count('id'),
             )
             
