@@ -108,6 +108,7 @@ def farmer_with_farm(db, farmer_user):
         
         # Flock 1 production
         DailyProduction.objects.create(
+            farm=farm,
             flock=flock1,
             production_date=date,
             eggs_collected=250 + (i % 30),
@@ -119,6 +120,7 @@ def farmer_with_farm(db, farmer_user):
         
         # Flock 2 production (higher production)
         DailyProduction.objects.create(
+            farm=farm,
             flock=flock2,
             production_date=date,
             eggs_collected=350 + (i % 40),

@@ -154,6 +154,7 @@ def sample_farm(db, farmer_user):
     for i in range(30):
         date = timezone.now().date() - timedelta(days=i)
         DailyProduction.objects.create(
+            farm=farm,
             flock=flock,
             production_date=date,
             eggs_collected=200 + (i % 20),
@@ -243,6 +244,7 @@ def multiple_farms(db):
         
         # Add daily production
         DailyProduction.objects.create(
+            farm=farm,
             flock=flock,
             production_date=timezone.now().date(),
             eggs_collected=200,
