@@ -872,7 +872,7 @@ class ExportAnalyticsCSVView(BaseExportView):
         
         days = self.get_days(request)
         section = request.query_params.get('section', 'all')
-        service = FarmerAnalyticsService(farm)
+        service = FarmerAnalyticsService(request.user)
         
         # Get analytics data
         analytics = service.get_full_analytics(days)
