@@ -132,6 +132,7 @@ def complete_ecosystem(db):
             for day in range(30):
                 date = timezone.now().date() - timedelta(days=day)
                 DailyProduction.objects.create(
+                    farm=farm,
                     flock=flock,
                     production_date=date,
                     eggs_collected=200 * (i + 1) + (day % 20),
@@ -290,6 +291,7 @@ class TestCaching:
         farm = complete_ecosystem['farms'][0]
         flock = farm.flocks.first()
         DailyProduction.objects.create(
+            farm=farm,
             flock=flock,
             production_date=timezone.now().date(),
             eggs_collected=500,
