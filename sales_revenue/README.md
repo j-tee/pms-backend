@@ -106,8 +106,21 @@ PAYSTACK_SETTLEMENT_SCHEDULE = 'auto'
 PAYSTACK_CURRENCY = 'GHS'
 ```
 
-### Commission Structure (Tiered)
+### Commission Structure (SUSPENDED)
+
+> ⚠️ **IMPORTANT**: Transaction commissions are currently **SUSPENDED**.
+> 
+> **Reason**: In Ghana's local context, farmers are sensitive to platform fees. 
+> Payments happen **OFF-PLATFORM** (cash, mobile money direct transfer, etc.).
+> Farmers use the platform only to **record sales** for tracking purposes.
+> 
+> **Current fee**: Only the GHS 50/month Marketplace Activation Fee applies.
+> 
+> Commission can be enabled in the future via `PlatformSettings.enable_transaction_commission`
+> if farmers request on-platform payment processing.
+
 ```python
+# SUSPENDED - These rates are NOT currently applied
 # Tier 1: Sales < GHS 100
 COMMISSION_TIER_1_PERCENTAGE = 5.0  # 5%
 
@@ -119,9 +132,18 @@ COMMISSION_TIER_3_PERCENTAGE = 2.0  # 2%
 
 # Minimum commission per transaction
 COMMISSION_MINIMUM_AMOUNT = 2.00  # GHS 2.00
+
+# To enable commission (FUTURE USE ONLY):
+# PlatformSettings.enable_transaction_commission = True
 ```
 
-### Payment Flow
+### Current Payment Flow (Off-Platform)
+1. **Customer contacts farmer** via marketplace listing
+2. **Payment happens OFF-PLATFORM** (cash, MoMo, bank transfer)
+3. **Farmer records sale** on the platform for tracking
+4. **No commission taken** - farmer keeps 100%
+
+### Future Payment Flow (If Commission Enabled)
 1. **Customer Purchase:**
    - Customer pays via mobile money/card
    - Payment creates Payment record with Paystack reference
