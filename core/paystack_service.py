@@ -160,6 +160,64 @@ class PaystackService:
             )
     
     @classmethod
+    def initialize_transaction(
+        cls,
+        amount: int,
+        email: str,
+        reference: str,
+        metadata: dict = None,
+        callback_url: str = None,
+        channels: list = None
+    ) -> Dict[str, Any]:
+        """
+        Initialize a payment transaction (Paystack Hosted Checkout).
+        
+        Customer is redirected to Paystack's hosted payment page where they
+        can choose their preferred payment method (MoMo, Card, Bank, USSD).
+        
+        Args:
+            amount: Amount in pesewas (GHS 50 = 5000 pesewas)
+            email: Customer email (required by Paystack)
+            reference: Unique payment reference
+            metadata: Additional data to attach to transaction
+            callback_url: URL to redirect after payment
+            channels: Optional list to restrict payment channels
+                      e.g., ['mobile_money', 'card', 'bank', 'ussd']
+                      If None, all available channels are shown
+            
+        Returns:
+            Dict with authorization_url, access_code, reference
+            
+        Raises:
+            PaystackError: On initialization failure
+        """
+        payload = {
+            'amount': amount,
+            'email': email,
+            'currency': cls.CURRENCY,
+            'reference': reference,
+            'metadata': metadata or {},
+        }
+        
+        if callback_url:
+            payload['callback_url'] = callback_url
+        
+        if channels:
+            payload['channels'] = channels
+        
+        logger.info(f"Initializing Paystack transaction: {reference}, amount: {amount} pesewas")
+        
+        result = cls._make_request('POST', '/transaction/initialize', payload)
+        
+        return {
+            'status': 'success',
+            'authorization_url': result['data'].get('authorization_url'),
+            'access_code': result['data'].get('access_code'),
+            'reference': result['data'].get('reference'),
+            'message': 'Payment initialized. Complete payment on the checkout page.'
+        }
+    
+    @classmethod
     def initialize_momo_payment(
         cls,
         amount: int,

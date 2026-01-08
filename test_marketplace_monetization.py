@@ -235,10 +235,6 @@ class TestPlatformSettingsModel:
         """Verify default government subsidy covers 100%."""
         assert platform_settings.government_subsidy_percentage == Decimal('100.00')
     
-    def test_verified_seller_tier_disabled_by_default(self, platform_settings):
-        """Verify verified seller tier (Phase 2) is disabled by default."""
-        assert platform_settings.enable_verified_seller_tier is False
-    
     def test_transaction_commission_disabled_by_default(self, platform_settings):
         """Verify transaction commission (Phase 2) is disabled by default."""
         assert platform_settings.enable_transaction_commission is False
@@ -663,25 +659,6 @@ class TestSalesPolicyCanCreateSale:
         farm = Mock()
         farm.marketplace_enabled = True
         farm.subscription_type = 'government_subsidized'
-        
-        user = Mock()
-        user.role = 'FARMER'
-        farm.user = user
-        
-        can_create = (
-            user.role == 'FARMER' and
-            farm.user == user and
-            farm.marketplace_enabled and
-            farm.subscription_type != 'none'
-        )
-        
-        assert can_create is True
-    
-    def test_verified_can_create_sale_logic(self):
-        """Verified seller farms can create sales (logic test)."""
-        farm = Mock()
-        farm.marketplace_enabled = True
-        farm.subscription_type = 'verified'
         
         user = Mock()
         user.role = 'FARMER'

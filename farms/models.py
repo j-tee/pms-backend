@@ -588,13 +588,13 @@ class Farm(models.Model):
     # ============================================================================
     # SECTION 9C: MARKETPLACE ACTIVATION (Seller Access Fee)
     # NOTE: Avoid "subscription" terminology in UI/API - use "Marketplace Activation"
+    # NOTE: NO additional tiers like "verified seller" - farmers are fee-averse
     # ============================================================================
     
     MARKETPLACE_ACCESS_TYPE_CHOICES = [
         ('none', 'No Marketplace Access (Free Core Platform)'),
         ('government_subsidized', 'Government-Subsidized Marketplace Access'),
         ('standard', 'Standard Marketplace Access (GHS 50/month)'),
-        ('verified', 'Verified Seller (GHS 50 + Priority Features)'),
     ]
     
     # Keep field name for backward compatibility, but update choices

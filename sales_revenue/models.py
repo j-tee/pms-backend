@@ -168,24 +168,16 @@ class PlatformSettings(models.Model):
         help_text="Percentage of marketplace fee covered by government (0-100)"
     )
     
-    # Verified/Priority Seller Tier (Phase 2)
-    verified_seller_fee = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal('50.00'),
-        validators=[MinValueValidator(0)],
-        help_text="Monthly fee for verified/priority seller status (GHS)"
-    )
+    # NOTE: Verified Seller Tier REMOVED - Ghanaian farmers are averse to additional fees.
+    # The only fee is the GHS 50/month Marketplace Activation Fee.
     
-    enable_verified_seller_tier = models.BooleanField(
-        default=False,
-        help_text="Enable verified/priority seller tier (Phase 2)"
-    )
-    
-    # Transaction Commission Settings (Phase 2)
+    # Transaction Commission Settings (SUSPENDED)
+    # NOTE: Currently suspended. Farmers receive payments OFF-PLATFORM and record
+    # sales manually. Commission fees would discourage platform adoption in Ghana.
+    # Can be enabled in future if farmers request on-platform payment processing.
     enable_transaction_commission = models.BooleanField(
         default=False,
-        help_text="Enable commission on completed marketplace sales (Phase 2)"
+        help_text="Enable commission on completed marketplace sales. SUSPENDED: Payments happen off-platform, farmers only record sales here."
     )
     
     # Advertising Settings
@@ -283,12 +275,21 @@ class PlatformSettings(models.Model):
         """
         Calculate commission based on tiered structure.
         
+        NOTE: Returns 0 if enable_transaction_commission is False (default).
+        Currently SUSPENDED - farmers receive payments off-platform and only
+        record sales on the system. No commission is taken.
+        
         Args:
             amount: Sale amount (Decimal)
             
         Returns:
-            Commission amount (Decimal)
+            Commission amount (Decimal) - 0 if commission is disabled
         """
+        # Check if transaction commission is enabled
+        # SUSPENDED: Farmers receive payments off-platform, we don't take a cut
+        if not self.enable_transaction_commission:
+            return Decimal('0.00')
+        
         amount = Decimal(str(amount))
         
         # Tier 1: Below first threshold
@@ -495,19 +496,33 @@ class EggSale(models.Model):
         return f"Egg Sale: {self.quantity} {self.unit}(s) - {self.customer.get_full_name()} - GHS {self.total_amount}"
     
     def calculate_amounts(self):
-        """Calculate all monetary amounts based on commission tier"""
+        """
+        Calculate all monetary amounts.
+        
+        NOTE: Commission is currently SUSPENDED (enable_transaction_commission=False).
+        Farmers receive payments OFF-PLATFORM and only record sales here.
+        When commission is disabled:
+        - platform_commission = 0
+        - paystack_fee = 0 (no on-platform payment processing)
+        - farmer_payout = subtotal (farmer keeps 100%)
+        """
         # Subtotal
         self.subtotal = self.quantity * self.price_per_unit
         self.total_amount = self.subtotal
         
         # Platform commission (from PlatformSettings)
+        # Returns 0 if enable_transaction_commission is False (default)
         settings = PlatformSettings.get_settings()
         self.platform_commission = settings.calculate_commission(self.subtotal)
         
-        # Paystack fee (1.5% + GHS 0.10) - platform pays this
-        self.paystack_fee = (self.subtotal * Decimal('0.015')) + Decimal('0.10')
+        # Paystack fee - only applies if on-platform payment processing is enabled
+        # Currently payments happen off-platform, so no Paystack fees
+        if settings.enable_transaction_commission:
+            self.paystack_fee = (self.subtotal * Decimal('0.015')) + Decimal('0.10')
+        else:
+            self.paystack_fee = Decimal('0.00')
         
-        # Farmer receives: subtotal - commission
+        # Farmer receives: subtotal - commission (100% when commission disabled)
         self.farmer_payout = self.subtotal - self.platform_commission
     
     def save(self, *args, **kwargs):
@@ -641,15 +656,32 @@ class BirdSale(models.Model):
         return f"Bird Sale: {self.quantity} {self.bird_type}(s) - {self.customer.get_full_name()} - GHS {self.total_amount}"
     
     def calculate_amounts(self):
-        """Calculate all monetary amounts"""
+        """
+        Calculate all monetary amounts.
+        
+        NOTE: Commission is currently SUSPENDED (enable_transaction_commission=False).
+        Farmers receive payments OFF-PLATFORM and only record sales here.
+        When commission is disabled:
+        - platform_commission = 0
+        - paystack_fee = 0 (no on-platform payment processing)
+        - farmer_payout = subtotal (farmer keeps 100%)
+        """
         self.subtotal = self.quantity * self.price_per_bird
         self.total_amount = self.subtotal
         
         # Platform commission (from PlatformSettings)
+        # Returns 0 if enable_transaction_commission is False (default)
         settings = PlatformSettings.get_settings()
         self.platform_commission = settings.calculate_commission(self.subtotal)
         
-        self.paystack_fee = (self.subtotal * Decimal('0.015')) + Decimal('0.10')
+        # Paystack fee - only applies if on-platform payment processing is enabled
+        # Currently payments happen off-platform, so no Paystack fees
+        if settings.enable_transaction_commission:
+            self.paystack_fee = (self.subtotal * Decimal('0.015')) + Decimal('0.10')
+        else:
+            self.paystack_fee = Decimal('0.00')
+        
+        # Farmer receives: subtotal - commission (100% when commission disabled)
         self.farmer_payout = self.subtotal - self.platform_commission
     
     def save(self, *args, **kwargs):
