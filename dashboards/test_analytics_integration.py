@@ -249,19 +249,19 @@ class TestEndToEndWorkflows:
         # Production details
         response = api_client.get('/api/farms/analytics/production/')
         assert response.status_code == status.HTTP_200_OK
-        production = response.json()['data']
+        production = response.json()
         assert 'daily_trend' in production
         
         # Financial analytics
         response = api_client.get('/api/farms/analytics/financial/')
         assert response.status_code == status.HTTP_200_OK
-        financial = response.json()['data']
+        financial = response.json()
         assert 'revenue_breakdown' in financial
         
         # Flock health
         response = api_client.get('/api/farms/analytics/flock-health/')
         assert response.status_code == status.HTTP_200_OK
-        health = response.json()['data']
+        health = response.json()
         assert 'summary' in health
     
     def test_export_workflow(self, api_client, complete_ecosystem):
