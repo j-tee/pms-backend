@@ -30,56 +30,16 @@ class MoMoProviderSerializer(serializers.Serializer):
 
 class InitiatePaymentSerializer(serializers.Serializer):
     """
-    Serializer for initiating MoMo payment for marketplace subscription
+    Serializer for initiating Paystack payment for marketplace activation.
+    
+    Farmer is redirected to Paystack hosted checkout page where they
+    can choose their preferred payment method (MoMo, Card, Bank, USSD).
     """
-    phone = serializers.CharField(
-        max_length=15,
-        help_text="Mobile money phone number (e.g., 0241234567)"
-    )
-    provider = serializers.ChoiceField(
-        choices=[
-            ('mtn', 'MTN Mobile Money'),
-            ('vodafone', 'Vodafone Cash'),
-            ('airteltigo', 'AirtelTigo Money'),
-            ('telecel', 'Telecel Cash'),
-        ],
-        help_text="Mobile money provider"
-    )
     callback_url = serializers.URLField(
         required=False,
         allow_blank=True,
-        help_text="Optional URL to redirect after payment"
+        help_text="Optional URL to redirect after payment completion"
     )
-    
-    def validate_phone(self, value):
-        """Validate and normalize phone number"""
-        # Remove spaces and dashes
-        phone = value.replace(' ', '').replace('-', '')
-        
-        # Handle different formats
-        if phone.startswith('+233'):
-            phone = '0' + phone[4:]
-        elif phone.startswith('233'):
-            phone = '0' + phone[3:]
-        
-        # Validate Ghana phone number format
-        if not phone.startswith('0') or len(phone) != 10:
-            raise serializers.ValidationError(
-                "Invalid phone number format. Use format: 0241234567"
-            )
-        
-        # Validate prefix for known networks
-        valid_prefixes = [
-            '020', '023', '024', '025', '026', '027', 
-            '050', '054', '055', '056', '057', '059'
-        ]
-        prefix = phone[:3]
-        if prefix not in valid_prefixes:
-            raise serializers.ValidationError(
-                f"Unknown mobile network prefix: {prefix}"
-            )
-        
-        return phone
 
 
 class PaymentInitiatedResponseSerializer(serializers.Serializer):

@@ -19,6 +19,10 @@ from .institutional_views import (
     SubscriberAPIKeyDetailView,
     SubscriberUsageView,
     SubscriberPaymentsView,
+    # Payment
+    InitiateInstitutionalPaymentView,
+    VerifyInstitutionalPaymentView,
+    PaymentMethodsView,
     # Admin
     AdminInstitutionalDashboardView,
     AdminInquiryListView,
@@ -31,6 +35,9 @@ from .institutional_views import (
     AdminPlansListView,
     AdminPlanDetailView,
 )
+
+# Import webhook from subscriptions.views
+from .views import InstitutionalPaystackWebhookView
 
 from .institutional_data_views import (
     ProductionOverviewView,
@@ -52,6 +59,7 @@ from .institutional_data_views import (
 public_urlpatterns = [
     path('plans/', InstitutionalPlansPublicView.as_view(), name='plans'),
     path('inquire/', InstitutionalInquiryCreateView.as_view(), name='inquire'),
+    path('payment-methods/', PaymentMethodsView.as_view(), name='payment-methods'),
 ]
 
 
@@ -67,6 +75,14 @@ institutional_urlpatterns = [
     path('usage/', UsageStatusView.as_view(), name='usage'),
     path('usage/history/', SubscriberUsageView.as_view(), name='usage-history'),
     path('payments/', SubscriberPaymentsView.as_view(), name='payments'),
+    
+    # Payment (Paystack Checkout)
+    path('pay/', InitiateInstitutionalPaymentView.as_view(), name='initiate-payment'),
+    path('pay/verify/<str:reference>/', VerifyInstitutionalPaymentView.as_view(), name='verify-payment'),
+    path('payment-methods/', PaymentMethodsView.as_view(), name='payment-methods'),
+    
+    # Webhook (no auth - signature verified)
+    path('webhooks/paystack/', InstitutionalPaystackWebhookView.as_view(), name='paystack-webhook'),
     
     # Data Endpoints
     path('production/overview/', ProductionOverviewView.as_view(), name='production-overview'),

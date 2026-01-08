@@ -1,7 +1,7 @@
 """
 Subscription URL Routes
 
-Endpoints for marketplace subscription payments via MoMo
+Endpoints for marketplace subscription payments via Paystack
 """
 
 from django.urls import path
@@ -16,6 +16,7 @@ from .views import (
     ReactivateSubscriptionView,
     PaystackWebhookView,
     MoMoProvidersView,
+    PaymentMethodsView,
     AdminVerifyPaymentView,
 )
 
@@ -47,7 +48,10 @@ urlpatterns = [
     # Reactivate subscription
     path('reactivate/', ReactivateSubscriptionView.as_view(), name='reactivate'),
     
-    # MoMo providers list
+    # Payment methods (recommended)
+    path('payment-methods/', PaymentMethodsView.as_view(), name='payment-methods'),
+    
+    # MoMo providers list (deprecated, use payment-methods instead)
     path('momo-providers/', MoMoProvidersView.as_view(), name='momo-providers'),
 ]
 

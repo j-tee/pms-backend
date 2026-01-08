@@ -243,6 +243,63 @@ class PartnerOffer(models.Model):
     impressions = models.PositiveIntegerField(default=0)
     clicks = models.PositiveIntegerField(default=0)
     
+    # Frequency Capping (Phase 2 Feature)
+    max_impressions_per_user = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum times this offer is shown to a single farmer (null = unlimited)"
+    )
+    max_impressions_per_day = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum total impressions per day across all farmers (null = unlimited)"
+    )
+    cooldown_hours = models.PositiveIntegerField(
+        default=0,
+        help_text="Hours to wait before showing offer again to same farmer after click/dismiss"
+    )
+    
+    # Scheduling (Enhanced Phase 2)
+    show_on_days = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Days of week to show (0=Monday, 6=Sunday). Empty = all days"
+    )
+    show_start_hour = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MaxValueValidator(23)],
+        help_text="Start hour to show offer (0-23, Ghana time)"
+    )
+    show_end_hour = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MaxValueValidator(23)],
+        help_text="End hour to show offer (0-23, Ghana time)"
+    )
+    
+    # Budget Controls (Phase 2)
+    daily_budget = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Daily budget limit for CPC campaigns (GHS)"
+    )
+    daily_spend = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Current day's spend (reset daily)"
+    )
+    cost_per_click = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Cost per click for CPC campaigns (GHS)"
+    )
+    
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -295,6 +352,83 @@ class PartnerOffer(models.Model):
         PartnerOffer.objects.filter(pk=self.pk).update(
             clicks=models.F('clicks') + 1
         )
+        # Track CPC spending
+        if self.cost_per_click:
+            PartnerOffer.objects.filter(pk=self.pk).update(
+                daily_spend=models.F('daily_spend') + self.cost_per_click
+            )
+    
+    def is_within_schedule(self):
+        """Check if current time is within offer's display schedule"""
+        now = timezone.now()
+        
+        # Check day of week (0=Monday, 6=Sunday)
+        if self.show_on_days:
+            if now.weekday() not in self.show_on_days:
+                return False
+        
+        # Check hour of day (Ghana time)
+        if self.show_start_hour is not None and self.show_end_hour is not None:
+            current_hour = now.hour
+            if self.show_start_hour <= self.show_end_hour:
+                # Normal range (e.g., 9-17)
+                if not (self.show_start_hour <= current_hour < self.show_end_hour):
+                    return False
+            else:
+                # Overnight range (e.g., 22-6)
+                if not (current_hour >= self.show_start_hour or current_hour < self.show_end_hour):
+                    return False
+        
+        return True
+    
+    def is_within_budget(self):
+        """Check if offer is within daily budget (for CPC campaigns)"""
+        if self.daily_budget is None:
+            return True
+        return self.daily_spend < self.daily_budget
+    
+    def can_show_to_farm(self, farm):
+        """
+        Check if offer can be shown to a specific farm based on frequency capping.
+        
+        Returns: (can_show: bool, reason: str or None)
+        """
+        from datetime import timedelta
+        
+        # Check frequency cap
+        if self.max_impressions_per_user:
+            impression_count = OfferInteraction.objects.filter(
+                offer=self,
+                farm=farm,
+                interaction_type='impression'
+            ).count()
+            
+            if impression_count >= self.max_impressions_per_user:
+                return False, 'max_impressions_reached'
+        
+        # Check cooldown after click/dismiss
+        if self.cooldown_hours > 0:
+            cooldown_cutoff = timezone.now() - timedelta(hours=self.cooldown_hours)
+            recent_engagement = OfferInteraction.objects.filter(
+                offer=self,
+                farm=farm,
+                interaction_type__in=['click', 'dismiss'],
+                created_at__gte=cooldown_cutoff
+            ).exists()
+            
+            if recent_engagement:
+                return False, 'in_cooldown'
+        
+        return True, None
+    
+    def get_daily_impressions_today(self):
+        """Get total impressions for today"""
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        return OfferInteraction.objects.filter(
+            offer=self,
+            interaction_type='impression',
+            created_at__gte=today_start
+        ).count()
 
 
 class OfferInteraction(models.Model):
@@ -581,7 +715,10 @@ class ConversionEvent(models.Model):
     farm = models.ForeignKey(
         'farms.Farm',
         on_delete=models.CASCADE,
-        related_name='ad_conversions'
+        null=True,
+        blank=True,
+        related_name='ad_conversions',
+        help_text="Farm associated with conversion (may be null for unattributed conversions)"
     )
     
     # Conversion details

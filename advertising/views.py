@@ -69,6 +69,9 @@ class FarmerOffersView(APIView):
         # Apply targeting filters
         offers = self._apply_targeting(offers, farm)
         
+        # Apply frequency capping and scheduling filters
+        offers = self._apply_frequency_capping(offers, farm)
+        
         # Order by featured first, then priority
         offers = offers.order_by('-is_featured', '-priority', '-created_at')[:10]
         
@@ -98,13 +101,63 @@ class FarmerOffersView(APIView):
             'count': len(serializer.data),
         })
     
+    def _apply_frequency_capping(self, offers, farm):
+        """
+        Filter offers based on frequency capping, scheduling, and budget.
+        
+        Phase 2 feature: More sophisticated ad delivery controls.
+        """
+        filtered_offers = []
+        
+        for offer in offers:
+            # Check schedule (day of week, hour of day)
+            if not offer.is_within_schedule():
+                continue
+            
+            # Check budget (for CPC campaigns)
+            if not offer.is_within_budget():
+                continue
+            
+            # Check daily impression cap
+            if offer.max_impressions_per_day:
+                if offer.get_daily_impressions_today() >= offer.max_impressions_per_day:
+                    continue
+            
+            # Check per-user frequency cap and cooldown
+            can_show, reason = offer.can_show_to_farm(farm)
+            if not can_show:
+                continue
+            
+            filtered_offers.append(offer.id)
+        
+        # Return queryset filtered to allowed offers
+        return offers.filter(id__in=filtered_offers)
+    
     def _apply_targeting(self, offers, farm):
         """Filter offers based on targeting criteria and farm attributes"""
-        # Get farm attributes
-        farm_region = getattr(farm, 'region', None)
-        farm_flock_size = getattr(farm, 'total_birds', 0) or 0
-        farm_experience = getattr(farm, 'experience_level', None)
+        # Get farm attributes - use correct field names from Farm model
+        # For region targeting, get from first location or constituency
+        farm_region = None
+        if hasattr(farm, 'locations') and farm.locations.exists():
+            first_location = farm.locations.first()
+            if first_location:
+                farm_region = getattr(first_location, 'region', None)
+        # Fallback to constituency for geographic targeting
+        farm_constituency = getattr(farm, 'primary_constituency', None)
+        
+        # Use current_bird_count for flock size targeting
+        farm_flock_size = getattr(farm, 'current_bird_count', 0) or 0
+        # Fallback to total_bird_capacity if no current count
+        if farm_flock_size == 0:
+            farm_flock_size = getattr(farm, 'total_bird_capacity', 0) or 0
+        
+        # Experience: years_in_poultry field
+        farm_experience = getattr(farm, 'years_in_poultry', 0) or 0
+        
+        # Has marketplace access (property on Farm model)
         has_marketplace = getattr(farm, 'has_marketplace_access', False)
+        
+        # Is government farmer (property on Farm model)
         is_government = getattr(farm, 'is_government_farmer', False)
         
         # Build filter
@@ -277,7 +330,6 @@ class AdvertiseWithUsView(APIView):
     def _get_platform_stats(self):
         """Return platform stats to show advertisers"""
         from farms.models import Farm
-        from sales_revenue.models import Order
         
         try:
             total_farmers = Farm.objects.filter(application_status='Approved').count()
@@ -285,14 +337,15 @@ class AdvertiseWithUsView(APIView):
                 application_status='Approved',
                 farm_status='Active'
             ).count()
-            regions = Farm.objects.filter(
+            # Count unique constituencies as proxy for regional coverage
+            constituencies = Farm.objects.filter(
                 application_status='Approved'
-            ).values('region').distinct().count()
+            ).values('primary_constituency').distinct().count()
             
             return {
                 'total_farmers': total_farmers,
                 'active_farmers': active_farmers,
-                'regions_covered': regions,
+                'regions_covered': min(16, constituencies // 10 + 1),  # Estimate regions from constituencies
             }
         except Exception:
             # Return placeholder stats if error

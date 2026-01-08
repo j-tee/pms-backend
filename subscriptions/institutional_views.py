@@ -4,17 +4,23 @@ Views for Institutional Data Subscriptions.
 - Public views for landing page and inquiries
 - Admin views for managing subscribers
 - Subscriber views for self-service
+- Payment views for MoMo payments via Paystack
 """
+
+import logging
+from dateutil.relativedelta import relativedelta
 
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Sum, Count, Q
 from django.shortcuts import get_object_or_404
 
 from dashboards.permissions import IsExecutive, IsSuperAdmin
+from core.paystack_service import PaystackService, PaystackError
 from .institutional_models import (
     InstitutionalPlan,
     InstitutionalSubscriber,
@@ -38,12 +44,15 @@ from .institutional_serializers import (
     InstitutionalSubscriberAdminSerializer,
     InstitutionalSubscriberCreateSerializer,
     InstitutionalPlanAdminSerializer,
+    InstitutionalInitiatePaymentSerializer,
 )
 from .institutional_auth import (
     InstitutionalAPIKeyAuthentication,
     IsInstitutionalSubscriber,
     InstitutionalRateLimiter,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -304,6 +313,296 @@ class SubscriberPaymentsView(APIView):
         payments = InstitutionalPayment.objects.filter(subscriber=subscriber)
         serializer = InstitutionalPaymentSerializer(payments, many=True)
         return Response({'payments': serializer.data})
+
+
+class InitiateInstitutionalPaymentView(APIView):
+    """
+    POST /api/institutional/pay/
+    
+    Initiate Paystack payment for institutional subscription fee.
+    
+    Subscriber is redirected to Paystack's hosted checkout page where they
+    can choose their preferred payment method (MoMo, Card, Bank Transfer, USSD).
+    
+    Request body:
+    {
+        "billing_cycle": "monthly",  // or "annually"
+        "callback_url": "https://yourapp.com/payment/callback"  // optional
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Payment initialized. Complete payment on the checkout page.",
+        "authorization_url": "https://checkout.paystack.com/xxx",
+        "reference": "INST-20260108-A3B4C5D6",
+        "amount": 1500.00,
+        "billing_cycle": "monthly",
+        "period_start": "2026-01-08",
+        "period_end": "2026-02-07"
+    }
+    """
+    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    permission_classes = [IsInstitutionalSubscriber]
+    
+    @transaction.atomic
+    def post(self, request):
+        subscriber = request.institutional_subscriber
+        
+        # Validate request data
+        serializer = InstitutionalInitiatePaymentSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        billing_cycle = serializer.validated_data.get('billing_cycle', 'monthly')
+        callback_url = serializer.validated_data.get('callback_url')
+        
+        # Get plan and determine amount
+        plan = subscriber.plan
+        if billing_cycle == 'annually':
+            amount = plan.price_annually
+        else:
+            amount = plan.price_monthly
+        
+        # Calculate billing period
+        period_start = timezone.now().date()
+        if billing_cycle == 'annually':
+            period_end = period_start + relativedelta(years=1)
+        else:
+            period_end = period_start + relativedelta(months=1)
+        
+        # IDEMPOTENCY: Check for existing pending/processing payment for this period
+        existing_payment = InstitutionalPayment.objects.filter(
+            subscriber=subscriber,
+            period_start=period_start,
+            period_end=period_end,
+            payment_status__in=['pending', 'processing']
+        ).first()
+        
+        if existing_payment:
+            # Return existing payment details (idempotent)
+            logger.info(f"Idempotent payment request (institutional): returning existing payment {existing_payment.payment_reference}")
+            return Response({
+                'status': 'success',
+                'message': 'Payment already initialized. Complete payment on the checkout page.',
+                'reference': existing_payment.payment_reference,
+                'authorization_url': existing_payment.gateway_authorization_url,
+                'access_code': existing_payment.gateway_access_code,
+                'amount': str(amount),
+                'billing_cycle': billing_cycle,
+                'period_start': period_start.isoformat(),
+                'period_end': period_end.isoformat(),
+            })
+        
+        # Generate payment reference
+        reference = InstitutionalPayment.generate_reference()
+        
+        # Create pending payment record
+        payment = InstitutionalPayment.objects.create(
+            subscriber=subscriber,
+            amount=amount,
+            currency='GHS',
+            period_start=period_start,
+            period_end=period_end,
+            payment_method='paystack',
+            payment_status='pending',
+            payment_reference=reference,
+            gateway_provider='paystack',
+        )
+        
+        # Initialize Paystack transaction
+        try:
+            # Use contact email from subscriber
+            email = subscriber.contact_email
+            
+            # Convert GHS to pesewas
+            amount_pesewas = PaystackService.convert_to_pesewas(amount)
+            
+            result = PaystackService.initialize_transaction(
+                amount=amount_pesewas,
+                email=email,
+                reference=reference,
+                metadata={
+                    'payment_id': str(payment.id),
+                    'subscriber_id': str(subscriber.id),
+                    'organization_name': subscriber.organization_name,
+                    'plan_name': plan.name,
+                    'billing_cycle': billing_cycle,
+                    'period_start': period_start.isoformat(),
+                    'period_end': period_end.isoformat(),
+                    'payment_type': 'institutional_subscription',
+                },
+                callback_url=callback_url
+            )
+            
+            # Update payment with gateway response
+            payment.payment_status = 'processing'
+            payment.gateway_access_code = result.get('access_code', '')
+            payment.gateway_authorization_url = result.get('authorization_url', '')
+            payment.save()
+            
+            logger.info(f"Institutional payment initiated: {reference} for {subscriber.organization_name}")
+            
+            return Response({
+                'status': 'success',
+                'message': result.get('message', 'Payment initialized. Complete payment on the checkout page.'),
+                'reference': reference,
+                'authorization_url': result.get('authorization_url'),
+                'access_code': result.get('access_code'),
+                'amount': amount,
+                'billing_cycle': billing_cycle,
+                'period_start': period_start,
+                'period_end': period_end,
+            })
+            
+        except PaystackError as e:
+            # Mark payment as failed
+            payment.payment_status = 'failed'
+            payment.failure_reason = str(e.message)
+            payment.save()
+            
+            logger.error(f"Institutional payment initialization failed: {e.message}", extra={
+                'reference': reference,
+                'subscriber_id': str(subscriber.id),
+                'error_code': e.code
+            })
+            
+            return Response({
+                'error': e.message,
+                'code': e.code
+            }, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class VerifyInstitutionalPaymentView(APIView):
+    """
+    GET /api/institutional/pay/verify/<reference>/
+    
+    Verify payment status by reference.
+    """
+    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    permission_classes = [IsInstitutionalSubscriber]
+    
+    def get(self, request, reference):
+        subscriber = request.institutional_subscriber
+        
+        # Get payment record
+        try:
+            payment = InstitutionalPayment.objects.get(
+                payment_reference=reference,
+                subscriber=subscriber
+            )
+        except InstitutionalPayment.DoesNotExist:
+            return Response({
+                'error': 'Payment not found',
+                'code': 'PAYMENT_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # If already completed, return cached status
+        if payment.payment_status == 'completed':
+            return Response({
+                'status': 'success',
+                'reference': reference,
+                'amount': payment.amount,
+                'paid_at': payment.paid_at,
+                'payment_method': payment.payment_method,
+                'period_start': payment.period_start,
+                'period_end': payment.period_end,
+                'subscriber_status': subscriber.status,
+            })
+        
+        # Verify with Paystack
+        try:
+            result = PaystackService.verify_transaction(reference)
+            
+            if result['status'] == 'success':
+                # Mark payment as completed
+                payment.mark_as_completed(gateway_response=result)
+                
+                logger.info(f"Institutional payment verified successfully: {reference}")
+                
+                return Response({
+                    'status': 'success',
+                    'reference': reference,
+                    'amount': payment.amount,
+                    'paid_at': result.get('paid_at'),
+                    'channel': result.get('channel'),
+                    'gateway_response': result.get('gateway_response'),
+                    'period_start': payment.period_start,
+                    'period_end': payment.period_end,
+                    'subscriber_status': subscriber.status,
+                })
+            
+            elif result['status'] == 'failed':
+                payment.mark_as_failed(
+                    reason=result.get('gateway_response', 'Payment failed'),
+                    gateway_response=result
+                )
+                
+                return Response({
+                    'status': 'failed',
+                    'reference': reference,
+                    'message': result.get('gateway_response', 'Payment was not successful'),
+                })
+            
+            else:  # pending, abandoned, etc.
+                return Response({
+                    'status': result['status'],
+                    'reference': reference,
+                    'message': 'Payment is still being processed. Please check again shortly.',
+                })
+                
+        except PaystackError as e:
+            logger.error(f"Institutional payment verification failed: {e.message}", extra={
+                'reference': reference,
+                'error_code': e.code
+            })
+            
+            return Response({
+                'error': e.message,
+                'code': e.code
+            }, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class PaymentMethodsView(APIView):
+    """
+    GET /api/institutional/payment-methods/
+    
+    Get list of supported payment methods via Paystack.
+    """
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        methods = [
+            {
+                'code': 'mobile_money',
+                'name': 'Mobile Money',
+                'description': 'Pay with MTN MoMo, Vodafone Cash, AirtelTigo Money, or Telecel Cash',
+                'providers': ['MTN', 'Vodafone', 'AirtelTigo', 'Telecel']
+            },
+            {
+                'code': 'card',
+                'name': 'Card Payment',
+                'description': 'Pay with Visa, Mastercard, or Verve cards',
+                'providers': ['Visa', 'Mastercard', 'Verve']
+            },
+            {
+                'code': 'bank_transfer',
+                'name': 'Bank Transfer',
+                'description': 'Pay via bank transfer',
+                'providers': []
+            },
+            {
+                'code': 'ussd',
+                'name': 'USSD',
+                'description': 'Pay using USSD banking',
+                'providers': []
+            },
+        ]
+        return Response({
+            'payment_gateway': 'Paystack',
+            'methods': methods,
+            'note': 'Payment method is selected on the Paystack checkout page'
+        })
 
 
 # =============================================================================

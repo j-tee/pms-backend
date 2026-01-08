@@ -330,3 +330,43 @@ class InstitutionalPlanAdminSerializer(serializers.ModelSerializer):
     class Meta:
         model = InstitutionalPlan
         fields = '__all__'
+
+
+# =============================================================================
+# PAYMENT SERIALIZERS
+# =============================================================================
+
+class InstitutionalInitiatePaymentSerializer(serializers.Serializer):
+    """
+    Serializer for initiating Paystack payment for institutional subscription.
+    
+    The subscriber is redirected to Paystack's hosted checkout page where
+    they can choose their preferred payment method (MoMo, Card, Bank, USSD).
+    """
+    billing_cycle = serializers.ChoiceField(
+        choices=[
+            ('monthly', 'Monthly'),
+            ('annually', 'Annually'),
+        ],
+        default='monthly',
+        help_text="Billing period"
+    )
+    callback_url = serializers.URLField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional URL to redirect after payment completion"
+    )
+
+
+class InstitutionalPaymentResponseSerializer(serializers.Serializer):
+    """Response after payment initialization"""
+    status = serializers.CharField()
+    message = serializers.CharField()
+    reference = serializers.CharField()
+    authorization_url = serializers.URLField(required=False, allow_null=True)
+    access_code = serializers.CharField(required=False, allow_null=True)
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    billing_cycle = serializers.CharField()
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+

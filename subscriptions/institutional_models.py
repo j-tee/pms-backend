@@ -478,19 +478,34 @@ class InstitutionalAPIUsage(models.Model):
 class InstitutionalPayment(models.Model):
     """
     Payment records for institutional subscriptions.
+    
+    Supports multiple payment methods:
+    - Mobile Money via Paystack (MTN, Vodafone, AirtelTigo, Telecel)
+    - Bank Transfer
+    - Cheque
+    - Invoice (Net 30 for enterprise customers)
     """
     PAYMENT_STATUS_CHOICES = [
         ('pending', 'Pending'),
+        ('processing', 'Processing'),
         ('completed', 'Completed'),
         ('failed', 'Failed'),
         ('refunded', 'Refunded'),
     ]
     
     PAYMENT_METHOD_CHOICES = [
+        ('mobile_money', 'Mobile Money'),
         ('paystack', 'Paystack Online'),
         ('bank_transfer', 'Bank Transfer'),
         ('cheque', 'Cheque'),
         ('invoice', 'Invoice (Net 30)'),
+    ]
+    
+    MOMO_PROVIDER_CHOICES = [
+        ('mtn', 'MTN Mobile Money'),
+        ('vodafone', 'Vodafone Cash'),
+        ('airteltigo', 'AirtelTigo Money'),
+        ('telecel', 'Telecel Cash'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -523,17 +538,73 @@ class InstitutionalPayment(models.Model):
         choices=PAYMENT_STATUS_CHOICES,
         default='pending'
     )
-    payment_reference = models.CharField(max_length=100, blank=True)
+    payment_reference = models.CharField(
+        max_length=100,
+        unique=True,
+        db_index=True,
+        help_text="Unique payment reference (format: INST-YYYYMMDD-XXXXXXXX)"
+    )
     paystack_reference = models.CharField(max_length=100, blank=True)
     
-    # Invoice
-    invoice_number = models.CharField(max_length=50, unique=True)
-    invoice_date = models.DateField()
-    invoice_due_date = models.DateField()
+    # Mobile Money Details
+    momo_phone = models.CharField(
+        max_length=15,
+        blank=True,
+        help_text="Mobile money phone number used for payment"
+    )
+    momo_provider = models.CharField(
+        max_length=20,
+        choices=MOMO_PROVIDER_CHOICES,
+        blank=True,
+        help_text="Mobile money provider"
+    )
+    
+    # Payment Gateway Details (Paystack)
+    gateway_provider = models.CharField(
+        max_length=50,
+        default='paystack',
+        blank=True,
+        help_text="Payment gateway provider"
+    )
+    gateway_transaction_id = models.CharField(
+        max_length=200,
+        blank=True,
+        db_index=True
+    )
+    gateway_access_code = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Paystack access code for authorization"
+    )
+    gateway_authorization_url = models.URLField(
+        blank=True,
+        help_text="URL for payment authorization (if applicable)"
+    )
+    gateway_response = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Full gateway response for debugging"
+    )
+    gateway_fees = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Payment gateway fees (pesewas converted to GHS)"
+    )
+    failure_reason = models.TextField(
+        blank=True,
+        help_text="Reason for payment failure"
+    )
+    
+    # Invoice (optional for MoMo payments, required for invoice method)
+    invoice_number = models.CharField(max_length=50, unique=True, blank=True, null=True)
+    invoice_date = models.DateField(null=True, blank=True)
+    invoice_due_date = models.DateField(null=True, blank=True)
     
     # Timestamps
     paid_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     # Admin
     recorded_by = models.ForeignKey(
@@ -559,6 +630,50 @@ class InstitutionalPayment(models.Model):
         ).count() + 1
         self.invoice_number = f"INV-{year}-{count:04d}"
         return self.invoice_number
+    
+    @classmethod
+    def generate_reference(cls) -> str:
+        """
+        Generate unique payment reference
+        Format: INST-YYYYMMDD-XXXXXXXX
+        """
+        date_str = timezone.now().strftime('%Y%m%d')
+        random_part = secrets.token_hex(4).upper()
+        return f"INST-{date_str}-{random_part}"
+    
+    def mark_as_completed(self, gateway_response: dict = None):
+        """
+        Mark payment as completed and activate subscriber
+        """
+        from dateutil.relativedelta import relativedelta
+        
+        self.payment_status = 'completed'
+        self.paid_at = timezone.now()
+        if gateway_response:
+            self.gateway_response = gateway_response
+            if 'id' in gateway_response:
+                self.gateway_transaction_id = str(gateway_response['id'])
+            if 'fees' in gateway_response:
+                # Convert pesewas to GHS
+                self.gateway_fees = Decimal(gateway_response['fees']) / 100
+        
+        self.save()
+        
+        # Activate subscriber and extend subscription period
+        subscriber = self.subscriber
+        subscriber.status = 'active'
+        subscriber.current_period_start = self.period_start
+        subscriber.current_period_end = self.period_end
+        subscriber.save(update_fields=['status', 'current_period_start', 'current_period_end'])
+    
+    def mark_as_failed(self, reason: str = None, gateway_response: dict = None):
+        """Mark payment as failed"""
+        self.payment_status = 'failed'
+        if reason:
+            self.failure_reason = reason
+        if gateway_response:
+            self.gateway_response = gateway_response
+        self.save()
 
 
 class InstitutionalInquiry(models.Model):

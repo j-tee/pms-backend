@@ -141,21 +141,22 @@ class InitiateSubscriptionPaymentView(APIView):
     """
     POST /api/subscriptions/pay/
     
-    Initiate MoMo payment for marketplace subscription fee
+    Initiate Paystack payment for marketplace activation fee.
+    Farmer is redirected to Paystack's hosted checkout page where they
+    can choose their preferred payment method (MoMo, Card, Bank, USSD).
     
     Request body:
     {
-        "phone": "0241234567",
-        "provider": "mtn"  // mtn, vodafone, airteltigo, telecel
+        "callback_url": "https://yourapp.com/payment/callback"  // optional
     }
     
     Response:
     {
         "status": "success",
-        "message": "Payment initialized. Please authorize on your phone.",
+        "message": "Payment initialized. Complete payment on the checkout page.",
         "reference": "SUB-20260105-A3B4C5D6",
-        "amount": 50.00,
-        "display_text": "Dial *170# to approve payment"
+        "authorization_url": "https://checkout.paystack.com/abc123",
+        "amount": "50.00"
     }
     """
     permission_classes = [IsAuthenticated]
@@ -180,13 +181,11 @@ class InitiateSubscriptionPaymentView(APIView):
                 'code': 'FARM_NOT_APPROVED'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate request data
+        # Validate request data (optional callback_url)
         serializer = InitiatePaymentSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        phone = serializer.validated_data['phone']
-        provider = serializer.validated_data['provider']
         callback_url = serializer.validated_data.get('callback_url')
         
         # Get or create subscription
@@ -215,21 +214,41 @@ class InitiateSubscriptionPaymentView(APIView):
             }
         )
         
-        # Generate payment reference
-        reference = SubscriptionPayment.generate_reference()
-        
         # Calculate billing period
         period_start = timezone.now().date()
         period_end = period_start + relativedelta(months=1)
+        
+        # IDEMPOTENCY: Check for existing pending/processing payment for this period
+        existing_payment = SubscriptionPayment.objects.filter(
+            subscription=subscription,
+            period_start=period_start,
+            period_end=period_end,
+            status__in=['pending', 'processing']
+        ).first()
+        
+        if existing_payment:
+            # Return existing payment details (idempotent)
+            logger.info(f"Idempotent payment request: returning existing payment {existing_payment.payment_reference}")
+            return Response({
+                'status': 'success',
+                'message': 'Payment already initialized. Complete payment on the checkout page.',
+                'reference': existing_payment.payment_reference,
+                'authorization_url': existing_payment.gateway_authorization_url,
+                'access_code': existing_payment.gateway_access_code,
+                'amount': str(amount),
+                'period_start': period_start.isoformat(),
+                'period_end': period_end.isoformat(),
+            })
+        
+        # Generate payment reference
+        reference = SubscriptionPayment.generate_reference()
         
         # Create pending payment record
         payment = SubscriptionPayment.objects.create(
             subscription=subscription,
             amount=amount,
-            payment_method='mobile_money',
+            payment_method='paystack',  # Generic - user chooses on checkout page
             payment_reference=reference,
-            momo_phone=phone,
-            momo_provider=provider,
             status='pending',
             period_start=period_start,
             period_end=period_end,
@@ -237,19 +256,17 @@ class InitiateSubscriptionPaymentView(APIView):
             payment_date=timezone.now().date(),
         )
         
-        # Initialize Paystack payment
+        # Initialize Paystack payment (hosted checkout)
         try:
-            # Use email from user, fallback to farm email
-            email = user.email or farm.email or f"{phone}@farmer.yea.gov.gh"
+            # Use email from user, fallback to farm email or generated
+            email = user.email or farm.email or f"farmer-{farm.id}@yea.gov.gh"
             
             # Convert GHS to pesewas
             amount_pesewas = PaystackService.convert_to_pesewas(amount)
             
-            result = PaystackService.initialize_momo_payment(
+            result = PaystackService.initialize_transaction(
                 amount=amount_pesewas,
                 email=email,
-                phone=phone,
-                provider=provider,
                 reference=reference,
                 metadata={
                     'payment_id': str(payment.id),
@@ -273,12 +290,13 @@ class InitiateSubscriptionPaymentView(APIView):
             
             return Response({
                 'status': 'success',
-                'message': result.get('message', 'Payment initialized. Please authorize on your phone.'),
+                'message': result.get('message', 'Payment initialized. Complete payment on the checkout page.'),
                 'reference': reference,
                 'authorization_url': result.get('authorization_url'),
                 'access_code': result.get('access_code'),
-                'amount': amount,
-                'display_text': f'A payment request of GHS {amount} has been sent to {phone}. Please approve on your phone.',
+                'amount': str(amount),
+                'period_start': period_start.isoformat(),
+                'period_end': period_end.isoformat(),
             })
             
         except PaystackError as e:
@@ -598,11 +616,122 @@ class PaystackWebhookView(APIView):
         return HttpResponse(status=200)
 
 
+# =============================================================================
+# INSTITUTIONAL PAYMENT WEBHOOK (for institutional_views.py to import)
+# =============================================================================
+
+@method_decorator(csrf_exempt, name='dispatch')
+class InstitutionalPaystackWebhookView(APIView):
+    """
+    POST /api/institutional/webhooks/paystack/
+    
+    Handle Paystack webhook events for institutional data subscriptions.
+    
+    Events handled:
+    - charge.success: Payment was successful
+    - charge.failed: Payment failed
+    """
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        from subscriptions.institutional_models import InstitutionalPayment
+        
+        # Get webhook signature
+        signature = request.headers.get('X-Paystack-Signature', '')
+        
+        # Verify signature
+        if not PaystackService.verify_webhook_signature(request.body, signature):
+            logger.warning("Invalid Paystack webhook signature (institutional)")
+            return HttpResponse(status=401)
+        
+        try:
+            payload = request.data
+            event = payload.get('event')
+            data = payload.get('data', {})
+            
+            logger.info(f"Institutional Paystack webhook received: {event}", extra={
+                'reference': data.get('reference'),
+                'event': event
+            })
+            
+            if event == 'charge.success':
+                return self._handle_charge_success(data)
+            
+            elif event == 'charge.failed':
+                return self._handle_charge_failed(data)
+            
+            # Acknowledge other events
+            return HttpResponse(status=200)
+            
+        except Exception as e:
+            logger.exception(f"Institutional webhook processing error: {e}")
+            return HttpResponse(status=500)
+    
+    def _handle_charge_success(self, data):
+        """Handle successful institutional payment"""
+        from subscriptions.institutional_models import InstitutionalPayment
+        
+        reference = data.get('reference')
+        
+        if not reference:
+            return HttpResponse(status=400)
+        
+        try:
+            payment = InstitutionalPayment.objects.get(payment_reference=reference)
+            
+            # IDEMPOTENCY: Skip if already processed
+            if payment.payment_status == 'completed':
+                logger.info(f"Webhook (institutional): Payment already completed for {reference}")
+                return HttpResponse(status=200)
+            
+            # Mark as completed
+            payment.mark_as_completed(gateway_response=data)
+            
+            logger.info(f"Webhook (institutional): Payment completed for {reference}")
+            
+            # TODO: Send email confirmation to subscriber
+            
+        except InstitutionalPayment.DoesNotExist:
+            logger.warning(f"Webhook (institutional): Payment not found for reference {reference}")
+        
+        return HttpResponse(status=200)
+    
+    def _handle_charge_failed(self, data):
+        """Handle failed institutional payment"""
+        from subscriptions.institutional_models import InstitutionalPayment
+        
+        reference = data.get('reference')
+        
+        if not reference:
+            return HttpResponse(status=400)
+        
+        try:
+            payment = InstitutionalPayment.objects.get(payment_reference=reference)
+            
+            # IDEMPOTENCY: Skip if already processed
+            if payment.payment_status in ['completed', 'failed']:
+                logger.info(f"Webhook (institutional): Payment already processed for {reference}")
+                return HttpResponse(status=200)
+            
+            payment.mark_as_failed(
+                reason=data.get('gateway_response', 'Payment failed'),
+                gateway_response=data
+            )
+            
+            logger.info(f"Webhook (institutional): Payment failed for {reference}")
+            
+        except InstitutionalPayment.DoesNotExist:
+            logger.warning(f"Webhook (institutional): Payment not found for reference {reference}")
+        
+        return HttpResponse(status=200)
+
+
 class MoMoProvidersView(APIView):
     """
     GET /api/subscriptions/momo-providers/
     
-    Get list of supported mobile money providers
+    Get list of supported mobile money providers.
+    DEPRECATED: Use /api/subscriptions/payment-methods/ instead.
     """
     permission_classes = [AllowAny]
     
@@ -614,6 +743,47 @@ class MoMoProvidersView(APIView):
             {'code': 'telecel', 'name': 'Telecel Cash', 'prefixes': ['027']},
         ]
         return Response(providers)
+
+
+class PaymentMethodsView(APIView):
+    """
+    GET /api/subscriptions/payment-methods/
+    
+    Get list of supported payment methods via Paystack hosted checkout.
+    """
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        return Response({
+            'payment_gateway': 'Paystack',
+            'methods': [
+                {
+                    'code': 'mobile_money',
+                    'name': 'Mobile Money',
+                    'description': 'Pay with MTN MoMo, Vodafone Cash, AirtelTigo Money, or Telecel Cash',
+                    'providers': ['MTN', 'Vodafone', 'AirtelTigo', 'Telecel']
+                },
+                {
+                    'code': 'card',
+                    'name': 'Card Payment',
+                    'description': 'Pay with Visa, Mastercard, or Verve cards',
+                    'providers': ['Visa', 'Mastercard', 'Verve']
+                },
+                {
+                    'code': 'bank_transfer',
+                    'name': 'Bank Transfer',
+                    'description': 'Pay via bank transfer',
+                    'providers': []
+                },
+                {
+                    'code': 'ussd',
+                    'name': 'USSD',
+                    'description': 'Pay using USSD banking',
+                    'providers': []
+                }
+            ],
+            'note': 'Payment method is selected on the Paystack checkout page'
+        })
 
 
 # Admin views for manual payment verification
