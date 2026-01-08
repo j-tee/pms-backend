@@ -234,33 +234,32 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 - Farmers pay the same amount every month they wish to continue selling on the platform
 - ✅ Use: "Marketplace Activation Fee", "Monthly Marketplace Fee", "Seller Access Fee"
 
-**IMPORTANT - Transaction Commission SUSPENDED**:
+**IMPORTANT - Only ONE Fee for Farmers**:
+- **GHS 50/month Marketplace Activation Fee** is the ONLY fee
 - Transaction commissions are **NOT applied** (farmers keep 100% of sales)
 - Payments happen **OFF-PLATFORM** (cash, MoMo, bank transfer direct to farmer)
 - Farmers only use the platform to **record sales** for tracking
-- This is intentional - Ghanaian farmers are sensitive to platform fees
-- Commission can be enabled via `PlatformSettings.enable_transaction_commission = True` in future
+- This is intentional - Ghanaian farmers are VERY sensitive to platform fees
+- NO additional tiers or premium features that cost extra money
 
 **Current Fee Structure**:
 | Fee Type | Amount | Status |
 |----------|--------|--------|
 | Marketplace Activation Fee | GHS 50/month | ✅ ACTIVE |
-| Transaction Commission | 2-5% | ❌ SUSPENDED |
-| Verified Seller Tier | GHS 50/month | ❌ Phase 2 |
+| Transaction Commission | 2-5% | ❌ REMOVED |
 
 **Access Tiers** (`farms.Farm.subscription_type`):
 | Value | Description |
 |-------|-------------|
 | `none` | No marketplace access |
 | `government_subsidized` | Government-funded access (program beneficiaries) |
-| `standard` | Self-funded marketplace access (GHS 50/month default) |
-| `verified` | Premium verified seller tier |
+| `standard` | Self-funded marketplace access (GHS 50/month) |
 
 **Platform Settings** (`sales_revenue.PlatformSettings` singleton):
 - All monetization values are admin-configurable via `/api/admin/platform-settings/`
 - Access via `PlatformSettings.get_settings()` - never hardcode fees
-- Key fields: `marketplace_activation_fee`, `marketplace_trial_days`, `enable_government_subsidy`, etc.
-- `enable_transaction_commission`: **False by default** (suspended)
+- Key fields: `marketplace_activation_fee`, `marketplace_trial_days`, `enable_government_subsidy`
+- `enable_transaction_commission`: **False** (suspended, farmers keep 100%)
 
 **Decorators** (`accounts/decorators.py`):
 ```python

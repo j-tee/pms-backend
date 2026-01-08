@@ -177,10 +177,7 @@ class PlatformSettingsResetView(APIView):
             # Government Subsidy
             'enable_government_subsidy': False,
             'government_subsidy_percentage': 100.0,
-            # Verified Seller (Phase 2 - disabled by default)
-            'enable_verified_seller_tier': False,
-            'verified_seller_fee': 50.00,
-            # Transaction Commission (Phase 2 - disabled by default)
+            # Transaction Commission (SUSPENDED - farmers keep 100%)
             'enable_transaction_commission': False,
             # Advertising & Free Tier
             'enable_ads': True,

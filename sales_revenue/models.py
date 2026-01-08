@@ -168,19 +168,8 @@ class PlatformSettings(models.Model):
         help_text="Percentage of marketplace fee covered by government (0-100)"
     )
     
-    # Verified/Priority Seller Tier (Phase 2)
-    verified_seller_fee = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal('50.00'),
-        validators=[MinValueValidator(0)],
-        help_text="Monthly fee for verified/priority seller status (GHS)"
-    )
-    
-    enable_verified_seller_tier = models.BooleanField(
-        default=False,
-        help_text="Enable verified/priority seller tier (Phase 2)"
-    )
+    # NOTE: Verified Seller Tier REMOVED - Ghanaian farmers are averse to additional fees.
+    # The only fee is the GHS 50/month Marketplace Activation Fee.
     
     # Transaction Commission Settings (SUSPENDED)
     # NOTE: Currently suspended. Farmers receive payments OFF-PLATFORM and record

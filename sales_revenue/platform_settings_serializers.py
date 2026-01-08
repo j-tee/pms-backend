@@ -44,10 +44,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             # Government Subsidy
             'enable_government_subsidy',
             'government_subsidy_percentage',
-            # Verified Seller (Phase 2)
-            'enable_verified_seller_tier',
-            'verified_seller_fee',
-            # Transaction Commission (Phase 2)
+            # Transaction Commission (SUSPENDED)
             'enable_transaction_commission',
             # Advertising & Free Tier
             'enable_ads',
@@ -84,12 +81,9 @@ class MarketplaceMonetizationSerializer(serializers.ModelSerializer):
             # Government Subsidy
             'enable_government_subsidy',
             'government_subsidy_percentage',
-            # Verified Seller (Phase 2)
-            'enable_verified_seller_tier',
-            'verified_seller_fee',
-            # Transaction Commission (Phase 2)
+            # Transaction Commission (SUSPENDED)
             'enable_transaction_commission',
-            # Commission Tiers (for Phase 2 transaction commission)
+            # Commission Tiers (for transaction commission if ever enabled)
             'commission_tier_1_percentage',
             'commission_tier_2_percentage',
             'commission_tier_3_percentage',
@@ -114,8 +108,6 @@ class PublicPlatformSettingsSerializer(serializers.ModelSerializer):
         fields = [
             'marketplace_activation_fee',
             'marketplace_trial_days',
-            'enable_verified_seller_tier',
-            'verified_seller_fee',
             'free_tier_can_view_marketplace',
             'free_tier_can_view_prices',
             'free_tier_can_access_education',

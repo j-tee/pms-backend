@@ -190,15 +190,7 @@ class PlatformSettingsAdmin(admin.ModelAdmin):
             ),
             'description': 'Configure government subsidy for enrolled farmers'
         }),
-        ('Verified Seller Tier (Phase 2)', {
-            'fields': (
-                'enable_verified_seller_tier',
-                'verified_seller_fee',
-            ),
-            'description': 'Priority/verified seller tier - enable when ready for Phase 2',
-            'classes': ('collapse',)
-        }),
-        ('Transaction Commission (Phase 2)', {
+        ('Transaction Commission (SUSPENDED)', {
             'fields': (
                 'enable_transaction_commission',
             ),

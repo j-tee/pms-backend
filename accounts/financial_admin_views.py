@@ -59,7 +59,7 @@ class PaymentHistoryView(APIView):
     
     Query Parameters:
         - status: completed, pending, failed, refunded
-        - payment_type: marketplace_activation, subscription_renewal, verified_seller
+        - payment_type: marketplace_activation, subscription_renewal
         - payment_method: momo, bank, card, cash
         - date_from: YYYY-MM-DD
         - date_to: YYYY-MM-DD
@@ -173,11 +173,9 @@ class PaymentHistoryView(APIView):
     
     def _determine_payment_type(self, payment):
         """Determine payment type from payment context"""
+        # Note: Verified seller tier REMOVED - all are marketplace_activation
         if payment.subscription and payment.subscription.farm:
-            farm = payment.subscription.farm
-            if farm.subscription_type == 'verified':
-                return 'verified_seller'
-            elif payment.subscription.status == 'trial':
+            if payment.subscription.status == 'trial':
                 return 'marketplace_activation'
         return 'subscription_renewal'
     
@@ -281,24 +279,15 @@ class RevenueSummaryView(APIView):
     
     def _get_type_breakdown(self, payments):
         """Get revenue breakdown by payment type"""
-        # Since we don't have explicit payment_type field, derive from subscription
+        # Note: Verified seller tier REMOVED - only marketplace_activation fees exist
         marketplace_activation = Decimal('0.00')
-        verified_seller_fees = Decimal('0.00')
-        transaction_commission = Decimal('0.00')
+        transaction_commission = Decimal('0.00')  # SUSPENDED - always 0
         
         for payment in payments:
-            if payment.subscription and payment.subscription.farm:
-                farm = payment.subscription.farm
-                if farm.subscription_type == 'verified':
-                    verified_seller_fees += payment.amount
-                else:
-                    marketplace_activation += payment.amount
-            else:
-                marketplace_activation += payment.amount
+            marketplace_activation += payment.amount
         
         return {
             'marketplace_activation': str(marketplace_activation),
-            'verified_seller_fees': str(verified_seller_fees),
             'transaction_commission': str(transaction_commission),
         }
     
