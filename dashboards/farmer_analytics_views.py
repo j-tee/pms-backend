@@ -115,10 +115,8 @@ class ProductionAnalyticsView(BaseFarmerAnalyticsView):
             }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_production_analytics(days=days)
-        return Response({
-            'period_days': days,
-            'data': analytics
-        })
+        analytics['period_days'] = days
+        return Response(analytics)
 
 
 class FlockHealthAnalyticsView(BaseFarmerAnalyticsView):
@@ -149,10 +147,8 @@ class FlockHealthAnalyticsView(BaseFarmerAnalyticsView):
             }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_flock_health_analytics(days=days)
-        return Response({
-            'period_days': days,
-            'data': analytics
-        })
+        analytics['period_days'] = days
+        return Response(analytics)
 
 
 class FinancialAnalyticsView(BaseFarmerAnalyticsView):
@@ -182,10 +178,8 @@ class FinancialAnalyticsView(BaseFarmerAnalyticsView):
             }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_financial_analytics(days=days)
-        return Response({
-            'period_days': days,
-            'data': analytics
-        })
+        analytics['period_days'] = days
+        return Response(analytics)
 
 
 class FeedAnalyticsView(BaseFarmerAnalyticsView):
@@ -215,10 +209,8 @@ class FeedAnalyticsView(BaseFarmerAnalyticsView):
             }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_feed_analytics(days=days)
-        return Response({
-            'period_days': days,
-            'data': analytics
-        })
+        analytics['period_days'] = days
+        return Response(analytics)
 
 
 class MarketplaceAnalyticsView(BaseFarmerAnalyticsView):
@@ -248,10 +240,8 @@ class MarketplaceAnalyticsView(BaseFarmerAnalyticsView):
             }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_marketplace_analytics(days=days)
-        return Response({
-            'period_days': days,
-            'data': analytics
-        })
+        analytics['period_days'] = days
+        return Response(analytics)
 
 
 class InventoryAnalyticsView(BaseFarmerAnalyticsView):
@@ -277,7 +267,7 @@ class InventoryAnalyticsView(BaseFarmerAnalyticsView):
             }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_inventory_analytics()
-        return Response({'data': analytics})
+        return Response(analytics)
 
 
 class BenchmarkAnalyticsView(BaseFarmerAnalyticsView):
@@ -305,10 +295,8 @@ class BenchmarkAnalyticsView(BaseFarmerAnalyticsView):
             }, status=status.HTTP_404_NOT_FOUND)
         
         analytics = service.get_benchmark_analytics(days=days)
-        return Response({
-            'period_days': days,
-            'data': analytics
-        })
+        analytics['period_days'] = days
+        return Response(analytics)
 
 
 class FarmerAnalyticsSummaryView(BaseFarmerAnalyticsView):
