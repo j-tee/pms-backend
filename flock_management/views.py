@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
 from django.shortcuts import get_object_or_404
 from django.db import IntegrityError, transaction
 from datetime import datetime
@@ -17,6 +18,25 @@ from decimal import Decimal
 
 from farms.models import Farm, PoultryHouse
 from .models import DailyProduction, Flock, MortalityRecord, HealthRecord
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    """Standard pagination for flock management views."""
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+    
+    def get_paginated_response_data(self, data):
+        """Return pagination metadata along with results."""
+        return {
+            'count': self.page.paginator.count,
+            'total_pages': self.page.paginator.num_pages,
+            'current_page': self.page.number,
+            'page_size': self.get_page_size(self.request),
+            'next': self.get_next_link(),
+            'previous': self.get_previous_link(),
+            'results': data,
+        }
 
 
 class FlockView(APIView):
@@ -30,6 +50,7 @@ class FlockView(APIView):
     Manage bird flocks/batches.
     """
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     
     def get(self, request, flock_id=None, active_only=False):
         """Get all flocks or specific flock by ID"""
@@ -73,12 +94,17 @@ class FlockView(APIView):
         if housed_in:
             flocks = flocks.filter(housed_in_id=housed_in)
         
-        data = [self._serialize_flock(flock) for flock in flocks]
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(flocks, request)
         
-        return Response({
-            'flocks': data,
-            'total': len(data)
-        })
+        if page is not None:
+            data = [self._serialize_flock(flock) for flock in page]
+            return Response(paginator.get_paginated_response_data(data))
+        
+        # Fallback for non-paginated
+        data = [self._serialize_flock(flock) for flock in flocks]
+        return Response({'results': data, 'count': len(data)})
     
     def post(self, request):
         """Create new flock"""
@@ -424,6 +450,25 @@ class DailyProductionView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def _serialize_record(self, rec):
+        """Serialize a DailyProduction record."""
+        return {
+            'id': str(rec.id),
+            'flock_id': str(rec.flock_id),
+            'flock_number': rec.flock.flock_number if rec.flock else None,
+            'production_date': rec.production_date.isoformat() if rec.production_date else None,
+            'eggs_collected': rec.eggs_collected,
+            'birds_died': rec.birds_died,
+            'feed_consumed_kg': float(rec.feed_consumed_kg) if rec.feed_consumed_kg else 0,
+            'water_consumed_liters': float(rec.water_consumed_liters) if hasattr(rec, 'water_consumed_liters') and rec.water_consumed_liters else None,
+            'feed_cost_today': float(rec.feed_cost_today) if rec.feed_cost_today else 0,
+            'production_rate_percent': float(rec.production_rate_percent) if rec.production_rate_percent else 0,
+            'notes': rec.unusual_behavior,
+            'general_health': rec.general_health,
+            'recorded_at': rec.recorded_at.isoformat() if rec.recorded_at else None,
+        }
 
     def get(self, request):
         try:
@@ -436,25 +481,17 @@ class DailyProductionView(APIView):
         if flock_id:
             qs = qs.filter(flock_id=flock_id)
 
-        data = [
-            {
-                'id': str(rec.id),
-                'flock_id': str(rec.flock_id),
-                'flock_number': rec.flock.flock_number,
-                'production_date': rec.production_date.isoformat(),
-                'eggs_collected': rec.eggs_collected,
-                'birds_died': rec.birds_died,
-                'feed_consumed_kg': float(rec.feed_consumed_kg),
-                'feed_cost_today': float(rec.feed_cost_today),
-                'production_rate_percent': float(rec.production_rate_percent),
-                'notes': rec.unusual_behavior,
-                'general_health': rec.general_health,
-                'recorded_at': rec.recorded_at.isoformat(),
-            }
-            for rec in qs
-        ]
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(qs, request)
+        
+        if page is not None:
+            data = [self._serialize_record(rec) for rec in page]
+            return Response(paginator.get_paginated_response_data(data))
 
-        return Response({'records': data, 'total': len(data)})
+        # Fallback for non-paginated (shouldn't happen)
+        data = [self._serialize_record(rec) for rec in qs]
+        return Response({'results': data, 'count': len(data)})
 
     def post(self, request):
         try:
@@ -685,6 +722,7 @@ class MortalityRecordView(MortalityBaseView):
 
     List or create mortality records scoped to the farmer's farm.
     """
+    pagination_class = StandardResultsSetPagination
 
     def get(self, request, pending_only=False):
         farm = self._get_farm(request)
@@ -720,8 +758,17 @@ class MortalityRecordView(MortalityBaseView):
         if pending_only:
             queryset = queryset.filter(vet_inspection_required=True, vet_inspected=False)
 
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        
+        if page is not None:
+            records = [self._serialize_record(rec) for rec in page]
+            return Response(paginator.get_paginated_response_data(records))
+
+        # Fallback for non-paginated
         records = [self._serialize_record(rec) for rec in queryset]
-        return Response({'records': records, 'total': len(records)})
+        return Response({'results': records, 'count': len(records)})
 
     def post(self, request):
         farm = self._get_farm(request)
@@ -850,6 +897,31 @@ class HealthRecordView(MortalityBaseView):
 
     Capture vaccinations/medications/health check records for a flock.
     """
+    pagination_class = StandardResultsSetPagination
+
+    def _serialize_health_record(self, rec):
+        return {
+            'id': str(rec.id),
+            'flock_id': str(rec.flock_id),
+            'flock_number': rec.flock.flock_number,
+            'record_date': rec.record_date.isoformat(),
+            'record_type': rec.record_type,
+            'disease': rec.disease,
+            'diagnosis': rec.diagnosis,
+            'symptoms': rec.symptoms,
+            'treatment_name': rec.treatment_name,
+            'treatment_method': rec.treatment_method,
+            'dosage': rec.dosage,
+            'administering_person': rec.administering_person,
+            'vet_name': rec.vet_name,
+            'vet_license': rec.vet_license,
+            'birds_affected': rec.birds_affected,
+            'cost_ghs': float(rec.cost_ghs),
+            'outcome': rec.outcome,
+            'follow_up_date': rec.follow_up_date.isoformat() if rec.follow_up_date else None,
+            'notes': rec.notes,
+            'created_at': rec.created_at.isoformat(),
+        }
 
     def get(self, request):
         farm = self._get_farm(request)
@@ -878,33 +950,17 @@ class HealthRecordView(MortalityBaseView):
         if end_date:
             qs = qs.filter(record_date__lte=end_date)
 
-        data = [
-            {
-                'id': str(rec.id),
-                'flock_id': str(rec.flock_id),
-                'flock_number': rec.flock.flock_number,
-                'record_date': rec.record_date.isoformat(),
-                'record_type': rec.record_type,
-                'disease': rec.disease,
-                'diagnosis': rec.diagnosis,
-                'symptoms': rec.symptoms,
-                'treatment_name': rec.treatment_name,
-                'treatment_method': rec.treatment_method,
-                'dosage': rec.dosage,
-                'administering_person': rec.administering_person,
-                'vet_name': rec.vet_name,
-                'vet_license': rec.vet_license,
-                'birds_affected': rec.birds_affected,
-                'cost_ghs': float(rec.cost_ghs),
-                'outcome': rec.outcome,
-                'follow_up_date': rec.follow_up_date.isoformat() if rec.follow_up_date else None,
-                'notes': rec.notes,
-                'created_at': rec.created_at.isoformat(),
-            }
-            for rec in qs
-        ]
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(qs, request)
+        
+        if page is not None:
+            data = [self._serialize_health_record(rec) for rec in page]
+            return Response(paginator.get_paginated_response_data(data))
 
-        return Response({'records': data, 'total': len(data)})
+        # Fallback for non-paginated
+        data = [self._serialize_health_record(rec) for rec in qs]
+        return Response({'results': data, 'count': len(data)})
 
     def post(self, request):
         farm = self._get_farm(request)

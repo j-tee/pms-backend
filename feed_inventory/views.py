@@ -12,6 +12,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -22,6 +23,25 @@ from flock_management.models import Flock, DailyProduction
 from .models import FeedInventory, FeedPurchase, FeedType, FeedConsumption
 
 
+class StandardResultsSetPagination(PageNumberPagination):
+    """Standard pagination for feed inventory views."""
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def get_paginated_response_data(self, data):
+        """Return pagination metadata with results."""
+        return {
+            'count': self.page.paginator.count,
+            'total_pages': self.page.paginator.num_pages,
+            'current_page': self.page.number,
+            'page_size': self.get_page_size(self.request),
+            'next': self.get_next_link(),
+            'previous': self.get_previous_link(),
+            'results': data,
+        }
+
+
 class FeedPurchaseView(APIView):
     """
     GET  /api/feed/purchases/ - List all feed purchases
@@ -29,6 +49,37 @@ class FeedPurchaseView(APIView):
     """
     
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    
+    def _serialize_purchase(self, purchase):
+        """Serialize a single feed purchase record."""
+        return {
+            'id': str(purchase.id),
+            'batch_number': purchase.batch_number,
+            'purchase_date': purchase.purchase_date.isoformat(),
+            'delivery_date': purchase.delivery_date.isoformat() if purchase.delivery_date else None,
+            'supplier': purchase.supplier,
+            'supplier_contact': purchase.supplier_contact,
+            'feed_type': purchase.feed_type.name,
+            'feed_type_id': str(purchase.feed_type_id),
+            'brand': purchase.brand,
+            'quantity_bags': purchase.quantity_bags,
+            'bag_weight_kg': float(purchase.bag_weight_kg),
+            'quantity_kg': float(purchase.quantity_kg),
+            'stock_balance_kg': float(purchase.stock_balance_kg),
+            'unit_cost_ghs': float(purchase.unit_cost_ghs),
+            'unit_price': float(purchase.unit_price),
+            'total_cost': float(purchase.total_cost),
+            'payment_status': purchase.payment_status,
+            'payment_method': purchase.payment_method,
+            'amount_paid': float(purchase.amount_paid),
+            'receipt_number': purchase.receipt_number,
+            'invoice_number': purchase.invoice_number,
+            'received_by': purchase.received_by,
+            'notes': purchase.notes,
+            'created_at': purchase.created_at.isoformat(),
+            'created_by': purchase.created_by.email if purchase.created_by else None,
+        }
     
     def get(self, request):
         """List all feed purchases for the farmer's farm."""
@@ -42,38 +93,17 @@ class FeedPurchaseView(APIView):
             .order_by('-purchase_date', '-created_at')
         )
         
-        data = [
-            {
-                'id': str(purchase.id),
-                'batch_number': purchase.batch_number,
-                'purchase_date': purchase.purchase_date.isoformat(),
-                'delivery_date': purchase.delivery_date.isoformat() if purchase.delivery_date else None,
-                'supplier': purchase.supplier,
-                'supplier_contact': purchase.supplier_contact,
-                'feed_type': purchase.feed_type.name,
-                'feed_type_id': str(purchase.feed_type_id),
-                'brand': purchase.brand,
-                'quantity_bags': purchase.quantity_bags,
-                'bag_weight_kg': float(purchase.bag_weight_kg),
-                'quantity_kg': float(purchase.quantity_kg),
-                'stock_balance_kg': float(purchase.stock_balance_kg),
-                'unit_cost_ghs': float(purchase.unit_cost_ghs),
-                'unit_price': float(purchase.unit_price),
-                'total_cost': float(purchase.total_cost),
-                'payment_status': purchase.payment_status,
-                'payment_method': purchase.payment_method,
-                'amount_paid': float(purchase.amount_paid),
-                'receipt_number': purchase.receipt_number,
-                'invoice_number': purchase.invoice_number,
-                'received_by': purchase.received_by,
-                'notes': purchase.notes,
-                'created_at': purchase.created_at.isoformat(),
-                'created_by': purchase.created_by.email if purchase.created_by else None,
-            }
-            for purchase in purchases
-        ]
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(purchases, request)
         
-        return Response({'purchases': data, 'total': len(data)})
+        if page is not None:
+            data = [self._serialize_purchase(purchase) for purchase in page]
+            return Response(paginator.get_paginated_response_data(data))
+        
+        # Fallback for non-paginated
+        data = [self._serialize_purchase(purchase) for purchase in purchases]
+        return Response({'results': data, 'count': len(data)})
     
     def post(self, request):
         """Create a feed purchase and update inventory."""
@@ -232,6 +262,24 @@ class FeedStockView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def _serialize_inventory(self, inv):
+        """Serialize a single inventory record."""
+        return {
+            'id': str(inv.id),
+            'feed_type': inv.feed_type.name,
+            'feed_type_id': str(inv.feed_type_id),
+            'current_stock_kg': float(inv.current_stock_kg),
+            'min_stock_level': float(inv.min_stock_level),
+            'max_stock_level': float(inv.max_stock_level),
+            'average_cost_per_kg': float(inv.average_cost_per_kg),
+            'total_value': float(inv.total_value),
+            'low_stock_alert': inv.low_stock_alert,
+            'storage_location': inv.storage_location,
+            'last_purchase_date': inv.last_purchase_date.isoformat() if inv.last_purchase_date else None,
+            'updated_at': inv.updated_at.isoformat(),
+        }
 
     def get(self, request):
         """List current feed inventory for the farmer's farm."""
@@ -245,25 +293,17 @@ class FeedStockView(APIView):
             .order_by('feed_type__name')
         )
 
-        data = [
-            {
-                'id': str(inv.id),
-                'feed_type': inv.feed_type.name,
-                'feed_type_id': str(inv.feed_type_id),
-                'current_stock_kg': float(inv.current_stock_kg),
-                'min_stock_level': float(inv.min_stock_level),
-                'max_stock_level': float(inv.max_stock_level),
-                'average_cost_per_kg': float(inv.average_cost_per_kg),
-                'total_value': float(inv.total_value),
-                'low_stock_alert': inv.low_stock_alert,
-                'storage_location': inv.storage_location,
-                'last_purchase_date': inv.last_purchase_date.isoformat() if inv.last_purchase_date else None,
-                'updated_at': inv.updated_at.isoformat(),
-            }
-            for inv in inventory
-        ]
-
-        return Response({'inventory': data, 'total': len(data)})
+        # Apply pagination
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(inventory, request)
+        
+        if page is not None:
+            data = [self._serialize_inventory(inv) for inv in page]
+            return Response(paginator.get_paginated_response_data(data))
+        
+        # Fallback for non-paginated
+        data = [self._serialize_inventory(inv) for inv in inventory]
+        return Response({'results': data, 'count': len(data)})
 
     def post(self, request):
         """Create a feed purchase and update inventory."""
