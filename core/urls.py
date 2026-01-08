@@ -32,6 +32,13 @@ from subscriptions.urls import urlpatterns as subscription_urls
 from subscriptions.urls import webhook_urlpatterns as subscription_webhook_urls
 from subscriptions.urls import admin_urlpatterns as subscription_admin_urls
 
+# Import institutional data subscription URL patterns
+from subscriptions.institutional_urls import (
+    public_urlpatterns as institutional_public_urls,
+    institutional_urlpatterns as institutional_api_urls,
+    admin_urlpatterns as institutional_admin_urls,
+)
+
 # Import farmer analytics URL patterns
 from dashboards.farmer_analytics_urls import urlpatterns as farmer_analytics_urls
 
@@ -76,6 +83,9 @@ urlpatterns = [
     path('api/admin/', include((contact_admin_urls, 'contact_admin'))),  # Admin contact management
     path('api/cms/', include((cms_admin_urls, 'cms_admin'))),  # CMS management (SUPER_ADMIN only)
     path('api/public/cms/', include((cms_public_urls, 'cms_public'))),  # Public content pages (About Us, etc.)
+    path('api/public/data-subscriptions/', include((institutional_public_urls, 'institutional_public'))),  # Institutional data subscriptions landing
+    path('api/institutional/', include((institutional_api_urls, 'institutional'))),  # Institutional data API
+    path('api/admin/institutional/', include((institutional_admin_urls, 'institutional_admin'))),  # Admin institutional management
     path('api/', include('farms.urls')),  # Public farm application endpoints
 ]
 

@@ -51,3 +51,29 @@ class IsConstituencyOfficial(permissions.BasePermission):
             request.user.is_authenticated and 
             request.user.role == 'CONSTITUENCY_OFFICIAL'
         )
+
+
+class IsSuperAdmin(permissions.BasePermission):
+    """
+    Permission for Super Admin access (highest privilege level).
+    """
+    def has_permission(self, request, view):
+        return (
+            request.user and 
+            request.user.is_authenticated and 
+            request.user.role == 'SUPER_ADMIN'
+        )
+
+
+class IsYEAAdmin(permissions.BasePermission):
+    """
+    Permission for any YEA admin role (Super Admin, National Admin, or YEA Official).
+    Used for analytics and institutional subscription management.
+    """
+    def has_permission(self, request, view):
+        admin_roles = ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL']
+        return (
+            request.user and 
+            request.user.is_authenticated and 
+            request.user.role in admin_roles
+        )
