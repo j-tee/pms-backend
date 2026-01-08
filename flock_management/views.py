@@ -458,11 +458,17 @@ class DailyProductionView(APIView):
             'id': str(rec.id),
             'flock_id': str(rec.flock_id),
             'flock_number': rec.flock.flock_number if rec.flock else None,
+            'flock': rec.flock.flock_number if rec.flock else None,  # Alias for frontend
             'production_date': rec.production_date.isoformat() if rec.production_date else None,
+            'date': rec.production_date.isoformat() if rec.production_date else None,  # Alias for frontend
             'eggs_collected': rec.eggs_collected,
+            'eggs': rec.eggs_collected,  # Alias for frontend
             'birds_died': rec.birds_died,
+            'mortality': rec.birds_died,  # Alias for frontend
             'feed_consumed_kg': float(rec.feed_consumed_kg) if rec.feed_consumed_kg else 0,
+            'feed_kg': float(rec.feed_consumed_kg) if rec.feed_consumed_kg else 0,  # Alias for frontend
             'water_consumed_liters': float(rec.water_consumed_liters) if hasattr(rec, 'water_consumed_liters') and rec.water_consumed_liters else None,
+            'water_liters': float(rec.water_consumed_liters) if hasattr(rec, 'water_consumed_liters') and rec.water_consumed_liters else None,  # Alias
             'feed_cost_today': float(rec.feed_cost_today) if rec.feed_cost_today else 0,
             'production_rate_percent': float(rec.production_rate_percent) if rec.production_rate_percent else 0,
             'notes': rec.unusual_behavior,
