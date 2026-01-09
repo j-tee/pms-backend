@@ -473,6 +473,11 @@ class OrderStatusUpdateView(FarmScopedMixin, APIView):
             order.confirmed_at = timezone.now()
         elif new_status == 'completed' and not order.completed_at:
             order.completed_at = timezone.now()
+            # Update customer stats when order is completed
+            customer = order.customer
+            customer.total_orders = (customer.total_orders or 0) + 1
+            customer.total_purchases = (customer.total_purchases or Decimal('0')) + order.total_amount
+            customer.save(update_fields=['total_orders', 'total_purchases'])
         elif new_status == 'cancelled':
             order.cancelled_at = timezone.now()
             order.cancellation_reason = request.data.get('reason', '')
@@ -671,8 +676,29 @@ class MarketplaceAnalyticsView(FarmScopedMixin, APIView):
         # Top products by revenue
         top_products = Product.objects.filter(farm=farm).order_by('-total_revenue')[:10]
         
-        # Top customers
-        top_customers = Customer.objects.filter(farm=farm).order_by('-total_purchases')[:10]
+        # Top customers - calculate totals from all sales sources dynamically
+        # Includes: MarketplaceOrders (completed), EggSales, and BirdSales
+        top_customers = Customer.objects.filter(farm=farm).annotate(
+            # Count orders from all sources
+            marketplace_order_count=Count(
+                'marketplace_orders',
+                filter=Q(marketplace_orders__status='completed')
+            ),
+            egg_sale_count=Count('egg_purchases'),
+            bird_sale_count=Count('bird_purchases'),
+            calculated_total_orders=F('marketplace_order_count') + F('egg_sale_count') + F('bird_sale_count'),
+            # Sum purchases from all sources
+            marketplace_total=Coalesce(
+                Sum(
+                    'marketplace_orders__total_amount',
+                    filter=Q(marketplace_orders__status='completed')
+                ),
+                Decimal('0')
+            ),
+            egg_sales_total=Coalesce(Sum('egg_purchases__subtotal'), Decimal('0')),
+            bird_sales_total=Coalesce(Sum('bird_purchases__subtotal'), Decimal('0')),
+            calculated_total_purchases=F('marketplace_total') + F('egg_sales_total') + F('bird_sales_total')
+        ).order_by('-calculated_total_purchases')[:10]
         
         # Daily order counts (for chart)
         from django.db.models.functions import TruncDate
@@ -710,8 +736,8 @@ class MarketplaceAnalyticsView(FarmScopedMixin, APIView):
                 {
                     'id': str(c.id),
                     'name': c.get_full_name(),
-                    'total_orders': c.total_orders,
-                    'total_purchases': float(c.total_purchases)
+                    'total_orders': c.calculated_total_orders,
+                    'total_purchases': float(c.calculated_total_purchases)
                 }
                 for c in top_customers
             ],
