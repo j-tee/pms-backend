@@ -4,9 +4,12 @@
 .env.production
 .env.local
 
-# Documentation (ignore all .md files except README.md)
+# Documentation
+# Keep only README.md and .github/copilot-instructions.md
+docs/
 *.md
 !README.md
+!.github/copilot-instructions.md
 
 # Python
 *.py[cod]
