@@ -478,6 +478,12 @@ class OrderStatusUpdateView(FarmScopedMixin, APIView):
             customer.total_orders = (customer.total_orders or 0) + 1
             customer.total_purchases = (customer.total_purchases or Decimal('0')) + order.total_amount
             customer.save(update_fields=['total_orders', 'total_purchases'])
+            # Update product stats when order is completed
+            for item in order.items.all():
+                product = item.product
+                product.total_sold = (product.total_sold or 0) + item.quantity
+                product.total_revenue = (product.total_revenue or Decimal('0')) + item.line_total
+                product.save(update_fields=['total_sold', 'total_revenue'])
         elif new_status == 'cancelled':
             order.cancelled_at = timezone.now()
             order.cancellation_reason = request.data.get('reason', '')
@@ -673,8 +679,23 @@ class MarketplaceAnalyticsView(FarmScopedMixin, APIView):
             total=Coalesce(Sum('total_amount'), Decimal('0'))
         )
         
-        # Top products by revenue
-        top_products = Product.objects.filter(farm=farm).order_by('-total_revenue')[:10]
+        # Top products by revenue - calculate dynamically from completed order items
+        top_products = Product.objects.filter(farm=farm).annotate(
+            calculated_total_sold=Coalesce(
+                Sum(
+                    'order_items__quantity',
+                    filter=Q(order_items__order__status='completed')
+                ),
+                0
+            ),
+            calculated_total_revenue=Coalesce(
+                Sum(
+                    'order_items__line_total',
+                    filter=Q(order_items__order__status='completed')
+                ),
+                Decimal('0')
+            )
+        ).order_by('-calculated_total_revenue')[:10]
         
         # Top customers - calculate totals from all sales sources dynamically
         # Includes: MarketplaceOrders (completed), EggSales, and BirdSales
@@ -727,8 +748,8 @@ class MarketplaceAnalyticsView(FarmScopedMixin, APIView):
                 {
                     'id': str(p.id),
                     'name': p.name,
-                    'total_sold': p.total_sold,
-                    'total_revenue': float(p.total_revenue)
+                    'total_sold': p.calculated_total_sold,
+                    'total_revenue': float(p.calculated_total_revenue)
                 }
                 for p in top_products
             ],
