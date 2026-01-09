@@ -55,8 +55,12 @@ class RequestOTPView(APIView):
     Returns:
     {
         "message": "OTP sent to your phone",
-        "expires_in": 600  // seconds
+        "expires_in": 600,  // seconds
+        "already_verified": false  // true if phone was previously verified
     }
+    
+    Cost Optimization: If phone number was previously verified, 
+    no OTP is sent (saves SMS costs).
     """
     permission_classes = [AllowAny]
     
@@ -65,6 +69,20 @@ class RequestOTPView(APIView):
         serializer.is_valid(raise_exception=True)
         
         phone = serializer.validated_data['phone_number']
+        
+        # OPTIMIZATION: Check if phone is already verified
+        # This saves SMS costs by not sending OTP to previously verified numbers
+        try:
+            existing_customer = GuestCustomer.objects.get(phone_number=phone)
+            if existing_customer.phone_verified:
+                # Phone already verified - skip sending OTP
+                return Response({
+                    'message': 'Phone number already verified.',
+                    'already_verified': True,
+                    'expires_in': 0,
+                }, status=status.HTTP_200_OK)
+        except GuestCustomer.DoesNotExist:
+            pass  # New customer - proceed with OTP
         
         # Generate OTP
         otp = GuestOrderOTP.generate_for_phone(phone)
@@ -84,6 +102,7 @@ class RequestOTPView(APIView):
         
         return Response({
             'message': 'Verification code sent to your phone.',
+            'already_verified': False,
             'expires_in': 600,  # 10 minutes
         }, status=status.HTTP_200_OK)
 
@@ -95,14 +114,17 @@ class VerifyOTPView(APIView):
     POST /api/public/marketplace/order/verify-otp/
     {
         "phone_number": "0241234567",
-        "code": "123456"
+        "code": "123456"  // Optional if already verified
     }
     
     Returns:
     {
         "verified": true,
-        "message": "Phone verified successfully"
+        "message": "Phone verified successfully",
+        "already_verified": false
     }
+    
+    Note: If phone was already verified, code is optional
     """
     permission_classes = [AllowAny]
     
@@ -111,6 +133,26 @@ class VerifyOTPView(APIView):
         serializer.is_valid(raise_exception=True)
         
         phone = serializer.validated_data['phone_number']
+        code = serializer.validated_data.get('code', '')
+        
+        # Check if phone is already verified (no OTP needed)
+        try:
+            existing_customer = GuestCustomer.objects.get(phone_number=phone)
+            if existing_customer.phone_verified:
+                return Response({
+                    'verified': True,
+                    'message': 'Phone number already verified.',
+                    'already_verified': True,
+                }, status=status.HTTP_200_OK)
+        except GuestCustomer.DoesNotExist:
+            pass
+        
+        # Verify OTP code for new/unverified numbers
+        if not code:
+            return Response({
+                'verified': False,
+                'message': 'Verification code required.',
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Update or create guest customer
         customer, _ = GuestCustomer.objects.get_or_create(
@@ -119,11 +161,12 @@ class VerifyOTPView(APIView):
         )
         customer.phone_verified = True
         customer.phone_verified_at = timezone.now()
-        customer.save()
+        customer.save(update_fields=['phone_verified', 'phone_verified_at'])
         
         return Response({
             'verified': True,
             'message': 'Phone verified successfully.',
+            'already_verified': False,
         }, status=status.HTTP_200_OK)
 
 

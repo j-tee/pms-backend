@@ -64,17 +64,40 @@ class RequestOTPSerializer(serializers.Serializer):
 
 
 class VerifyOTPSerializer(serializers.Serializer):
-    """Verify OTP code."""
+    """
+    Verify OTP code.
+    
+    Code is optional if phone number was already verified in a previous transaction.
+    """
     phone_number = serializers.CharField(max_length=15)
-    code = serializers.CharField(max_length=6, min_length=6)
+    code = serializers.CharField(max_length=6, min_length=6, required=False, allow_blank=True)
     
     def validate_phone_number(self, value):
         return GuestCustomer.normalize_phone(value)
     
     def validate(self, data):
-        success, message = GuestOrderOTP.verify(data['phone_number'], data['code'])
+        phone = data['phone_number']
+        code = data.get('code', '')
+        
+        # Skip OTP verification if phone already verified
+        try:
+            customer = GuestCustomer.objects.get(phone_number=phone)
+            if customer.phone_verified:
+                return data  # Already verified - no need to check code
+        except GuestCustomer.DoesNotExist:
+            pass
+        
+        # For new/unverified numbers, code is required
+        if not code:
+            raise serializers.ValidationError({
+                'code': 'Verification code is required for new phone numbers.'
+            })
+        
+        # Verify OTP
+        success, message = GuestOrderOTP.verify(phone, code)
         if not success:
             raise serializers.ValidationError({'code': message})
+        
         return data
 
 
