@@ -157,6 +157,7 @@ class RevenueItemSerializer(serializers.Serializer):
     gross = serializers.FloatField()
     net = serializers.FloatField(required=False)
     commissions = serializers.FloatField(required=False)
+    deductions = serializers.FloatField(required=False)
     transactions = serializers.IntegerField(required=False)
     birds_sold = serializers.IntegerField(required=False)
     orders = serializers.IntegerField(required=False)
@@ -167,6 +168,7 @@ class RevenueBreakdownSerializer(serializers.Serializer):
     eggs = RevenueItemSerializer()
     birds = RevenueItemSerializer()
     marketplace = RevenueItemSerializer()
+    government_procurement = RevenueItemSerializer()
 
 
 class ExpensesBreakdownSerializer(serializers.Serializer):
@@ -190,6 +192,7 @@ class MonthlyRevenueSerializer(serializers.Serializer):
     eggs = serializers.FloatField()
     birds = serializers.FloatField()
     marketplace = serializers.FloatField()
+    procurement = serializers.FloatField()
     total = serializers.FloatField()
 
 

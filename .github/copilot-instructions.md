@@ -270,9 +270,17 @@ def create_listing(request):
     ...
 ```
 
+## Documentation Policy
+
+**IMPORTANT**: Only `README.md` should be committed to the repository.
+- ❌ Do NOT commit any other markdown documentation files to git
+- ❌ Do NOT force-add ignored documentation files
+- ✅ All other documentation is gitignored and should remain local only
+- ✅ Use README.md for essential project information that must be in the repo
+
 ## Key Files
 - [core/settings.py](core/settings.py) - All Django/DRF/JWT config
 - [accounts/roles.py](accounts/roles.py) - Rolify-style dynamic role system
 - [accounts/policies/](accounts/policies/) - CanCanCan-style authorization
 - [farms/models.py](farms/models.py) - Core farm registration model (~2000 lines)
-- [docs/](docs/) - API documentation, guides
+- [docs/](docs/) - API documentation, guides (gitignored)

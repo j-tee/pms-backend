@@ -32,6 +32,7 @@ from feed_inventory.models import FeedPurchase, FeedInventory, FeedConsumption
 from sales_revenue.models import EggSale, BirdSale
 from sales_revenue.marketplace_models import MarketplaceOrder, OrderItem, Product
 from sales_revenue.inventory_models import FarmInventory, StockMovement
+from procurement.models import ProcurementInvoice
 
 logger = logging.getLogger(__name__)
 
@@ -488,10 +489,29 @@ class FarmerAnalyticsService:
             count=Count('id'),
         )
         
+        # Government procurement revenue
+        procurement_invoices = ProcurementInvoice.objects.filter(
+            farm=self.farm,
+            payment_status='paid',
+            payment_date__gte=start_date,
+            payment_date__lte=end_date
+        )
+        
+        procurement_revenue = procurement_invoices.aggregate(
+            gross=Coalesce(Sum('gross_amount'), Decimal('0')),
+            net=Coalesce(Sum('total_amount'), Decimal('0')),
+            deductions=Coalesce(
+                Sum('quality_deduction') + Sum('mortality_deduction') + Sum('other_deductions'),
+                Decimal('0')
+            ),
+            count=Count('id'),
+        )
+        
         total_revenue = (
             egg_revenue['total'] + 
             bird_revenue['total'] + 
-            marketplace_revenue['total']
+            marketplace_revenue['total'] +
+            procurement_revenue['net']
         )
         
         # === EXPENSES ===
@@ -534,7 +554,7 @@ class FarmerAnalyticsService:
             amount=Sum('subtotal')
         ).order_by('month')
         
-        monthly_data = defaultdict(lambda: {'eggs': 0, 'birds': 0, 'marketplace': 0})
+        monthly_data = defaultdict(lambda: {'eggs': 0, 'birds': 0, 'marketplace': 0, 'procurement': 0})
         for item in egg_monthly:
             if item['month']:
                 key = item['month'].strftime('%Y-%m')
@@ -562,6 +582,18 @@ class FarmerAnalyticsService:
                 key = item['month'].strftime('%Y-%m')
                 monthly_data[key]['marketplace'] = float(item['amount'] or 0)
         
+        # Procurement revenue by month
+        procurement_monthly = procurement_invoices.annotate(
+            month=TruncMonth('payment_date')
+        ).values('month').annotate(
+            amount=Sum('total_amount')
+        ).order_by('month')
+        
+        for item in procurement_monthly:
+            if item['month']:
+                key = item['month'].strftime('%Y-%m')
+                monthly_data[key]['procurement'] = float(item['amount'] or 0)
+        
         for month_key in sorted(monthly_data.keys()):
             data = monthly_data[month_key]
             monthly_revenue.append({
@@ -569,7 +601,8 @@ class FarmerAnalyticsService:
                 'eggs': data['eggs'],
                 'birds': data['birds'],
                 'marketplace': data['marketplace'],
-                'total': data['eggs'] + data['birds'] + data['marketplace'],
+                'procurement': data.get('procurement', 0),
+                'total': data['eggs'] + data['birds'] + data['marketplace'] + data.get('procurement', 0),
             })
         
         return {
@@ -595,6 +628,12 @@ class FarmerAnalyticsService:
                 'marketplace': {
                     'gross': float(marketplace_revenue['total']),
                     'orders': marketplace_revenue['count'],
+                },
+                'government_procurement': {
+                    'gross': float(procurement_revenue['gross']),
+                    'net': float(procurement_revenue['net']),
+                    'deductions': float(procurement_revenue['deductions']),
+                    'orders': procurement_revenue['count'],
                 },
             },
             'expenses_breakdown': {
