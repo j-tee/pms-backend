@@ -60,8 +60,7 @@ class PermissionManagementService:
         manageable = PERMISSION_MANAGEMENT_HIERARCHY.get(self.admin.role, [])
         if not manageable and self.admin.role != 'SUPER_ADMIN':
             raise PermissionManagementError(
-                f"Role '{self.admin.role}' cannot manage permissions for any users",
-                error_type='authorization'
+                f"Role '{self.admin.role}' cannot manage permissions for any users"
             )
     
     def can_manage_user(self, target_user):
@@ -84,11 +83,11 @@ class PermissionManagementService:
         if self.admin.role == 'NATIONAL_ADMIN':
             return True  # National admin can manage nationally
         
-        if self.admin.role == 'REGIONAL_ADMIN':
+        if self.admin.role in ['REGIONAL_ADMIN', 'REGIONAL_COORDINATOR']:  # Include legacy alias
             # Can only manage users in their region
             return target_user.region == self.admin.region
         
-        if self.admin.role == 'CONSTITUENCY_ADMIN':
+        if self.admin.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:  # Include legacy alias
             # Can only manage users in their constituency
             return target_user.constituency == self.admin.constituency
         
@@ -118,9 +117,9 @@ class PermissionManagementService:
         queryset = queryset.filter(role__in=manageable_roles)
         
         # Apply jurisdiction filter
-        if self.admin.role == 'REGIONAL_ADMIN':
+        if self.admin.role in ['REGIONAL_ADMIN', 'REGIONAL_COORDINATOR']:  # Include legacy alias
             queryset = queryset.filter(region=self.admin.region)
-        elif self.admin.role == 'CONSTITUENCY_ADMIN':
+        elif self.admin.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:  # Include legacy alias
             queryset = queryset.filter(constituency=self.admin.constituency)
         
         return queryset
@@ -235,6 +234,7 @@ class PermissionManagementService:
                 'category': details['category'],
                 'source': source,
                 'active': active,
+                'has_permission': active,  # Alias for 'active' for backward compatibility
                 'can_revoke': can_revoke,
             }
             

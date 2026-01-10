@@ -126,13 +126,21 @@ class UserPermissionsView(APIView):
         grants = [codename for codename, should_grant in permission_updates.items() if should_grant]
         revokes = [codename for codename, should_grant in permission_updates.items() if not should_grant]
         
-        service = PermissionManagementService(request.user)
-        result = service.bulk_update_permissions(
-            target_user, 
-            grants=grants, 
-            revokes=revokes,
-            reason=request.data.get('reason', '')
-        )
+        try:
+            service = PermissionManagementService(request.user)
+            result = service.bulk_update_permissions(
+                target_user, 
+                grants=grants, 
+                revokes=revokes,
+                reason=request.data.get('reason', '')
+            )
+        except PermissionManagementError as e:
+            status_code = status.HTTP_403_FORBIDDEN if e.error_type == 'authorization' else status.HTTP_400_BAD_REQUEST
+            code = 'PERMISSION_DENIED' if e.error_type == 'authorization' else 'BULK_UPDATE_FAILED'
+            return Response({
+                'error': str(e),
+                'code': code
+            }, status=status_code)
         
         # Return the lists of updated permissions
         return Response({
@@ -170,9 +178,8 @@ class GrantPermissionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        service = PermissionManagementService(request.user)
-        
         try:
+            service = PermissionManagementService(request.user)
             result = service.grant_permission(target_user, permission_codename)
             
             return Response({
@@ -216,9 +223,8 @@ class RevokePermissionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        service = PermissionManagementService(request.user)
-        
         try:
+            service = PermissionManagementService(request.user)
             result = service.revoke_permission(target_user, permission_codename)
             
             return Response({
@@ -271,7 +277,15 @@ class ResetPermissionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        service = PermissionManagementService(request.user)
+        try:
+            service = PermissionManagementService(request.user)
+        except PermissionManagementError as e:
+            status_code = status.HTTP_403_FORBIDDEN if e.error_type == 'authorization' else status.HTTP_400_BAD_REQUEST
+            code = 'PERMISSION_DENIED' if e.error_type == 'authorization' else 'RESET_FAILED'
+            return Response({
+                'error': str(e),
+                'code': code
+            }, status=status_code)
         
         if reset_all:
             # Reset all explicit permissions
