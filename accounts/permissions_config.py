@@ -368,6 +368,7 @@ GRANTABLE_PERMISSIONS = {
         'view_financial_data', 'view_payment_records',
         'view_marketplace_listings', 'moderate_listings',
         'manage_cms_content', 'manage_contact_messages',
+        'view_system_health', 'manage_cache',  # System permissions for NATIONAL_STAFF
     ],
     'REGIONAL_ADMIN': [
         'view_users', 'create_users', 'edit_users',
