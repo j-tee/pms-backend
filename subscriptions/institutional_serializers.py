@@ -109,6 +109,13 @@ class InstitutionalAPIKeySerializer(serializers.ModelSerializer):
     """
     API key serializer (excludes hash for security).
     """
+    # Override allowed_ips to avoid DRF's GenericIPAddressField serialization issues
+    allowed_ips = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list
+    )
+    
     class Meta:
         model = InstitutionalAPIKey
         fields = [

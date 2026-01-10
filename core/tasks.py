@@ -269,7 +269,7 @@ def send_admin_notification(notification_type: str, context: dict = None):
     })
     
     admin_emails = list(User.objects.filter(
-        role__in=['SUPER_ADMIN', 'YEA_OFFICIAL'],
+        role__in=['SUPER_ADMIN', 'NATIONAL_ADMIN'],
         is_active=True,
         email__isnull=False
     ).exclude(email='').values_list('email', flat=True)[:5])

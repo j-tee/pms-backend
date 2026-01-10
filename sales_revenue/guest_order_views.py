@@ -17,6 +17,7 @@ from django.utils import timezone
 from django.db.models import Q
 
 from core.sms_service import HubtelSMSService
+from core.turnstile_service import turnstile_service
 from .guest_order_models import (
     GuestCustomer,
     GuestOrder,
@@ -55,8 +56,12 @@ class RequestOTPView(APIView):
     Returns:
     {
         "message": "OTP sent to your phone",
-        "expires_in": 600  // seconds
+        "expires_in": 600,  // seconds
+        "already_verified": false  // true if phone was previously verified
     }
+    
+    Cost Optimization: If phone number was previously verified, 
+    no OTP is sent (saves SMS costs).
     """
     permission_classes = [AllowAny]
     
@@ -65,6 +70,20 @@ class RequestOTPView(APIView):
         serializer.is_valid(raise_exception=True)
         
         phone = serializer.validated_data['phone_number']
+        
+        # OPTIMIZATION: Check if phone is already verified
+        # This saves SMS costs by not sending OTP to previously verified numbers
+        try:
+            existing_customer = GuestCustomer.objects.get(phone_number=phone)
+            if existing_customer.phone_verified:
+                # Phone already verified - skip sending OTP
+                return Response({
+                    'message': 'Phone number already verified.',
+                    'already_verified': True,
+                    'expires_in': 0,
+                }, status=status.HTTP_200_OK)
+        except GuestCustomer.DoesNotExist:
+            pass  # New customer - proceed with OTP
         
         # Generate OTP
         otp = GuestOrderOTP.generate_for_phone(phone)
@@ -84,6 +103,7 @@ class RequestOTPView(APIView):
         
         return Response({
             'message': 'Verification code sent to your phone.',
+            'already_verified': False,
             'expires_in': 600,  # 10 minutes
         }, status=status.HTTP_200_OK)
 
@@ -95,14 +115,17 @@ class VerifyOTPView(APIView):
     POST /api/public/marketplace/order/verify-otp/
     {
         "phone_number": "0241234567",
-        "code": "123456"
+        "code": "123456"  // Optional if already verified
     }
     
     Returns:
     {
         "verified": true,
-        "message": "Phone verified successfully"
+        "message": "Phone verified successfully",
+        "already_verified": false
     }
+    
+    Note: If phone was already verified, code is optional
     """
     permission_classes = [AllowAny]
     
@@ -111,6 +134,26 @@ class VerifyOTPView(APIView):
         serializer.is_valid(raise_exception=True)
         
         phone = serializer.validated_data['phone_number']
+        code = serializer.validated_data.get('code', '')
+        
+        # Check if phone is already verified (no OTP needed)
+        try:
+            existing_customer = GuestCustomer.objects.get(phone_number=phone)
+            if existing_customer.phone_verified:
+                return Response({
+                    'verified': True,
+                    'message': 'Phone number already verified.',
+                    'already_verified': True,
+                }, status=status.HTTP_200_OK)
+        except GuestCustomer.DoesNotExist:
+            pass
+        
+        # Verify OTP code for new/unverified numbers
+        if not code:
+            return Response({
+                'verified': False,
+                'message': 'Verification code required.',
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Update or create guest customer
         customer, _ = GuestCustomer.objects.get_or_create(
@@ -119,11 +162,12 @@ class VerifyOTPView(APIView):
         )
         customer.phone_verified = True
         customer.phone_verified_at = timezone.now()
-        customer.save()
+        customer.save(update_fields=['phone_verified', 'phone_verified_at'])
         
         return Response({
             'verified': True,
             'message': 'Phone verified successfully.',
+            'already_verified': False,
         }, status=status.HTTP_200_OK)
 
 
@@ -133,6 +177,7 @@ class CreateGuestOrderView(APIView):
     
     POST /api/public/marketplace/order/create/
     {
+        "captcha_token": "cloudflare-turnstile-token",
         "phone_number": "0241234567",
         "name": "Kofi Mensah",
         "email": "kofi@example.com",  // optional
@@ -147,13 +192,65 @@ class CreateGuestOrderView(APIView):
     }
     
     Returns the created order with order_number for tracking.
+    
+    SECURITY FEATURES:
+    - Cloudflare Turnstile CAPTCHA (blocks 99%+ bots, unlimited free)
+    - Rate limiting: Max 5 orders/hour per phone number
+    - Selective OTP re-verification when rate limit hit
     """
     permission_classes = [AllowAny]
     
+    def _get_client_ip(self, request):
+        """Extract client IP from request headers (supports proxies/load balancers)."""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            # X-Forwarded-For can be comma-separated list, first is original client
+            ip = x_forwarded_for.split(',')[0].strip()
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+    
     def post(self, request):
-        serializer = GuestOrderCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        # SECURITY LAYER 1: Cloudflare Turnstile CAPTCHA
+        captcha_token = request.data.get('captcha_token')
+        if not captcha_token:
+            return Response({
+                'error': 'CAPTCHA verification required.',
+                'code': 'CAPTCHA_MISSING',
+            }, status=status.HTTP_400_BAD_REQUEST)
         
+        # Verify CAPTCHA with Cloudflare
+        user_ip = self._get_client_ip(request)
+        is_valid = turnstile_service.verify_token(captcha_token, user_ip)
+        
+        if not is_valid:
+            return Response({
+                'error': 'CAPTCHA verification failed. Please try again.',
+                'code': 'CAPTCHA_INVALID',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # SECURITY LAYER 2: Validate order data (includes rate limit check)
+        serializer = GuestOrderCreateSerializer(data=request.data, context={'request': request})
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+        except serializers.ValidationError as e:
+            # Check if rate limit hit (requires OTP re-verification)
+            if 'phone_number' in e.detail:
+                phone_errors = e.detail['phone_number']
+                if isinstance(phone_errors, list):
+                    for error in phone_errors:
+                        if hasattr(error, 'code') and error.code == 'rate_limit_otp_required':
+                            return Response({
+                                'error': str(error),
+                                'code': 'RATE_LIMIT_OTP_REQUIRED',
+                                'requires_otp_reverification': True,
+                            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            
+            # Re-raise validation error
+            raise
+        
+        # SECURITY LAYER 3: Create order (already validated)
         order = serializer.save()
         
         # Send OTP for verification

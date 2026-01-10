@@ -229,7 +229,8 @@ class GuestOrder(models.Model):
     
     DELIVERY_METHOD_CHOICES = [
         ('pickup', 'Farm Pickup'),
-        ('delivery', 'Delivery'),
+        ('farmer_delivery', 'Farmer Delivers'),
+        ('third_party', 'Third-Party Delivery'),
     ]
     
     CANCELLATION_REASON_CHOICES = [

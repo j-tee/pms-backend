@@ -490,7 +490,6 @@ class StaleStockReportView(APIView):
             User.UserRole.NATIONAL_ADMIN,
             User.UserRole.REGIONAL_COORDINATOR,
             User.UserRole.CONSTITUENCY_OFFICIAL,
-            User.UserRole.YEA_OFFICIAL,
         ]
         is_farmer = request.user.role == User.UserRole.FARMER
         

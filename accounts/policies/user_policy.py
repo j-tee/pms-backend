@@ -2,6 +2,17 @@
 User Management Authorization Policy
 
 Defines access control rules for user management.
+
+Role Hierarchy for User Management:
+    SUPER_ADMIN - Can manage all users (except other SUPER_ADMINs)
+    NATIONAL_ADMIN - Can manage all users except SUPER_ADMIN, can manage NATIONAL_STAFF permissions
+    NATIONAL_STAFF - Limited access, permissions managed by NATIONAL_ADMIN
+    REGIONAL_ADMIN - Can manage users in their region, can manage REGIONAL_STAFF permissions
+    REGIONAL_STAFF - Limited regional access, permissions managed by REGIONAL_ADMIN
+    CONSTITUENCY_ADMIN - Can manage users in their constituency, can manage CONSTITUENCY_STAFF permissions
+    CONSTITUENCY_STAFF - Limited constituency access, permissions managed by CONSTITUENCY_ADMIN
+    Field Officers - Can view assigned farmers only
+    FARMER - Can view own profile only
 """
 
 from .base_policy import BasePolicy
@@ -17,9 +28,10 @@ class UserPolicy(BasePolicy):
         
         Access Rules:
         - Super Admin: All users
-        - National Admin: All users
-        - Regional Coordinator: Users in their region
-        - Constituency Official: Users in their constituency
+        - National Admin/Staff: All users (staff requires permission)
+        - Regional Admin/Staff: Users in their region
+        - Constituency Admin/Staff: Users in their constituency
+        - Field Officers: Assigned farmers
         - Users: Own profile
         """
         # Can view own profile
@@ -27,22 +39,35 @@ class UserPolicy(BasePolicy):
             return True
         
         # Admins can view all
-        if cls.is_super_admin(user) or cls.is_yea_official(user) or cls.is_national_admin(user):
+        if cls.is_super_admin(user) or cls.is_national_admin(user):
             return True
         
-        # Regional coordinator can view users in region
-        if cls.is_regional_coordinator(user):
+        # National staff with permission
+        if cls.is_national_staff(user) and cls.has_permission(user, 'view_all_users'):
+            return True
+        
+        # Regional admin/staff can view users in region
+        if cls.is_regional_admin(user):
             if target_user.region == user.region:
                 return True
         
-        # Constituency official can view users in constituency
-        if cls.is_constituency_official(user):
+        if cls.is_regional_staff(user) and cls.has_permission(user, 'view_regional_users'):
+            if target_user.region == user.region:
+                return True
+        
+        # Constituency admin/staff can view users in constituency
+        if cls.is_constituency_admin(user):
             if target_user.constituency == user.constituency:
                 return True
         
-        # Extension officer can view their assigned farmers
-        if cls.is_extension_officer(user):
+        if cls.is_constituency_staff(user) and cls.has_permission(user, 'view_constituency_users'):
+            if target_user.constituency == user.constituency:
+                return True
+        
+        # Field officers (extension, vet, YEA official) can view their assigned farmers
+        if cls.is_field_officer(user):
             from farms.models import Farm
+            # Check if target is a farmer assigned to this field officer
             return Farm.objects.filter(
                 owner=target_user,
                 extension_officer=user
@@ -57,14 +82,18 @@ class UserPolicy(BasePolicy):
         
         Access Rules:
         - Super Admin: Can create any user type
-        - National Admin: Can create any user type
-        - Regional Coordinator: Can create constituency officials and extension officers in region
+        - National Admin: Can create any user type (except SUPER_ADMIN)
+        - Regional Admin: Can create constituency-level users and field officers in region
+        - Constituency Admin: Can create field officers in constituency
         """
-        if cls.is_super_admin(user) or cls.is_yea_official(user) or cls.is_national_admin(user):
+        if cls.is_super_admin(user) or cls.is_national_admin(user):
             return True
         
-        if cls.is_regional_coordinator(user):
-            return True  # Limited to certain roles
+        if cls.is_regional_admin(user):
+            return True  # Limited to certain roles (checked in can_create_role)
+        
+        if cls.is_constituency_admin(user):
+            return True  # Limited to field officers (checked in can_create_role)
         
         return False
     
@@ -80,13 +109,21 @@ class UserPolicy(BasePolicy):
         if cls.is_super_admin(user):
             return True  # Can create any role except other SUPER_ADMIN
         
-        if cls.is_yea_official(user) or cls.is_national_admin(user):
-            # Cannot create super admin or YEA official
-            return target_role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']
+        if cls.is_national_admin(user):
+            # Cannot create super admin
+            return target_role != 'SUPER_ADMIN'
         
-        if cls.is_regional_coordinator(user):
-            # Can only create constituency officials and extension officers
-            return target_role in ['CONSTITUENCY_OFFICIAL', 'EXTENSION_OFFICER']
+        if cls.is_regional_admin(user):
+            # Can create constituency-level users and field officers
+            return target_role in [
+                'CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL',  # Legacy support
+                'CONSTITUENCY_STAFF',
+                'EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL'
+            ]
+        
+        if cls.is_constituency_admin(user):
+            # Can only create field officers
+            return target_role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL']
         
         return False
     
@@ -98,8 +135,9 @@ class UserPolicy(BasePolicy):
         Access Rules:
         - SUPER_ADMIN accounts can ONLY be edited by themselves (protected accounts)
         - Super Admin: All other users
-        - National Admin: All except super admin and YEA officials
-        - Regional Coordinator: Users in their region (limited roles)
+        - National Admin: All except super admin
+        - Regional Admin: Users in their region (limited roles)
+        - Constituency Admin: Users in their constituency (limited roles)
         - Users: Own profile (limited fields)
         
         SECURITY: SUPER_ADMIN accounts are fully protected and cannot be modified
@@ -117,19 +155,25 @@ class UserPolicy(BasePolicy):
         if cls.is_super_admin(user):
             return True
         
-        # YEA Official can edit all except super admin and other YEA officials
-        if cls.is_yea_official(user):
-            return not cls.is_yea_official(target_user)
-        
-        # National admin can edit all except super admin and YEA officials
+        # National admin can edit all except super admin
         if cls.is_national_admin(user):
-            return not (cls.is_super_admin(target_user) or cls.is_yea_official(target_user))
+            return not cls.is_super_admin(target_user)
         
-        # Regional coordinator can edit users in region
-        if cls.is_regional_coordinator(user):
+        # Regional admin can edit users in region
+        if cls.is_regional_admin(user):
             if target_user.region == user.region:
-                # Can only edit constituency officials and extension officers
-                return target_user.role in ['CONSTITUENCY_OFFICIAL', 'EXTENSION_OFFICER']
+                # Can edit constituency-level users and field officers
+                return target_user.role in [
+                    'CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL',
+                    'CONSTITUENCY_STAFF',
+                    'EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL'
+                ]
+        
+        # Constituency admin can edit users in constituency
+        if cls.is_constituency_admin(user):
+            if target_user.constituency == user.constituency:
+                # Can only edit field officers
+                return target_user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL']
         
         return False
     
@@ -163,7 +207,7 @@ class UserPolicy(BasePolicy):
         Access Rules:
         - SUPER_ADMIN accounts CANNOT be suspended (protected accounts)
         - Super Admin: All non-SUPER_ADMIN users
-        - National Admin: All except super admin, YEA officials, and self
+        - National Admin: All except super admin and self
         
         SECURITY: SUPER_ADMIN accounts are fully protected and cannot be suspended
         by anyone, including other SUPER_ADMINs.
@@ -178,11 +222,8 @@ class UserPolicy(BasePolicy):
         if cls.is_super_admin(user):
             return True
         
-        if cls.is_yea_official(user):
-            return not cls.is_yea_official(target_user)
-        
         if cls.is_national_admin(user):
-            return not cls.is_yea_official(target_user)
+            return True
         
         return False
     
@@ -194,8 +235,9 @@ class UserPolicy(BasePolicy):
         Access Rules:
         - SUPER_ADMIN accounts cannot have their role changed (protected accounts)
         - Super Admin: Can assign any role to non-SUPER_ADMIN users
-        - National Admin: Can assign most roles
-        - Regional Coordinator: Limited roles in region
+        - National Admin: Can assign most roles (not SUPER_ADMIN)
+        - Regional Admin: Limited roles in region
+        - Constituency Admin: Limited roles in constituency
         
         SECURITY: SUPER_ADMIN accounts are fully protected. Their role cannot
         be changed by anyone.
@@ -208,15 +250,25 @@ class UserPolicy(BasePolicy):
             # Cannot create new SUPER_ADMIN via role assignment
             return role_name != 'SUPER_ADMIN'
         
-        if cls.is_yea_official(user) or cls.is_national_admin(user):
-            # Cannot assign super admin or YEA official roles
-            return role_name not in ['SUPER_ADMIN', 'YEA_OFFICIAL']
+        if cls.is_national_admin(user):
+            # Cannot assign super admin role
+            return role_name != 'SUPER_ADMIN'
         
-        if cls.is_regional_coordinator(user):
+        if cls.is_regional_admin(user):
             # Can only assign certain roles in their region
             if target_user.region != user.region:
                 return False
-            return role_name in ['CONSTITUENCY_OFFICIAL', 'EXTENSION_OFFICER']
+            return role_name in [
+                'CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL',
+                'CONSTITUENCY_STAFF',
+                'EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL'
+            ]
+        
+        if cls.is_constituency_admin(user):
+            # Can only assign field officer roles in their constituency
+            if target_user.constituency != user.constituency:
+                return False
+            return role_name in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL']
         
         return False
     
@@ -228,7 +280,7 @@ class UserPolicy(BasePolicy):
         Access Rules:
         - SUPER_ADMIN: Can only reset their own password (except for self-service)
         - Super Admin: All non-SUPER_ADMIN users
-        - National Admin: All except super admin and YEA officials
+        - National Admin: All except super admin
         - Users: Can request own password reset
         
         SECURITY: Other users cannot trigger password resets for SUPER_ADMIN accounts.
@@ -243,11 +295,8 @@ class UserPolicy(BasePolicy):
         if cls.is_super_admin(user):
             return True
         
-        if cls.is_yea_official(user):
-            return not cls.is_yea_official(target_user)
-        
         if cls.is_national_admin(user):
-            return not cls.is_yea_official(target_user)
+            return True
         
         return False
     
@@ -289,10 +338,16 @@ class UserPolicy(BasePolicy):
                 'is_verified'
             ]
         
-        if cls.is_regional_coordinator(user):
+        if cls.is_regional_admin(user):
             return [
                 'first_name', 'last_name', 'email', 'phone',
                 'constituency', 'is_active'
+            ]
+        
+        if cls.is_constituency_admin(user):
+            return [
+                'first_name', 'last_name', 'email', 'phone',
+                'is_active'
             ]
         
         return []
@@ -300,7 +355,7 @@ class UserPolicy(BasePolicy):
     @classmethod
     def can_view_users(cls, user):
         """Check if user can view user list."""
-        return cls.has_admin_access(user) or cls.is_extension_officer(user)
+        return cls.has_admin_access(user) or cls.is_field_officer(user)
     
     @classmethod
     def scope(cls, user, queryset=None):
@@ -309,20 +364,20 @@ class UserPolicy(BasePolicy):
             from accounts.models import User
             queryset = User.objects.all()
         
-        # Admins see all
-        if cls.is_super_admin(user) or cls.is_national_admin(user):
+        # Super admin and national level see all
+        if cls.is_super_admin(user) or cls.is_national_level(user):
             return queryset
         
-        # Regional coordinator sees users in region
-        if cls.is_regional_coordinator(user):
+        # Regional admin/staff sees users in region
+        if cls.is_regional_level(user):
             return queryset.filter(region=user.region)
         
-        # Constituency official sees users in constituency
-        if cls.is_constituency_official(user):
+        # Constituency admin/staff sees users in constituency
+        if cls.is_constituency_level(user):
             return queryset.filter(constituency=user.constituency)
         
-        # Extension officer sees assigned farmers
-        if cls.is_extension_officer(user):
+        # Field officers (extension, vet, YEA official) see assigned farmers
+        if cls.is_field_officer(user):
             from farms.models import Farm
             farmer_ids = Farm.objects.filter(
                 extension_officer=user
@@ -331,3 +386,72 @@ class UserPolicy(BasePolicy):
         
         # Default: see only self
         return queryset.filter(id=user.id)
+    
+    # ========================================
+    # PERMISSION MANAGEMENT
+    # ========================================
+    
+    @classmethod
+    def can_manage_permissions(cls, user, target_user):
+        """
+        Check if user can manage target user's permissions.
+        
+        Access Rules:
+        - Super Admin: All users (except other SUPER_ADMINs)
+        - National Admin: NATIONAL_STAFF, and all below
+        - Regional Admin: REGIONAL_STAFF, and constituency/field level in their region
+        - Constituency Admin: CONSTITUENCY_STAFF and field officers in their constituency
+        """
+        # Cannot manage own permissions
+        if user == target_user:
+            return False
+        
+        # Cannot manage SUPER_ADMIN
+        if cls.is_super_admin(target_user):
+            return False
+        
+        # Super admin can manage all (except other super admins)
+        if cls.is_super_admin(user):
+            return True
+        
+        # National admin can manage national staff and below
+        if cls.is_national_admin(user):
+            return target_user.role not in ['SUPER_ADMIN']
+        
+        # Regional admin can manage regional staff and below in their region
+        if cls.is_regional_admin(user):
+            if target_user.region != user.region:
+                return False
+            return target_user.role in [
+                'REGIONAL_STAFF',
+                'CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL',
+                'CONSTITUENCY_STAFF',
+                'EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL'
+            ]
+        
+        # Constituency admin can manage constituency staff and field officers
+        if cls.is_constituency_admin(user):
+            if target_user.constituency != user.constituency:
+                return False
+            return target_user.role in [
+                'CONSTITUENCY_STAFF',
+                'EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL'
+            ]
+        
+        return False
+    
+    @classmethod
+    def can_grant_permission(cls, user, target_user, permission_codename):
+        """
+        Check if user can grant a specific permission to target user.
+        
+        Uses the permission management service for detailed checks.
+        """
+        if not cls.can_manage_permissions(user, target_user):
+            return False
+        
+        # Check if this admin can grant this specific permission
+        from accounts.permissions_config import GRANTABLE_PERMISSIONS
+        
+        grantable = GRANTABLE_PERMISSIONS.get(user.role, [])
+        return permission_codename in grantable

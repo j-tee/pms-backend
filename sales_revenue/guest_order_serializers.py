@@ -64,17 +64,40 @@ class RequestOTPSerializer(serializers.Serializer):
 
 
 class VerifyOTPSerializer(serializers.Serializer):
-    """Verify OTP code."""
+    """
+    Verify OTP code.
+    
+    Code is optional if phone number was already verified in a previous transaction.
+    """
     phone_number = serializers.CharField(max_length=15)
-    code = serializers.CharField(max_length=6, min_length=6)
+    code = serializers.CharField(max_length=6, min_length=6, required=False, allow_blank=True)
     
     def validate_phone_number(self, value):
         return GuestCustomer.normalize_phone(value)
     
     def validate(self, data):
-        success, message = GuestOrderOTP.verify(data['phone_number'], data['code'])
+        phone = data['phone_number']
+        code = data.get('code', '')
+        
+        # Skip OTP verification if phone already verified
+        try:
+            customer = GuestCustomer.objects.get(phone_number=phone)
+            if customer.phone_verified:
+                return data  # Already verified - no need to check code
+        except GuestCustomer.DoesNotExist:
+            pass
+        
+        # For new/unverified numbers, code is required
+        if not code:
+            raise serializers.ValidationError({
+                'code': 'Verification code is required for new phone numbers.'
+            })
+        
+        # Verify OTP
+        success, message = GuestOrderOTP.verify(phone, code)
         if not success:
             raise serializers.ValidationError({'code': message})
+        
         return data
 
 
@@ -119,7 +142,14 @@ class GuestOrderCreateSerializer(serializers.Serializer):
     Create a guest order.
     
     Requires phone verification first.
+    SECURITY: Requires Cloudflare Turnstile CAPTCHA to prevent bot attacks.
     """
+    # Security
+    captcha_token = serializers.CharField(
+        max_length=2048,
+        help_text="Cloudflare Turnstile CAPTCHA response token"
+    )
+    
     # Customer info
     phone_number = serializers.CharField(max_length=15)
     name = serializers.CharField(max_length=200)
@@ -152,11 +182,23 @@ class GuestOrderCreateSerializer(serializers.Serializer):
         except GuestCustomer.DoesNotExist:
             pass
         
-        # Check order rate limit (max 5 orders per day)
-        allowed, remaining = GuestOrderRateLimit.check_limit(phone, 'order', max_count=5)
-        if not allowed:
+        # Check order rate limit (max 5 orders per hour)
+        # This prevents abuse even with verified phone numbers
+        from datetime import timedelta
+        from django.utils import timezone
+        
+        one_hour_ago = timezone.now() - timedelta(hours=1)
+        recent_orders = GuestOrder.objects.filter(
+            guest_customer__phone_number=phone,
+            created_at__gte=one_hour_ago
+        ).count()
+        
+        if recent_orders >= 5:
+            # Store in context for view to trigger OTP re-verification
+            self.context['requires_otp_reverification'] = True
             raise serializers.ValidationError(
-                "Order limit reached for today. Please try again tomorrow."
+                "Too many orders in the last hour. Please verify your phone number again.",
+                code='rate_limit_otp_required'
             )
         
         return phone

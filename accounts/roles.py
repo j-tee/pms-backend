@@ -239,6 +239,74 @@ class RolePermission(models.Model):
         return f"{self.role} - {self.permission}"
 
 
+class UserPermission(models.Model):
+    """
+    Direct permission assignment to users.
+    
+    This allows admins to grant specific permissions to staff users
+    without having to create custom roles. Permissions can be granted
+    or revoked by the user's managing admin.
+    
+    The user's effective permissions are:
+    1. Implicit permissions from their role (admin roles)
+    2. Default permissions for their role (staff roles)
+    3. Explicitly granted permissions (this model)
+    4. Minus any explicitly revoked permissions
+    """
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='user_permissions_granted'
+    )
+    
+    permission = models.ForeignKey(
+        Permission,
+        on_delete=models.CASCADE,
+        related_name='user_assignments'
+    )
+    
+    # Whether this is a grant or revocation
+    is_granted = models.BooleanField(
+        default=True,
+        help_text="True = permission granted, False = permission revoked"
+    )
+    
+    # Who granted/revoked this permission
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='permissions_granted_to_others',
+        help_text="Admin who granted/revoked this permission"
+    )
+    
+    granted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # Optional note explaining why permission was granted/revoked
+    reason = models.TextField(
+        blank=True,
+        help_text="Reason for granting/revoking this permission"
+    )
+    
+    class Meta:
+        db_table = 'user_permissions'
+        verbose_name = 'User Permission'
+        verbose_name_plural = 'User Permissions'
+        unique_together = [['user', 'permission']]
+        indexes = [
+            models.Index(fields=['user', 'is_granted']),
+        ]
+    
+    def __str__(self):
+        action = "granted" if self.is_granted else "revoked"
+        return f"{self.permission.codename} {action} for {self.user.username}"
+
+
 # Mixin to add role methods to User model
 class RoleMixin:
     """
@@ -390,7 +458,14 @@ class RoleMixin:
     
     def has_permission(self, permission_codename):
         """
-        Check if user has a specific permission through their roles.
+        Check if user has a specific permission.
+        
+        Permission sources (in order of precedence):
+        1. Explicitly revoked permissions (UserPermission with is_granted=False)
+        2. Implicit permissions from admin role (from permissions_config)
+        3. Explicitly granted permissions (UserPermission with is_granted=True)
+        4. Default permissions for staff role (from permissions_config)
+        5. Role-based permissions (through RolePermission)
         
         Args:
             permission_codename: Codename of the permission to check
@@ -399,18 +474,179 @@ class RoleMixin:
             Boolean indicating if user has the permission
         """
         from django.utils import timezone
+        from accounts.permissions_config import (
+            get_implicit_permissions, 
+            get_default_permissions
+        )
         
-        # Get all active roles for the user
+        # 1. Check for explicit revocation
+        if UserPermission.objects.filter(
+            user=self,
+            permission__codename=permission_codename,
+            is_granted=False
+        ).exists():
+            return False
+        
+        # 2. Check implicit permissions for admin roles
+        implicit = get_implicit_permissions(self.role)
+        if implicit and (implicit == '__all__' or permission_codename in implicit):
+            return True
+        
+        # 3. Check explicitly granted permissions
+        if UserPermission.objects.filter(
+            user=self,
+            permission__codename=permission_codename,
+            is_granted=True
+        ).exists():
+            return True
+        
+        # 4. Check default permissions for staff roles
+        defaults = get_default_permissions(self.role)
+        if permission_codename in defaults:
+            return True
+        
+        # 5. Check role-based permissions (through Role model)
         active_user_roles = UserRole.objects.filter(user=self).exclude(
             expires_at__lt=timezone.now()
         )
         
-        # Check if any of these roles have the permission
         return RolePermission.objects.filter(
             role__user_assignments__in=active_user_roles,
             permission__codename=permission_codename
         ).exists()
     
+    def get_effective_permissions(self):
+        """
+        Get all effective permissions for the user.
+        
+        Returns a dict with:
+        - codenames: Set of permission codenames
+        - details: List of dicts with permission info and source
+        """
+        from accounts.permissions_config import (
+            get_implicit_permissions,
+            get_default_permissions,
+            get_all_permission_codenames,
+            SYSTEM_PERMISSIONS
+        )
+        
+        permissions = {}
+        
+        # 1. Start with implicit permissions from role
+        implicit = get_implicit_permissions(self.role)
+        if implicit:
+            for codename in (get_all_permission_codenames() if implicit == '__all__' else implicit):
+                permissions[codename] = {'source': 'role_implicit', 'granted': True}
+        
+        # 2. Add default permissions for staff roles
+        defaults = get_default_permissions(self.role)
+        for codename in defaults:
+            if codename not in permissions:
+                permissions[codename] = {'source': 'role_default', 'granted': True}
+        
+        # 3. Add explicitly granted permissions
+        granted = UserPermission.objects.filter(
+            user=self, is_granted=True
+        ).select_related('permission')
+        for up in granted:
+            permissions[up.permission.codename] = {
+                'source': 'explicit_grant',
+                'granted': True,
+                'granted_by': str(up.granted_by_id) if up.granted_by_id else None,
+                'granted_at': up.granted_at.isoformat() if up.granted_at else None,
+            }
+        
+        # 4. Remove explicitly revoked permissions
+        revoked = UserPermission.objects.filter(
+            user=self, is_granted=False
+        ).select_related('permission')
+        for up in revoked:
+            if up.permission.codename in permissions:
+                permissions[up.permission.codename] = {
+                    'source': 'explicit_revoke',
+                    'granted': False,
+                    'revoked_by': str(up.granted_by_id) if up.granted_by_id else None,
+                }
+        
+        # Build result
+        active_codenames = {k for k, v in permissions.items() if v.get('granted', False)}
+        
+        return {
+            'codenames': active_codenames,
+            'details': permissions,
+        }
+    
+    def grant_permission(self, permission_codename, granted_by=None, reason=''):
+        """
+        Grant a specific permission to this user.
+        
+        Args:
+            permission_codename: Codename of the permission to grant
+            granted_by: User granting the permission
+            reason: Optional reason for granting
+            
+        Returns:
+            UserPermission instance
+        """
+        permission = Permission.objects.filter(codename=permission_codename).first()
+        if not permission:
+            raise ValueError(f"Permission '{permission_codename}' does not exist")
+        
+        up, created = UserPermission.objects.update_or_create(
+            user=self,
+            permission=permission,
+            defaults={
+                'is_granted': True,
+                'granted_by': granted_by,
+                'reason': reason,
+            }
+        )
+        return up
+    
+    def revoke_permission(self, permission_codename, revoked_by=None, reason=''):
+        """
+        Revoke a specific permission from this user.
+        
+        Args:
+            permission_codename: Codename of the permission to revoke
+            revoked_by: User revoking the permission
+            reason: Optional reason for revoking
+            
+        Returns:
+            UserPermission instance
+        """
+        permission = Permission.objects.filter(codename=permission_codename).first()
+        if not permission:
+            raise ValueError(f"Permission '{permission_codename}' does not exist")
+        
+        up, created = UserPermission.objects.update_or_create(
+            user=self,
+            permission=permission,
+            defaults={
+                'is_granted': False,
+                'granted_by': revoked_by,
+                'reason': reason,
+            }
+        )
+        return up
+    
+    def clear_permission_override(self, permission_codename):
+        """
+        Remove any explicit grant/revoke for a permission.
+        This resets the permission to its default state for the user's role.
+        
+        Args:
+            permission_codename: Codename of the permission
+            
+        Returns:
+            Boolean indicating if an override was cleared
+        """
+        deleted, _ = UserPermission.objects.filter(
+            user=self,
+            permission__codename=permission_codename
+        ).delete()
+        return deleted > 0
+
     def get_permissions(self):
         """
         Get all permissions for the user through their roles.

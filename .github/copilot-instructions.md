@@ -36,15 +36,83 @@ class MyView(FarmScopedMixin, generics.ListAPIView):
 
 **Role Hierarchy** (defined in `accounts/models.py`):
 ```
-SUPER_ADMIN → YEA_OFFICIAL → NATIONAL_ADMIN → REGIONAL_COORDINATOR → CONSTITUENCY_OFFICIAL → FARMER
-                                                                    ↓
-                                              EXTENSION_OFFICER, VETERINARY_OFFICER (Field Officers)
+SUPER_ADMIN (Platform Owner - Alphalogique)
+    ↓
+NATIONAL_ADMIN / NATIONAL_STAFF (National Level)
+  - NATIONAL_ADMIN: Full national access, manages NATIONAL_STAFF permissions
+  - NATIONAL_STAFF: Limited national access, permissions controlled by admin
+    ↓
+REGIONAL_ADMIN / REGIONAL_STAFF (Regional Level)
+  - REGIONAL_ADMIN: Full regional access, manages REGIONAL_STAFF permissions
+  - REGIONAL_STAFF: Limited regional access, permissions controlled by admin
+  - [REGIONAL_COORDINATOR: Legacy alias for REGIONAL_ADMIN]
+    ↓
+CONSTITUENCY_ADMIN / CONSTITUENCY_STAFF (Constituency Level)
+  - CONSTITUENCY_ADMIN: Full constituency access, manages CONSTITUENCY_STAFF permissions
+  - CONSTITUENCY_STAFF: Limited constituency access, permissions controlled by admin
+  - [CONSTITUENCY_OFFICIAL: Legacy alias for CONSTITUENCY_ADMIN]
+    ↓
+Field Officers (all at same level, geographically scoped):
+├── EXTENSION_OFFICER
+├── VETERINARY_OFFICER
+└── YEA_OFFICIAL (general YEA field support staff)
+    ↓
+FARMER (End User)
 ```
+
+**IMPORTANT - Platform vs Client Separation**:
+- **SUPER_ADMIN**: Platform staff (Alphalogique) - has access to ALL data including institutional subscriptions
+- **NATIONAL_ADMIN and below**: YEA government officials - are CLIENTS, should NOT see institutional subscription data
+- **INSTITUTIONAL_SUBSCRIBER**: B2B clients (universities, research institutions) - separate data access tier
+
+**Institutional Data Access** (CRITICAL SECURITY RULE):
+```python
+# ❌ WRONG - YEA government should NOT see institutional data
+if user.role in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
+    # Access institutional subscriptions
+
+# ✅ CORRECT - Only platform staff
+if UserPolicy.is_platform_staff(user):  # Only SUPER_ADMIN
+    # Access institutional subscriptions
+```
+
+**Permission System** (`accounts/permissions_config.py`, `accounts/roles.py`):
+```python
+# Admins have implicit permissions for their level
+# Staff have configurable permissions managed by their admin
+# Use has_permission() for fine-grained access control
+
+from accounts.policies import UserPolicy
+
+# Check if user has specific permission
+if user.has_permission('view_all_farms'):
+    ...
+
+# Or via policy
+if UserPolicy.has_permission(user, 'create_batch'):
+    ...
+
+# Permission management (admin only)
+from accounts.services.permission_management_service import PermissionManagementService
+service = PermissionManagementService(admin_user)
+service.grant_permission(staff_user, 'view_regional_analytics')
+service.revoke_permission(staff_user, 'edit_farm')
+```
+
+**Permission Categories** (see `permissions_config.py` for full list):
+- `user_management`: view_all_users, create_staff, edit_user, suspend_user
+- `farm_management`: view_all_farms, edit_farm, assign_extension_officer
+- `batch_management`: view_batches, create_batch, publish_batch
+- `analytics`: view_national_analytics, view_regional_analytics
+- `financial`: view_revenue, process_payments
+- `system`: manage_permissions, system_config
+
 Check roles via `UserPolicy.is_*()` methods or `user.role` directly.
 
 **Field Officers** (synonymous terms - all access `/api/extension/` endpoints):
 - **Extension Officer** = Field Officer (primary term, used interchangeably)
 - **Veterinary Officer** = Field Officer with animal health focus
+- **YEA Official** = General YEA field staff (data collection, farmer support)
 - **Constituency Official** = Senior field officer with officer assignment privileges
 
 **Field Officer Capabilities:**
@@ -52,6 +120,8 @@ Check roles via `UserPolicy.is_*()` methods or `user.role` directly.
 - Update farm information in their jurisdiction
 - View assigned farms and farmer data
 - Conduct extension duties and record visits
+- Help farmers learn to use the platform
+- Collect field data on behalf of farmers
 - Constituency Officials can also assign Extension Officers to farms
 
 ### Batch/Program Enrollment System
@@ -89,6 +159,8 @@ is_published=True  # Visible to farmers/public
 | `/api/auth/` | Authentication, MFA, profile |
 | `/api/admin/` | Staff management, batches, analytics |
 | `/api/admin/batches/` | Batch CRUD (NOT `/programs/`) |
+| `/api/admin/permissions/` | Permission management (list all, manageable users) |
+| `/api/admin/users/{id}/permissions/` | User permission CRUD (view, grant, revoke) |
 | `/api/admin/platform-settings/` | Platform monetization settings (Super Admin) |
 | `/api/admin/advertising/` | Advertising partner/offer management |
 | `/api/extension/` | Field officer endpoints (register farmers, update farms) |
@@ -270,9 +342,17 @@ def create_listing(request):
     ...
 ```
 
+## Documentation Policy
+
+**IMPORTANT**: Only `README.md` should be committed to the repository.
+- ❌ Do NOT commit any other markdown documentation files to git
+- ❌ Do NOT force-add ignored documentation files
+- ✅ All other documentation is gitignored and should remain local only
+- ✅ Use README.md for essential project information that must be in the repo
+
 ## Key Files
 - [core/settings.py](core/settings.py) - All Django/DRF/JWT config
 - [accounts/roles.py](accounts/roles.py) - Rolify-style dynamic role system
 - [accounts/policies/](accounts/policies/) - CanCanCan-style authorization
 - [farms/models.py](farms/models.py) - Core farm registration model (~2000 lines)
-- [docs/](docs/) - API documentation, guides
+- [docs/](docs/) - API documentation, guides (gitignored)

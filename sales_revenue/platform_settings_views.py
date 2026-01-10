@@ -26,7 +26,7 @@ class IsSuperAdmin:
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.role in ['SUPER_ADMIN', 'YEA_OFFICIAL']
+            request.user.role == 'SUPER_ADMIN'
         )
 
 
@@ -41,9 +41,9 @@ class PlatformSettingsView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        if request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role not in ['SUPER_ADMIN']:
             return Response(
-                {'error': 'Super Admin or YEA Official access required', 'code': 'PERMISSION_DENIED'},
+                {'error': 'Super Admin access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -58,9 +58,9 @@ class PlatformSettingsView(APIView):
         return self._update_settings(request, partial=True)
     
     def _update_settings(self, request, partial=False):
-        if request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role not in ['SUPER_ADMIN']:
             return Response(
-                {'error': 'Super Admin or YEA Official access required', 'code': 'PERMISSION_DENIED'},
+                {'error': 'Super Admin access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -86,9 +86,9 @@ class MarketplaceMonetizationView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        if request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role not in ['SUPER_ADMIN']:
             return Response(
-                {'error': 'Super Admin or YEA Official access required', 'code': 'PERMISSION_DENIED'},
+                {'error': 'Super Admin access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -97,9 +97,9 @@ class MarketplaceMonetizationView(APIView):
         return Response(serializer.data)
     
     def patch(self, request):
-        if request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role not in ['SUPER_ADMIN']:
             return Response(
-                {'error': 'Super Admin or YEA Official access required', 'code': 'PERMISSION_DENIED'},
+                {'error': 'Super Admin access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
             )
         

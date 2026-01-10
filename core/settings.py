@@ -146,6 +146,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',  # Required for allauth
+    'subscriptions.institutional_auth.InstitutionalAPIUsageMiddleware',  # Rate limiting for institutional API
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -589,6 +590,8 @@ PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', '')
 PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', '')
 PAYSTACK_BASE_URL = os.getenv('PAYSTACK_BASE_URL', 'https://api.paystack.co')
 PAYSTACK_WEBHOOK_SECRET = os.getenv('PAYSTACK_WEBHOOK_SECRET', '')
+PAYSTACK_CALLBACK_URL = os.getenv('PAYSTACK_CALLBACK_URL', '')
+PAYSTACK_WEBHOOK_URL = os.getenv('PAYSTACK_WEBHOOK_URL', '')
 
 # Paystack Configuration
 PAYSTACK_FEE_BEARER = os.getenv('PAYSTACK_FEE_BEARER', 'account')  # Platform pays fees

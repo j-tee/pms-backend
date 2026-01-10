@@ -760,6 +760,34 @@ class InstitutionalInquiry(models.Model):
         db_table = 'institutional_inquiries'
         verbose_name_plural = 'Institutional Inquiries'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['contact_email', 'created_at']),
+            models.Index(fields=['status', 'created_at']),
+        ]
     
     def __str__(self):
         return f"{self.organization_name} - {self.contact_name}"
+    
+    @classmethod
+    def check_recent_inquiry(cls, email, days=7):
+        """
+        Check if email has submitted inquiry within specified days.
+        Used for duplicate prevention.
+        
+        Returns:
+            tuple: (has_recent_inquiry: bool, days_remaining: int)
+        """
+        from datetime import timedelta
+        cutoff_date = timezone.now() - timedelta(days=days)
+        
+        recent_inquiry = cls.objects.filter(
+            contact_email__iexact=email,
+            created_at__gte=cutoff_date
+        ).order_by('-created_at').first()
+        
+        if recent_inquiry:
+            days_since = (timezone.now() - recent_inquiry.created_at).days
+            days_remaining = days - days_since
+            return True, max(0, days_remaining)
+        
+        return False, 0

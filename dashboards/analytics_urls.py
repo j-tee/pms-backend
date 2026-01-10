@@ -64,7 +64,7 @@ urlpatterns = [
     path('alerts/', AnalyticsAlertsView.as_view(), name='alerts'),
     
     # ==========================================================================
-    # PLATFORM REVENUE - SUPER_ADMIN and YEA_OFFICIAL only
+    # PLATFORM REVENUE - SUPER_ADMIN only
     # ==========================================================================
     
     # Revenue overview

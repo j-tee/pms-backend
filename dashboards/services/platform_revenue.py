@@ -6,7 +6,7 @@ Provides platform monetization metrics:
 - Marketplace activation fees
 - Partner payments tracking
 
-Access Control: SUPER_ADMIN and YEA_OFFICIAL only
+Access Control: SUPER_ADMIN only
 """
 
 from django.db.models import Sum, Count, Avg, Q, F

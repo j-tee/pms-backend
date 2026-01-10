@@ -14,24 +14,59 @@ class User(AbstractUser, RoleMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     class UserRole(models.TextChoices):
-        # System Administration (Highest Level)
+        # ========================================
+        # PLATFORM LEVEL (Alphalogique Technologies)
+        # ========================================
         SUPER_ADMIN = 'SUPER_ADMIN', 'Super Administrator'
-        # Platform Owner (Alphalogique Technologies)
-        COMPANY_ADMIN = 'COMPANY_ADMIN', 'Company Administrator'
-        # YEA Officials (Elevated Administrators)
-        YEA_OFFICIAL = 'YEA_OFFICIAL', 'YEA Official'
-        # Standard Administrative Roles
+        
+        # ========================================
+        # NATIONAL LEVEL (YEA Headquarters)
+        # ========================================
         NATIONAL_ADMIN = 'NATIONAL_ADMIN', 'National Administrator'
-        REGIONAL_COORDINATOR = 'REGIONAL_COORDINATOR', 'Regional Coordinator'
-        CONSTITUENCY_OFFICIAL = 'CONSTITUENCY_OFFICIAL', 'Constituency Official'
-        # Specialized Roles
-        PROCUREMENT_OFFICER = 'PROCUREMENT_OFFICER', 'Procurement Officer'
-        VETERINARY_OFFICER = 'VETERINARY_OFFICER', 'Veterinary Officer'
+        NATIONAL_STAFF = 'NATIONAL_STAFF', 'National Staff'
+        
+        # ========================================
+        # REGIONAL LEVEL (YEA Regional Offices)
+        # ========================================
+        REGIONAL_ADMIN = 'REGIONAL_ADMIN', 'Regional Administrator'
+        REGIONAL_STAFF = 'REGIONAL_STAFF', 'Regional Staff'
+        
+        # ========================================
+        # CONSTITUENCY LEVEL (YEA Constituency Offices)
+        # ========================================
+        CONSTITUENCY_ADMIN = 'CONSTITUENCY_ADMIN', 'Constituency Administrator'
+        CONSTITUENCY_STAFF = 'CONSTITUENCY_STAFF', 'Constituency Staff'
+        
+        # ========================================
+        # FIELD OFFICER ROLES (Managed by Constituency Admin)
+        # ========================================
         EXTENSION_OFFICER = 'EXTENSION_OFFICER', 'Extension Officer'
+        VETERINARY_OFFICER = 'VETERINARY_OFFICER', 'Veterinary Officer'
+        YEA_OFFICIAL = 'YEA_OFFICIAL', 'YEA Field Official'
+        
+        # ========================================
+        # SPECIALIZED STAFF ROLES
+        # ========================================
+        PROCUREMENT_OFFICER = 'PROCUREMENT_OFFICER', 'Procurement Officer'
         FINANCE_OFFICER = 'FINANCE_OFFICER', 'Finance Officer'
         AUDITOR = 'AUDITOR', 'Auditor'
-        # End User
+        
+        # ========================================
+        # B2B / INSTITUTIONAL ACCESS
+        # ========================================
+        INSTITUTIONAL_SUBSCRIBER = 'INSTITUTIONAL_SUBSCRIBER', 'Institutional Data Subscriber'
+        
+        # ========================================
+        # END USER
+        # ========================================
         FARMER = 'FARMER', 'Farmer'
+        
+        # ========================================
+        # DEPRECATED (kept for migration compatibility)
+        # ========================================
+        COMPANY_ADMIN = 'COMPANY_ADMIN', 'Company Administrator'  # Use SUPER_ADMIN
+        REGIONAL_COORDINATOR = 'REGIONAL_COORDINATOR', 'Regional Coordinator'  # Use REGIONAL_ADMIN
+        CONSTITUENCY_OFFICIAL = 'CONSTITUENCY_OFFICIAL', 'Constituency Official'  # Use CONSTITUENCY_ADMIN
     
     class PreferredContactMethod(models.TextChoices):
         EMAIL = 'EMAIL', 'Email'
@@ -117,6 +152,16 @@ class User(AbstractUser, RoleMixin):
         null=True,
         db_index=True,
         help_text="Assigned constituency (for officials) or farm constituency (for farmers)"
+    )
+    
+    # Institutional Subscriber Link (for B2B users)
+    institutional_subscriber = models.ForeignKey(
+        'subscriptions.InstitutionalSubscriber',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='users',
+        help_text="Linked institutional subscriber (for INSTITUTIONAL_SUBSCRIBER role only)"
     )
     
     # Account status

@@ -51,7 +51,6 @@ class IsNationalAdminOrAbove:
     
     Allowed roles:
     - SUPER_ADMIN
-    - YEA_OFFICIAL
     - NATIONAL_ADMIN
     - REGIONAL_COORDINATOR (filtered to their region)
     - CONSTITUENCY_OFFICIAL (filtered to their constituency)
@@ -59,7 +58,6 @@ class IsNationalAdminOrAbove:
     
     ALLOWED_ROLES = [
         'SUPER_ADMIN',
-        'YEA_OFFICIAL', 
         'NATIONAL_ADMIN',
         'REGIONAL_COORDINATOR',
         'CONSTITUENCY_OFFICIAL',
@@ -501,9 +499,9 @@ class RefreshCacheView(BaseNationalAdminView):
     """
     
     def post(self, request):
-        if request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return Response(
-                {'error': 'Cache refresh requires super admin access'},
+                {'error': 'Cache refresh requires admin access'},
                 status=status.HTTP_403_FORBIDDEN
             )
         

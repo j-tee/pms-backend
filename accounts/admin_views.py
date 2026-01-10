@@ -44,7 +44,7 @@ class AdminDashboardOverviewView(APIView):
         user = request.user
         
         # Check admin access - use role field directly
-        admin_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR', 'CONSTITUENCY_OFFICIAL']
+        admin_roles = ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR', 'CONSTITUENCY_OFFICIAL']
         if user.role not in admin_roles:
             return Response(
                 {'error': 'Admin access required'},
