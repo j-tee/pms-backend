@@ -22,7 +22,7 @@ from .services.platform_revenue import PlatformRevenueService
 class IsYEAAdmin(IsAuthenticated):
     """
     Permission check for YEA administrators.
-    Allows: SUPER_ADMIN, YEA_OFFICIAL, NATIONAL_ADMIN, REGIONAL_COORDINATOR, CONSTITUENCY_OFFICIAL
+    Allows: SUPER_ADMIN, NATIONAL_ADMIN, REGIONAL_COORDINATOR, CONSTITUENCY_OFFICIAL
     """
     
     def has_permission(self, request, view):
@@ -31,7 +31,7 @@ class IsYEAAdmin(IsAuthenticated):
         
         user = request.user
         return user.role in [
-            'SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN',
+            'SUPER_ADMIN', 'NATIONAL_ADMIN',
             'REGIONAL_COORDINATOR', 'CONSTITUENCY_OFFICIAL'
         ]
 
@@ -39,14 +39,14 @@ class IsYEAAdmin(IsAuthenticated):
 class IsPlatformOwner(IsAuthenticated):
     """
     Permission check for platform owner (revenue access).
-    Allows: SUPER_ADMIN, YEA_OFFICIAL only
+    Allows: SUPER_ADMIN only
     """
     
     def has_permission(self, request, view):
         if not super().has_permission(request, view):
             return False
         
-        return request.user.role in ['SUPER_ADMIN', 'YEA_OFFICIAL']
+        return request.user.role == 'SUPER_ADMIN'
 
 
 # =============================================================================
@@ -190,7 +190,7 @@ class PlatformRevenueOverviewView(APIView):
     GET /api/admin/analytics/platform-revenue/
     
     Platform revenue overview (advertising + marketplace activation fees).
-    SUPER_ADMIN and YEA_OFFICIAL only.
+    SUPER_ADMIN only.
     """
     permission_classes = [IsPlatformOwner]
     

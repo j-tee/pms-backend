@@ -388,10 +388,10 @@ class TestNationalAdminPermissions:
         assert response.status_code == status.HTTP_200_OK
     
     def test_yea_official_access(self, api_client, yea_official):
-        """Test that YEA official has access."""
+        """Test that YEA official (field officer) does NOT have admin dashboard access."""
         api_client.force_authenticate(user=yea_official)
         response = api_client.get('/api/admin/reports/executive/')
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_403_FORBIDDEN
     
     def test_regional_coordinator_access(self, api_client, regional_coordinator):
         """Test that regional coordinator has access."""

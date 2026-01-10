@@ -6,7 +6,7 @@ Provides program-level insights for monitoring the poultry development program.
 
 Access Control:
 - SUPER_ADMIN: Full access + Platform Revenue
-- YEA_OFFICIAL: Full access + Platform Revenue  
+- NATIONAL_ADMIN: Full national access  
 - NATIONAL_ADMIN: Full access (no platform revenue)
 - REGIONAL_COORDINATOR: Region-filtered access
 - CONSTITUENCY_OFFICIAL: Constituency-filtered access

@@ -1,37 +1,96 @@
 """
 Authentication and permissions for Institutional API.
+
+Supports DUAL AUTHENTICATION:
+1. JWT Token (for web dashboard users - INSTITUTIONAL_SUBSCRIBER role)
+2. API Key (for programmatic access - external scripts/systems)
+
+Both methods provide access to the same endpoints but are used in different contexts.
 """
 
 from rest_framework import authentication, permissions, exceptions
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.utils import timezone
 from django.core.cache import cache
+from django.contrib.auth import get_user_model
 import time
 
 from .institutional_models import InstitutionalAPIKey, InstitutionalAPIUsage
 
+User = get_user_model()
 
-class InstitutionalAPIKeyAuthentication(authentication.BaseAuthentication):
+
+class DualAuthentication(authentication.BaseAuthentication):
     """
-    Custom authentication for institutional API keys.
+    Dual authentication: Accepts BOTH JWT tokens AND API keys.
     
-    Usage:
-        Add header: Authorization: ApiKey yea_xxxxx...
-        
-    Or query parameter (less secure):
-        ?api_key=yea_xxxxx...
+    Priority:
+    1. Try JWT authentication first (for web dashboard)
+    2. Fall back to API key authentication (for external API calls)
+    
+    JWT Usage (Web Dashboard):
+        Authorization: Bearer <jwt_token>
+        - User must have INSTITUTIONAL_SUBSCRIBER role
+        - Extracts subscriber from user.institutional_subscriber
+    
+    API Key Usage (Programmatic):
+        Authorization: ApiKey yea_xxxxx...
+        - Validates API key against database
+        - Rate limits based on subscription plan
     """
     
     def authenticate(self, request):
         """
-        Authenticate the request using API key.
-        Returns (None, None) if no API key provided (allows other auth methods).
+        Authenticate request using JWT or API Key.
+        Returns (user_or_subscriber, auth_token) or None.
         """
-        api_key = self._get_api_key(request)
+        # Try JWT first
+        jwt_auth = JWTAuthentication()
+        try:
+            jwt_result = jwt_auth.authenticate(request)
+            if jwt_result:
+                user, token = jwt_result
+                
+                # Verify user has INSTITUTIONAL_SUBSCRIBER role
+                if user.role != User.UserRole.INSTITUTIONAL_SUBSCRIBER:
+                    raise exceptions.AuthenticationFailed(
+                        'This endpoint requires INSTITUTIONAL_SUBSCRIBER role'
+                    )
+                
+                # Verify user has linked subscriber
+                if not user.institutional_subscriber:
+                    raise exceptions.AuthenticationFailed(
+                        'User account not linked to institutional subscriber'
+                    )
+                
+                # Check subscriber is active
+                if not user.institutional_subscriber.is_active:
+                    raise exceptions.AuthenticationFailed(
+                        'Subscription is not active. Please renew your subscription.'
+                    )
+                
+                # Store subscriber and auth method on request
+                # Store on both DRF request and underlying Django request for middleware access
+                request.institutional_subscriber = user.institutional_subscriber
+                request.auth_method = 'jwt'
+                request.authenticated_user = user
+                if hasattr(request, '_request'):
+                    request._request.institutional_subscriber = user.institutional_subscriber
+                    request._request.auth_method = 'jwt'
+                    request._request.authenticated_user = user
+                
+                return (user, token)
+        except exceptions.AuthenticationFailed:
+            # JWT failed, try API key
+            pass
         
-        if not api_key:
-            return None  # No API key, try other auth methods
+        # Try API Key authentication
+        api_key_value = self._get_api_key(request)
         
-        api_key_obj, subscriber = InstitutionalAPIKey.verify_key(api_key)
+        if not api_key_value:
+            return None  # No authentication provided
+        
+        api_key_obj, subscriber = InstitutionalAPIKey.verify_key(api_key_value)
         
         if not api_key_obj:
             raise exceptions.AuthenticationFailed('Invalid or expired API key')
@@ -44,21 +103,31 @@ class InstitutionalAPIKeyAuthentication(authentication.BaseAuthentication):
                     f'IP address {client_ip} not authorized for this API key'
                 )
         
-        # Store API key on request for rate limiting and usage tracking
+        # Store API key and subscriber on request
+        # Store on both DRF request and underlying Django request for middleware access
         request.institutional_api_key = api_key_obj
         request.institutional_subscriber = subscriber
+        request.auth_method = 'api_key'
+        if hasattr(request, '_request'):
+            request._request.institutional_api_key = api_key_obj
+            request._request.institutional_subscriber = subscriber
+            request._request.auth_method = 'api_key'
         
-        # Return subscriber as the "user" for this request
+        # Record API key usage (async task would be better in production)
+        api_key_obj.record_usage(ip_address=self._get_client_ip(request))
+        
+        # Return subscriber as the "user" for permission checks
+        # Note: subscriber is not a User object, so some features won't work
         return (subscriber, api_key_obj)
     
     def _get_api_key(self, request):
-        """Extract API key from header or query parameter"""
-        # Check Authorization header first
+        """Extract API key from Authorization header or query parameter"""
+        # Check Authorization header
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
         if auth_header.lower().startswith('apikey '):
             return auth_header[7:].strip()
         
-        # Fall back to query parameter
+        # Fall back to query parameter (less secure, but convenient for testing)
         return request.query_params.get('api_key', None)
     
     def _get_client_ip(self, request):
@@ -165,6 +234,25 @@ class InstitutionalRateLimiter:
             'monthly_remaining': max(0, plan.requests_per_month - monthly_count),
         }
     
+    @classmethod
+    def increment_counters(cls, subscriber):
+        """Increment usage counters after a successful request"""
+        today = timezone.now().date()
+        month_start = today.replace(day=1)
+        
+        daily_key = f"{cls.CACHE_PREFIX}daily:{subscriber.id}:{today}"
+        monthly_key = f"{cls.CACHE_PREFIX}monthly:{subscriber.id}:{month_start}"
+        
+        daily_count = cache.get(daily_key, 0)
+        monthly_count = cache.get(monthly_key, 0)
+        
+        # Daily expires at midnight
+        seconds_until_midnight = cls._seconds_until_midnight()
+        cache.set(daily_key, daily_count + 1, timeout=seconds_until_midnight)
+        
+        # Monthly expires at end of month (31 days max)
+        cache.set(monthly_key, monthly_count + 1, timeout=31 * 24 * 60 * 60)
+    
     @staticmethod
     def _seconds_until_midnight():
         """Calculate seconds until midnight UTC"""
@@ -184,51 +272,144 @@ class RateLimitExceeded(exceptions.APIException):
 
 class InstitutionalAPIUsageMiddleware:
     """
-    Middleware to track institutional API usage.
-    Records each request for billing and analytics.
+    Middleware to enforce rate limits and track institutional API usage.
+    
+    IMPORTANT: This middleware enforces rate limits for institutional API endpoints.
+    It runs AFTER authentication (so subscriber is on request) and:
+    1. Checks rate limits BEFORE view processing
+    2. Returns 429 if limits exceeded
+    3. Adds rate limit headers to ALL responses
+    
+    Headers added:
+    - X-RateLimit-Limit-Daily: Maximum requests per day
+    - X-RateLimit-Remaining-Daily: Remaining requests today
+    - X-RateLimit-Limit-Monthly: Maximum requests per month
+    - X-RateLimit-Remaining-Monthly: Remaining requests this month
+    - X-RateLimit-Reset-Daily: Seconds until daily limit resets
     """
+    
+    # Skip rate limiting for these paths (webhooks, payment verification)
+    EXEMPT_PATHS = [
+        '/api/institutional/webhooks/',
+        '/api/institutional/pay/verify/',
+    ]
     
     def __init__(self, get_response):
         self.get_response = get_response
     
     def __call__(self, request):
-        # Only track institutional API endpoints
-        if not request.path.startswith('/api/institutional/'):
+        # Check if this is an institutional API endpoint
+        is_institutional_endpoint = (
+            request.path.startswith('/api/institutional/') or
+            request.path.startswith('/api/admin/institutional/')
+        )
+        
+        if not is_institutional_endpoint:
             return self.get_response(request)
         
+        # Check if this path is exempt from rate limiting
+        is_exempt = any(request.path.startswith(path) for path in self.EXEMPT_PATHS)
+        
         start_time = time.time()
+        
+        # Process request - this runs the view including authentication
         response = self.get_response(request)
+        
         duration_ms = int((time.time() - start_time) * 1000)
         
-        # Record usage if authenticated with API key
+        # Get subscriber from request (set by DualAuthentication)
         subscriber = getattr(request, 'institutional_subscriber', None)
         api_key = getattr(request, 'institutional_api_key', None)
         
-        if subscriber and api_key:
-            # Update API key usage
-            client_ip = self._get_client_ip(request)
-            api_key.record_usage(ip_address=client_ip)
+        if subscriber:
+            # Get usage stats
+            usage = InstitutionalRateLimiter.get_usage(subscriber)
+            plan = subscriber.plan
             
-            # Create usage record (async in production)
-            InstitutionalAPIUsage.objects.create(
-                subscriber=subscriber,
-                api_key=api_key,
-                endpoint=request.path,
-                method=request.method,
-                status_code=response.status_code,
-                response_time_ms=duration_ms,
-                ip_address=client_ip,
-                user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
-                date=timezone.now().date(),
-            )
+            # Check rate limits for API key auth (not exempt paths)
+            # Only check if response was successful (not already an error)
+            if api_key and not is_exempt and response.status_code < 400:
+                # Check daily limit
+                if usage['daily_used'] >= plan.requests_per_day:
+                    return self._rate_limit_response(
+                        f"Daily rate limit exceeded ({plan.requests_per_day} requests/day). "
+                        f"Resets at midnight UTC.",
+                        usage, subscriber
+                    )
+                
+                # Check monthly limit
+                if usage['monthly_used'] >= plan.requests_per_month:
+                    today = timezone.now().date()
+                    next_month = (today.replace(day=28) + timezone.timedelta(days=4)).replace(day=1)
+                    return self._rate_limit_response(
+                        f"Monthly rate limit exceeded ({plan.requests_per_month} requests/month). "
+                        f"Resets on {next_month}.",
+                        usage, subscriber
+                    )
+                
+                # Increment rate limit counters (only for successful API calls)
+                InstitutionalRateLimiter.increment_counters(subscriber)
+                
+                # Re-fetch usage after increment for accurate headers
+                usage = InstitutionalRateLimiter.get_usage(subscriber)
+            
+            # Add rate limit headers to response (always, even for non-API-key auth)
+            response['X-RateLimit-Limit-Daily'] = str(plan.requests_per_day)
+            response['X-RateLimit-Remaining-Daily'] = str(usage['daily_remaining'])
+            response['X-RateLimit-Limit-Monthly'] = str(plan.requests_per_month)
+            response['X-RateLimit-Remaining-Monthly'] = str(usage['monthly_remaining'])
+            response['X-RateLimit-Reset-Daily'] = str(InstitutionalRateLimiter._seconds_until_midnight())
+            
+            # Record detailed usage (for API key auth only)
+            if api_key:
+                client_ip = self._get_client_ip(request)
+                user_agent = request.META.get('HTTP_USER_AGENT', '')
+                
+                # Create detailed usage record (async in production)
+                try:
+                    InstitutionalAPIUsage.objects.create(
+                        subscriber=subscriber,
+                        api_key=api_key,
+                        endpoint=request.path,
+                        method=request.method,
+                        status_code=response.status_code,
+                        response_time_ms=duration_ms,
+                        ip_address=client_ip,
+                        user_agent=user_agent[:500],  # Truncate
+                        date=timezone.now().date(),
+                    )
+                except Exception as e:
+                    # Don't fail the request if usage logging fails
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to record institutional API usage: {e}")
+        
+        return response
+    
+    def _rate_limit_response(self, message, usage, subscriber):
+        """Generate a 429 Too Many Requests response with headers"""
+        from django.http import JsonResponse
+        
+        response = JsonResponse(
+            {
+                'error': message,
+                'code': 'rate_limit_exceeded',
+                'detail': {
+                    'daily_limit': usage['daily_limit'],
+                    'daily_used': usage['daily_used'],
+                    'monthly_limit': usage['monthly_limit'],
+                    'monthly_used': usage['monthly_used'],
+                }
+            },
+            status=429
+        )
         
         # Add rate limit headers
-        if subscriber:
-            usage = InstitutionalRateLimiter.get_usage(subscriber)
-            response['X-RateLimit-Limit-Daily'] = usage['daily_limit']
-            response['X-RateLimit-Remaining-Daily'] = usage['daily_remaining']
-            response['X-RateLimit-Limit-Monthly'] = usage['monthly_limit']
-            response['X-RateLimit-Remaining-Monthly'] = usage['monthly_remaining']
+        response['X-RateLimit-Limit-Daily'] = str(usage['daily_limit'])
+        response['X-RateLimit-Remaining-Daily'] = '0'
+        response['X-RateLimit-Limit-Monthly'] = str(usage['monthly_limit'])
+        response['X-RateLimit-Remaining-Monthly'] = str(usage['monthly_remaining'])
+        response['X-RateLimit-Reset-Daily'] = str(InstitutionalRateLimiter._seconds_until_midnight())
         
         return response
     
@@ -267,3 +448,54 @@ class HasDataAccess(permissions.BasePermission):
             )
         
         return True
+
+
+class IsInstitutionalAdmin(permissions.BasePermission):
+    """
+    Permission for admin endpoints that manage institutional subscribers.
+    
+    SECURITY: Institutional subscriptions are B2B business between institutions
+    and the platform (Alphalogique). Only platform staff (SUPER_ADMIN) should
+    have access to this data, NOT YEA government officials.
+    
+    Allowed roles:
+    - SUPER_ADMIN (Platform Owner - Alphalogique)
+    
+    NOT allowed:
+    - NATIONAL_ADMIN, REGIONAL_ADMIN, etc. (YEA government - they are clients)
+    """
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # ONLY allow platform staff (SUPER_ADMIN)
+        # YEA government officials are clients and should NOT see institutional data
+        if request.user.role != User.UserRole.SUPER_ADMIN:
+            raise exceptions.PermissionDenied(
+                'Only platform administrators can access institutional subscription data'
+            )
+        
+        return True
+
+
+def require_rate_limit_check(view_func):
+    """
+    Decorator to enforce rate limiting on institutional API views.
+    
+    Usage:
+        @require_rate_limit_check
+        def get(self, request):
+            ...
+    """
+    def wrapper(self, request, *args, **kwargs):
+        subscriber = getattr(request, 'institutional_subscriber', None)
+        api_key = getattr(request, 'institutional_api_key', None)
+        
+        if subscriber and api_key:
+            # Check rate limit (raises RateLimitExceeded if exceeded)
+            InstitutionalRateLimiter.check_rate_limit(subscriber, api_key)
+        
+        return view_func(self, request, *args, **kwargs)
+    
+    return wrapper

@@ -263,9 +263,9 @@ class AdminUserUnlockView(APIView):
         
         # Check permission - same users who can suspend can unlock
         user = request.user
-        if user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return Response(
-                {'error': 'Permission denied. Only SUPER_ADMIN and YEA_OFFICIAL can unlock accounts.'},
+                {'error': 'Permission denied. Only SUPER_ADMIN and NATIONAL_ADMIN can unlock accounts.'},
                 status=status.HTTP_403_FORBIDDEN
             )
         

@@ -53,7 +53,7 @@ class CanReplyToMessages(permissions.BasePermission):
             request.user and
             request.user.is_authenticated and
             request.user.role in [
-                'SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL',
+                'SUPER_ADMIN', 'NATIONAL_ADMIN',
                 'REGIONAL_COORDINATOR'
             ]
         )
@@ -61,7 +61,7 @@ class CanReplyToMessages(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         """Check if user can reply to this specific message."""
         # Super admin and national admin can reply to all
-        if request.user.role in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return True
         
         # Staff can only reply to assigned messages

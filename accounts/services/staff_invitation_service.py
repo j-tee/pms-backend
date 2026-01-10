@@ -57,27 +57,23 @@ class StaffInvitationService:
         """
         
         # Validate admin permission
-        allowed_admin_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']
+        allowed_admin_roles = ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']
         if admin_user.role not in allowed_admin_roles:
             raise PermissionError("Only admins can create staff invitations")
         
-        # Validate role hierarchy - only SUPER_ADMIN can create YEA_OFFICIAL
+        # Validate role hierarchy
         if role == 'SUPER_ADMIN':
             raise PermissionError("SUPER_ADMIN accounts cannot be created via invitation")
         
-        if role == 'YEA_OFFICIAL':
-            if admin_user.role != 'SUPER_ADMIN':
-                raise PermissionError("Only SUPER_ADMIN can create YEA_OFFICIAL users")
-        
-        # YEA_OFFICIAL has same creation rights as NATIONAL_ADMIN
+        # Regional coordinators can create field-level staff
         if admin_user.role == 'REGIONAL_COORDINATOR':
-            allowed_roles = ['CONSTITUENCY_OFFICIAL', 'EXTENSION_OFFICER', 'VETERINARY_OFFICER']
+            allowed_roles = ['CONSTITUENCY_OFFICIAL', 'EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL']
             if role not in allowed_roles:
                 raise PermissionError(f"Regional coordinators can only create: {', '.join(allowed_roles)}")
         
-        if admin_user.role in ['NATIONAL_ADMIN', 'YEA_OFFICIAL']:
-            disallowed_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL']
-            if role in disallowed_roles:
+        if admin_user.role == 'NATIONAL_ADMIN':
+            # National admin cannot create super admin
+            if role == 'SUPER_ADMIN':
                 raise PermissionError(f"{admin_user.get_role_display()} cannot create {role} users")
         
         # Check if email already exists
@@ -299,7 +295,7 @@ YEA Poultry Management System
             raise ValueError("User account is already active")
         
         # Check admin permission
-        allowed_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']
+        allowed_roles = ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']
         if admin_user.role not in allowed_roles:
             raise PermissionError("Permission denied")
         
@@ -349,7 +345,7 @@ YEA Poultry Management System
             raise ValueError("Cannot cancel invitation for active user. Use deactivate instead.")
         
         # Check admin permission
-        allowed_roles = ['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']
+        allowed_roles = ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']
         if admin_user.role not in allowed_roles:
             raise PermissionError("Permission denied")
         

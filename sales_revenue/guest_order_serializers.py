@@ -142,7 +142,14 @@ class GuestOrderCreateSerializer(serializers.Serializer):
     Create a guest order.
     
     Requires phone verification first.
+    SECURITY: Requires Cloudflare Turnstile CAPTCHA to prevent bot attacks.
     """
+    # Security
+    captcha_token = serializers.CharField(
+        max_length=2048,
+        help_text="Cloudflare Turnstile CAPTCHA response token"
+    )
+    
     # Customer info
     phone_number = serializers.CharField(max_length=15)
     name = serializers.CharField(max_length=200)
@@ -175,11 +182,23 @@ class GuestOrderCreateSerializer(serializers.Serializer):
         except GuestCustomer.DoesNotExist:
             pass
         
-        # Check order rate limit (max 5 orders per day)
-        allowed, remaining = GuestOrderRateLimit.check_limit(phone, 'order', max_count=5)
-        if not allowed:
+        # Check order rate limit (max 5 orders per hour)
+        # This prevents abuse even with verified phone numbers
+        from datetime import timedelta
+        from django.utils import timezone
+        
+        one_hour_ago = timezone.now() - timedelta(hours=1)
+        recent_orders = GuestOrder.objects.filter(
+            guest_customer__phone_number=phone,
+            created_at__gte=one_hour_ago
+        ).count()
+        
+        if recent_orders >= 5:
+            # Store in context for view to trigger OTP re-verification
+            self.context['requires_otp_reverification'] = True
             raise serializers.ValidationError(
-                "Order limit reached for today. Please try again tomorrow."
+                "Too many orders in the last hour. Please verify your phone number again.",
+                code='rate_limit_otp_required'
             )
         
         return phone

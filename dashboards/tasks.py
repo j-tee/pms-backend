@@ -145,7 +145,7 @@ def generate_weekly_report():
         
         # Get YEA admin emails for notification
         yea_admin_emails = list(User.objects.filter(
-            role__in=['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN'],
+            role__in=['SUPER_ADMIN', 'NATIONAL_ADMIN'],
             is_active=True,
             email__isnull=False
         ).exclude(email='').values_list('email', flat=True))

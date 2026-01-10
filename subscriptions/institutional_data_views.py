@@ -20,7 +20,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from .institutional_auth import (
-    InstitutionalAPIKeyAuthentication,
+    DualAuthentication,
     IsInstitutionalSubscriber,
     HasDataAccess,
     InstitutionalRateLimiter,
@@ -32,7 +32,7 @@ class InstitutionalBaseView(APIView):
     Base view for institutional data endpoints.
     Handles authentication, rate limiting, and common patterns.
     """
-    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    authentication_classes = [DualAuthentication]
     permission_classes = [IsInstitutionalSubscriber, HasDataAccess]
     required_access = None  # Override in subclass
     
@@ -88,7 +88,7 @@ class ProductionOverviewView(InstitutionalBaseView):
     required_access = 'access_regional_aggregates'
     
     def get(self, request):
-        from flock_management.models import DailyEggProduction, Flock
+        from flock_management.models import DailyProduction, Flock
         from farms.models import Farm
         
         subscriber = request.institutional_subscriber
@@ -101,7 +101,7 @@ class ProductionOverviewView(InstitutionalBaseView):
         farm_ids = farms.values_list('id', flat=True)
         
         # Production data
-        production = DailyEggProduction.objects.filter(
+        production = DailyProduction.objects.filter(
             flock__farm_id__in=farm_ids,
             collection_date__gte=start_date,
             collection_date__lte=end_date
@@ -165,7 +165,7 @@ class ProductionTrendsView(InstitutionalBaseView):
     required_access = 'access_production_trends'
     
     def get(self, request):
-        from flock_management.models import DailyEggProduction
+        from flock_management.models import DailyProduction
         from farms.models import Farm
         
         subscriber = request.institutional_subscriber
@@ -179,7 +179,7 @@ class ProductionTrendsView(InstitutionalBaseView):
         farm_ids = farms.values_list('id', flat=True)
         
         # Get production data
-        production = DailyEggProduction.objects.filter(
+        production = DailyProduction.objects.filter(
             flock__farm_id__in=farm_ids,
             collection_date__gte=start_date,
             collection_date__lte=end_date
@@ -233,7 +233,7 @@ class RegionalBreakdownView(InstitutionalBaseView):
     required_access = 'access_regional_aggregates'
     
     def get(self, request):
-        from flock_management.models import DailyEggProduction, Flock
+        from flock_management.models import DailyProduction, Flock
         from farms.models import Farm
         
         subscriber = request.institutional_subscriber
@@ -250,7 +250,7 @@ class RegionalBreakdownView(InstitutionalBaseView):
             region_farms = farms.filter(region=region)
             farm_ids = region_farms.values_list('id', flat=True)
             
-            production = DailyEggProduction.objects.filter(
+            production = DailyProduction.objects.filter(
                 flock__farm_id__in=farm_ids,
                 collection_date__gte=start_date,
                 collection_date__lte=end_date
@@ -297,7 +297,7 @@ class ConstituencyBreakdownView(InstitutionalBaseView):
     required_access = 'access_constituency_data'
     
     def get(self, request):
-        from flock_management.models import DailyEggProduction, Flock
+        from flock_management.models import DailyProduction, Flock
         from farms.models import Farm
         
         subscriber = request.institutional_subscriber
@@ -320,7 +320,7 @@ class ConstituencyBreakdownView(InstitutionalBaseView):
             )
             farm_ids = const_farms.values_list('id', flat=True)
             
-            production = DailyEggProduction.objects.filter(
+            production = DailyProduction.objects.filter(
                 flock__farm_id__in=farm_ids,
                 collection_date__gte=start_date,
                 collection_date__lte=end_date
@@ -516,7 +516,7 @@ class SupplyForecastView(InstitutionalBaseView):
     required_access = 'access_supply_forecasts'
     
     def get(self, request):
-        from flock_management.models import Flock, DailyEggProduction
+        from flock_management.models import Flock, DailyProduction
         from farms.models import Farm
         from django.db.models import Avg
         
@@ -542,7 +542,7 @@ class SupplyForecastView(InstitutionalBaseView):
         
         # Historical production rate (last 30 days)
         thirty_days_ago = timezone.now().date() - timedelta(days=30)
-        recent_production = DailyEggProduction.objects.filter(
+        recent_production = DailyProduction.objects.filter(
             flock__farm_id__in=farm_ids,
             collection_date__gte=thirty_days_ago
         ).aggregate(
@@ -592,7 +592,7 @@ class FarmPerformanceView(InstitutionalBaseView):
     required_access = 'access_individual_farm_data'
     
     def get(self, request):
-        from flock_management.models import DailyEggProduction, Flock
+        from flock_management.models import DailyProduction, Flock
         from farms.models import Farm
         
         subscriber = request.institutional_subscriber
@@ -607,7 +607,7 @@ class FarmPerformanceView(InstitutionalBaseView):
         # Calculate performance metrics per farm
         farm_performance = []
         for farm in farms[:limit]:
-            production = DailyEggProduction.objects.filter(
+            production = DailyProduction.objects.filter(
                 flock__farm=farm,
                 collection_date__gte=start_date,
                 collection_date__lte=end_date

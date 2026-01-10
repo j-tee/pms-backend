@@ -67,11 +67,11 @@ class IsSuperAdmin(permissions.BasePermission):
 
 class IsYEAAdmin(permissions.BasePermission):
     """
-    Permission for any YEA admin role (Super Admin, National Admin, or YEA Official).
+    Permission for any YEA admin role (Super Admin or National Admin).
     Used for analytics and institutional subscription management.
     """
     def has_permission(self, request, view):
-        admin_roles = ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL']
+        admin_roles = ['SUPER_ADMIN', 'NATIONAL_ADMIN']
         return (
             request.user and 
             request.user.is_authenticated and 

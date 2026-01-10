@@ -138,7 +138,7 @@ YEA Poultry Advertising Team
         
         # Notify admin team about new lead
         admin_emails = list(User.objects.filter(
-            role__in=['SUPER_ADMIN', 'YEA_OFFICIAL'],
+            role__in=['SUPER_ADMIN', 'NATIONAL_ADMIN'],
             is_active=True,
             email__isnull=False
         ).exclude(email='').values_list('email', flat=True)[:3])

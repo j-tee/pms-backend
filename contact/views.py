@@ -106,7 +106,7 @@ class ContactMessageListView(generics.ListAPIView):
         user = self.request.user
         
         # Super admin and national admin see all
-        if user.role in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL']:
+        if user.role in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return queryset
         
         # Regional coordinators see only assigned messages
@@ -133,7 +133,7 @@ class ContactMessageDetailView(generics.RetrieveAPIView):
         
         user = self.request.user
         
-        if user.role in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL']:
+        if user.role in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return queryset
         
         if user.role == 'REGIONAL_COORDINATOR':

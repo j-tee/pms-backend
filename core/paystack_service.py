@@ -62,6 +62,8 @@ class PaystackService:
     SECRET_KEY = settings.PAYSTACK_SECRET_KEY
     PUBLIC_KEY = settings.PAYSTACK_PUBLIC_KEY
     WEBHOOK_SECRET = settings.PAYSTACK_WEBHOOK_SECRET
+    CALLBACK_URL = getattr(settings, 'PAYSTACK_CALLBACK_URL', '')
+    WEBHOOK_URL = getattr(settings, 'PAYSTACK_WEBHOOK_URL', '')
     CURRENCY = settings.PAYSTACK_CURRENCY
     
     # Mobile Money provider codes for Ghana
@@ -199,8 +201,11 @@ class PaystackService:
             'metadata': metadata or {},
         }
         
+        # Use provided callback_url or default from settings
         if callback_url:
             payload['callback_url'] = callback_url
+        elif cls.CALLBACK_URL:
+            payload['callback_url'] = cls.CALLBACK_URL
         
         if channels:
             payload['channels'] = channels

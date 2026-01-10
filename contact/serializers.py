@@ -183,7 +183,7 @@ class ContactMessageUpdateSerializer(serializers.ModelSerializer):
     
     def validate_assigned_to(self, value):
         """Ensure assigned user is staff."""
-        if value and value.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'YEA_OFFICIAL']:
+        if value and value.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN', 'REGIONAL_COORDINATOR']:
             raise serializers.ValidationError(
                 "Can only assign to admin or staff users"
             )

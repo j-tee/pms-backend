@@ -421,7 +421,7 @@ def deactivate_dormant_accounts(days_inactive: int = 365):
         is_active=True,
         last_login__lt=cutoff_date
     ).exclude(
-        role__in=['SUPER_ADMIN', 'YEA_OFFICIAL', 'NATIONAL_ADMIN']  # Don't flag admin accounts
+        role__in=['SUPER_ADMIN', 'NATIONAL_ADMIN']  # Don't flag admin accounts
     )
     
     count = dormant_users.count()

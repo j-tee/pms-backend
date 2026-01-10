@@ -47,9 +47,12 @@ from .institutional_serializers import (
     InstitutionalInitiatePaymentSerializer,
 )
 from .institutional_auth import (
-    InstitutionalAPIKeyAuthentication,
+    DualAuthentication,
     IsInstitutionalSubscriber,
+    HasDataAccess,
     InstitutionalRateLimiter,
+    IsInstitutionalAdmin,
+    require_rate_limit_check,
 )
 
 logger = logging.getLogger(__name__)
@@ -143,7 +146,7 @@ class SubscriberProfileView(APIView):
     
     View and update subscriber profile.
     """
-    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    authentication_classes = [DualAuthentication]
     permission_classes = [IsInstitutionalSubscriber]
     
     def get(self, request):
@@ -171,7 +174,7 @@ class SubscriberAPIKeysView(APIView):
     
     List and create API keys for subscriber.
     """
-    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    authentication_classes = [DualAuthentication]
     permission_classes = [IsInstitutionalSubscriber]
     
     def get(self, request):
@@ -221,7 +224,7 @@ class SubscriberAPIKeyDetailView(APIView):
     
     Revoke an API key.
     """
-    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    authentication_classes = [DualAuthentication]
     permission_classes = [IsInstitutionalSubscriber]
     
     def delete(self, request, key_id):
@@ -246,7 +249,7 @@ class SubscriberUsageView(APIView):
     
     Get API usage history and statistics.
     """
-    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    authentication_classes = [DualAuthentication]
     permission_classes = [IsInstitutionalSubscriber]
     
     def get(self, request):
@@ -305,7 +308,7 @@ class SubscriberPaymentsView(APIView):
     
     Get payment history.
     """
-    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    authentication_classes = [DualAuthentication]
     permission_classes = [IsInstitutionalSubscriber]
     
     def get(self, request):
@@ -342,7 +345,7 @@ class InitiateInstitutionalPaymentView(APIView):
         "period_end": "2026-02-07"
     }
     """
-    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    authentication_classes = [DualAuthentication]
     permission_classes = [IsInstitutionalSubscriber]
     
     @transaction.atomic
@@ -479,7 +482,7 @@ class VerifyInstitutionalPaymentView(APIView):
     
     Verify payment status by reference.
     """
-    authentication_classes = [InstitutionalAPIKeyAuthentication]
+    authentication_classes = [DualAuthentication]
     permission_classes = [IsInstitutionalSubscriber]
     
     def get(self, request, reference):
@@ -615,7 +618,7 @@ class AdminInstitutionalDashboardView(APIView):
     
     Dashboard overview of institutional subscriptions.
     """
-    permission_classes = [IsAuthenticated, IsExecutive]
+    permission_classes = [IsAuthenticated, IsInstitutionalAdmin]
     
     def get(self, request):
         # Subscriber stats
@@ -686,7 +689,7 @@ class AdminInquiryListView(generics.ListAPIView):
     
     List institutional inquiries.
     """
-    permission_classes = [IsAuthenticated, IsExecutive]
+    permission_classes = [IsAuthenticated, IsInstitutionalAdmin]
     serializer_class = InstitutionalInquiryListSerializer
     
     def get_queryset(self):
@@ -712,7 +715,7 @@ class AdminInquiryDetailView(generics.RetrieveUpdateAPIView):
     
     View and update inquiry details.
     """
-    permission_classes = [IsAuthenticated, IsExecutive]
+    permission_classes = [IsAuthenticated, IsInstitutionalAdmin]
     serializer_class = InstitutionalInquiryDetailSerializer
     queryset = InstitutionalInquiry.objects.all()
 
@@ -723,7 +726,7 @@ class AdminInquiryConvertView(APIView):
     
     Convert inquiry to subscriber.
     """
-    permission_classes = [IsAuthenticated, IsExecutive]
+    permission_classes = [IsAuthenticated, IsInstitutionalAdmin]
     
     def post(self, request, pk):
         inquiry = get_object_or_404(InstitutionalInquiry, pk=pk)
@@ -777,7 +780,7 @@ class AdminSubscriberListView(generics.ListCreateAPIView):
     
     List and create subscribers.
     """
-    permission_classes = [IsAuthenticated, IsExecutive]
+    permission_classes = [IsAuthenticated, IsInstitutionalAdmin]
     
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -814,7 +817,7 @@ class AdminSubscriberDetailView(generics.RetrieveUpdateAPIView):
     
     View and update subscriber.
     """
-    permission_classes = [IsAuthenticated, IsExecutive]
+    permission_classes = [IsAuthenticated, IsInstitutionalAdmin]
     serializer_class = InstitutionalSubscriberAdminSerializer
     queryset = InstitutionalSubscriber.objects.all()
 
@@ -825,7 +828,7 @@ class AdminSubscriberVerifyView(APIView):
     
     Verify subscriber organization.
     """
-    permission_classes = [IsAuthenticated, IsExecutive]
+    permission_classes = [IsAuthenticated, IsInstitutionalAdmin]
     
     def post(self, request, pk):
         subscriber = get_object_or_404(InstitutionalSubscriber, pk=pk)
@@ -846,7 +849,7 @@ class AdminSubscriberActivateView(APIView):
     
     Activate subscriber (start trial or paid subscription).
     """
-    permission_classes = [IsAuthenticated, IsExecutive]
+    permission_classes = [IsAuthenticated, IsInstitutionalAdmin]
     
     def post(self, request, pk):
         subscriber = get_object_or_404(InstitutionalSubscriber, pk=pk)

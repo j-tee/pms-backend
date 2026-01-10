@@ -71,6 +71,16 @@ from .adsense_admin_views import (
     AdSensePaymentsView,
 )
 
+# Permission management views
+from .permission_views import (
+    PermissionListView,
+    UserPermissionsView,
+    GrantPermissionView,
+    RevokePermissionView,
+    ResetPermissionView,
+    ManageableUsersView,
+)
+
 app_name = 'admin_api'
 
 urlpatterns = [
@@ -101,6 +111,16 @@ urlpatterns = [
     # Login History & Attempts
     path('users/<uuid:user_id>/login-attempts/', AdminUserLoginAttemptsView.as_view(), name='admin-user-login-attempts'),
     path('users/<uuid:user_id>/login-history/', AdminUserLoginHistoryView.as_view(), name='admin-user-login-history'),
+    
+    # ========================================
+    # Permission Management
+    # ========================================
+    path('permissions/', PermissionListView.as_view(), name='admin-permission-list'),
+    path('permissions/manageable-users/', ManageableUsersView.as_view(), name='admin-manageable-users'),
+    path('users/<uuid:user_id>/permissions/', UserPermissionsView.as_view(), name='admin-user-permissions'),
+    path('users/<uuid:user_id>/permissions/grant/', GrantPermissionView.as_view(), name='admin-grant-permission'),
+    path('users/<uuid:user_id>/permissions/revoke/', RevokePermissionView.as_view(), name='admin-revoke-permission'),
+    path('users/<uuid:user_id>/permissions/reset/', ResetPermissionView.as_view(), name='admin-reset-permission'),
     
     # ========================================
     # Staff Invitation Management

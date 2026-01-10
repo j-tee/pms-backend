@@ -498,7 +498,7 @@ class FarmerAnalyticsService:
         )
         
         procurement_revenue = procurement_invoices.aggregate(
-            gross=Coalesce(Sum('gross_amount'), Decimal('0')),
+            gross=Coalesce(Sum('subtotal'), Decimal('0')),
             net=Coalesce(Sum('total_amount'), Decimal('0')),
             deductions=Coalesce(
                 Sum('quality_deduction') + Sum('mortality_deduction') + Sum('other_deductions'),

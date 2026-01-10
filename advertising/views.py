@@ -369,7 +369,7 @@ class AdminPartnerListView(generics.ListCreateAPIView):
     serializer_class = PartnerSerializer
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return Partner.objects.none()
         return Partner.objects.all()
     
@@ -388,7 +388,7 @@ class AdminPartnerDetailView(generics.RetrieveUpdateDestroyAPIView):
     lookup_field = 'id'
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return Partner.objects.none()
         return Partner.objects.all()
 
@@ -402,7 +402,7 @@ class AdminOfferListView(generics.ListCreateAPIView):
     serializer_class = PartnerOfferSerializer
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return PartnerOffer.objects.none()
         
         queryset = PartnerOffer.objects.select_related('partner').all()
@@ -440,7 +440,7 @@ class AdminOfferDetailView(generics.RetrieveUpdateDestroyAPIView):
     lookup_field = 'id'
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return PartnerOffer.objects.none()
         return PartnerOffer.objects.select_related('partner').all()
 
@@ -453,7 +453,7 @@ class AdminLeadListView(generics.ListAPIView):
     serializer_class = AdvertiserLeadSerializer
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return AdvertiserLead.objects.none()
         
         queryset = AdvertiserLead.objects.all()
@@ -477,7 +477,7 @@ class AdminLeadDetailView(generics.RetrieveUpdateAPIView):
     lookup_field = 'id'
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return AdvertiserLead.objects.none()
         return AdvertiserLead.objects.all()
 
@@ -491,7 +491,7 @@ class AdminOfferAnalyticsView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        if request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return Response(
                 {'error': 'Admin access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -560,7 +560,7 @@ class AdminOfferVariantListView(generics.ListCreateAPIView):
     serializer_class = OfferVariantSerializer
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return OfferVariant.objects.none()
         offer_id = self.kwargs.get('offer_id')
         return OfferVariant.objects.filter(offer_id=offer_id)
@@ -582,7 +582,7 @@ class AdminOfferVariantDetailView(generics.RetrieveUpdateDestroyAPIView):
     lookup_field = 'id'
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return OfferVariant.objects.none()
         return OfferVariant.objects.all()
 
@@ -596,7 +596,7 @@ class AdminABTestResultsView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request, offer_id):
-        if request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return Response(
                 {'error': 'Admin access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -696,7 +696,7 @@ class AdminConversionListView(generics.ListCreateAPIView):
         return ConversionEventSerializer
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return ConversionEvent.objects.none()
         
         queryset = ConversionEvent.objects.select_related(
@@ -734,7 +734,7 @@ class AdminConversionDetailView(generics.RetrieveUpdateAPIView):
     lookup_field = 'id'
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return ConversionEvent.objects.none()
         return ConversionEvent.objects.select_related('offer', 'farm', 'variant').all()
 
@@ -748,7 +748,7 @@ class AdminVerifyConversionView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request, id):
-        if request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return Response(
                 {'error': 'Admin access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -969,7 +969,7 @@ class AdminWebhookKeyListView(generics.ListCreateAPIView):
     serializer_class = WebhookKeySerializer
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return ConversionWebhookKey.objects.none()
         return ConversionWebhookKey.objects.select_related('partner').all()
 
@@ -985,7 +985,7 @@ class AdminWebhookKeyDetailView(generics.RetrieveUpdateDestroyAPIView):
     lookup_field = 'id'
     
     def get_queryset(self):
-        if self.request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if self.request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return ConversionWebhookKey.objects.none()
         return ConversionWebhookKey.objects.all()
 
@@ -999,7 +999,7 @@ class AdminRegenerateWebhookKeyView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request, id):
-        if request.user.role not in ['SUPER_ADMIN', 'YEA_OFFICIAL']:
+        if request.user.role not in ['SUPER_ADMIN', 'NATIONAL_ADMIN']:
             return Response(
                 {'error': 'Admin access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
