@@ -28,7 +28,15 @@ else:
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-$sndye)!a@mj0pz6@=z78-+@b^x7^$@amxmnf%s2z8fq=_+7@3')
+# Removed hardcoded fallback - SECRET_KEY MUST be set in environment
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError(
+        "SECRET_KEY environment variable is not set. "
+        "Please add SECRET_KEY to your .env file. "
+        "For development, you can generate one with: "
+        "python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'"
+    )
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
