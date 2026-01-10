@@ -115,27 +115,49 @@ def institutional_user(institutional_subscriber):
 @pytest.fixture
 def institutional_api_key(institutional_subscriber):
     """Create an API key for institutional subscriber"""
-    api_key = InstitutionalAPIKey.objects.create(
+    # Use the generate_key class method which returns (api_key_obj, full_key_string)
+    api_key_obj, full_key = InstitutionalAPIKey.generate_key(
         subscriber=institutional_subscriber,
         name='Production API Key',
-        is_active=True,
     )
-    # Return the key before it's hashed
-    return api_key
+    # Store the full key on the object for testing (not a model field, just for tests)
+    api_key_obj.full_key = full_key
+    return api_key_obj
 
 
 @pytest.fixture
 def sample_farm():
     """Create a sample operational farm"""
-    return Farm.objects.create(
-        name='Test Farm',
-        owner_name='John Doe',
-        email='john@test.com',
+    # Create a user first (Farm has OneToOne with User)
+    user = User.objects.create_user(
+        username='test_farmer_sample',
+        email='farmer@test.com',
+        password='testpass123',
+        role='FARMER',
         phone='+233240000001',
-        region='Greater Accra',
-        constituency='Tema',
-        location_address='123 Test St',
-        status='operational',
+    )
+    
+    return Farm.objects.create(
+        user=user,
+        application_id='APP-2026-00001',
+        first_name='John',
+        last_name='Doe',
+        date_of_birth='1990-01-01',
+        gender='Male',
+        ghana_card_number='GHA-123456789-0',
+        primary_phone='+233240000001',
+        residential_address='123 Test St, Tema',
+        primary_constituency='Tema',
+        nok_full_name='Jane Doe',
+        nok_relationship='Spouse',
+        nok_phone='+233240000002',
+        education_level='SHS/Technical',
+        literacy_level='Can Read & Write',
+        years_in_poultry=Decimal('2.0'),
+        farm_name='Test Farm Ltd',
+        ownership_type='Sole Proprietorship',
+        tin='1234567890',
+        application_status='approved',
     )
 
 
@@ -157,7 +179,7 @@ class TestInstitutionalSubscriberAuthentication:
     def test_api_key_authentication_success(self, api_client, institutional_api_key):
         """Institutional subscribers can authenticate with API key"""
         api_client.credentials(
-            HTTP_X_API_KEY=institutional_api_key.key,
+            HTTP_X_API_KEY=institutional_api_key.full_key,
             HTTP_X_CLIENT_ID=str(institutional_api_key.subscriber.id)
         )
         
@@ -172,7 +194,7 @@ class TestInstitutionalSubscriberAuthentication:
         """When both JWT and API key provided, JWT takes precedence"""
         api_client.force_authenticate(user=institutional_user)
         api_client.credentials(
-            HTTP_X_API_KEY=institutional_api_key.key,
+            HTTP_X_API_KEY=institutional_api_key.full_key,
             HTTP_X_CLIENT_ID=str(institutional_api_key.subscriber.id)
         )
         
