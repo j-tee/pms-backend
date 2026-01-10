@@ -181,10 +181,13 @@ class GrantPermissionView(APIView):
                 'user_id': str(target_user.id)
             })
         except PermissionManagementError as e:
+            # Return 403 for authorization errors, 400 for validation errors
+            status_code = status.HTTP_403_FORBIDDEN if e.error_type == 'authorization' else status.HTTP_400_BAD_REQUEST
+            code = 'PERMISSION_DENIED' if e.error_type == 'authorization' else 'GRANT_FAILED'
             return Response({
                 'error': str(e),
-                'code': 'PERMISSION_MANAGEMENT_ERROR'
-            }, status=status.HTTP_403_FORBIDDEN)
+                'code': code
+            }, status=status_code)
 
 
 class RevokePermissionView(APIView):
@@ -224,10 +227,13 @@ class RevokePermissionView(APIView):
                 'user_id': str(target_user.id)
             })
         except PermissionManagementError as e:
+            # Return 403 for authorization errors, 400 for validation errors
+            status_code = status.HTTP_403_FORBIDDEN if e.error_type == 'authorization' else status.HTTP_400_BAD_REQUEST
+            code = 'PERMISSION_DENIED' if e.error_type == 'authorization' else 'REVOKE_FAILED'
             return Response({
                 'error': str(e),
-                'code': 'REVOKE_FAILED'
-            }, status=status.HTTP_400_BAD_REQUEST)
+                'code': code
+            }, status=status_code)
 
 
 class ResetPermissionView(APIView):
@@ -288,10 +294,13 @@ class ResetPermissionView(APIView):
                     'user_id': str(target_user.id)
                 })
             except PermissionManagementError as e:
+                # Return 403 for authorization errors, 400 for validation errors
+                status_code = status.HTTP_403_FORBIDDEN if e.error_type == 'authorization' else status.HTTP_400_BAD_REQUEST
+                code = 'PERMISSION_DENIED' if e.error_type == 'authorization' else 'RESET_FAILED'
                 return Response({
                     'error': str(e),
-                    'code': 'RESET_FAILED'
-                }, status=status.HTTP_400_BAD_REQUEST)
+                    'code': code
+                }, status=status_code)
 
 
 class ManageableUsersView(APIView):

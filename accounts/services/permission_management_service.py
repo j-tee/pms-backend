@@ -23,7 +23,15 @@ from accounts.permissions_config import (
 
 class PermissionManagementError(Exception):
     """Exception raised for permission management errors."""
-    pass
+    def __init__(self, message, error_type='validation'):
+        """
+        Args:
+            message: Error message
+            error_type: 'authorization' for access denied, 'validation' for business logic errors
+                       Default is 'validation' since most errors are business logic
+        """
+        super().__init__(message)
+        self.error_type = error_type
 
 
 class PermissionManagementService:
@@ -52,7 +60,8 @@ class PermissionManagementService:
         manageable = PERMISSION_MANAGEMENT_HIERARCHY.get(self.admin.role, [])
         if not manageable and self.admin.role != 'SUPER_ADMIN':
             raise PermissionManagementError(
-                f"Role '{self.admin.role}' cannot manage permissions for any users"
+                f"Role '{self.admin.role}' cannot manage permissions for any users",
+                error_type='authorization'
             )
     
     def can_manage_user(self, target_user):
@@ -163,9 +172,7 @@ class PermissionManagementService:
         - reason: Why granted/revoked
         """
         if not self.can_manage_user(target_user):
-            raise PermissionManagementError(
-                f"You cannot manage permissions for user '{target_user.username}'"
-            )
+            raise PermissionManagementError(f"You cannot manage permissions for user '{target_user.username}'")
         
         from accounts.permissions_config import get_permissions_as_dict
         
@@ -266,29 +273,26 @@ class PermissionManagementService:
         """
         # Validate management rights
         if not self.can_manage_user(target_user):
-            raise PermissionManagementError(
-                f"You cannot manage permissions for user '{target_user.username}'"
-            )
+            raise PermissionManagementError(f"You cannot manage permissions for user '{target_user.username}'")
         
         # Validate permission exists
         perm_info = get_permission_by_codename(permission_codename)
         if not perm_info:
             raise PermissionManagementError(
-                f"Permission '{permission_codename}' does not exist"
-            )
+                f"Permission '{permission_codename}' does not exist", error_type='validation')
         
         # Validate admin can grant this permission
         if not can_admin_grant_permission(self.admin.role, permission_codename):
             raise PermissionManagementError(
-                f"You cannot grant permission '{permission_codename}'"
+                f"You cannot grant permission '{permission_codename}'",
+                error_type='authorization'
             )
         
         # Check if it's an implicit permission (cannot be modified)
         implicit = get_implicit_permissions(target_user.role)
         if implicit and (implicit == '__all__' or permission_codename in implicit):
             raise PermissionManagementError(
-                f"Permission '{permission_codename}' is implicit for role '{target_user.role}' and cannot be modified"
-            )
+                f"Permission '{permission_codename}' is implicit for role '{target_user.role}' and cannot be modified", error_type='validation')
         
         # Ensure permission exists in database
         permission, _ = Permission.objects.get_or_create(
@@ -331,23 +335,30 @@ class PermissionManagementService:
         """
         # Validate management rights
         if not self.can_manage_user(target_user):
-            raise PermissionManagementError(
-                f"You cannot manage permissions for user '{target_user.username}'"
-            )
+            raise PermissionManagementError(f"You cannot manage permissions for user '{target_user.username}'")
         
         # Validate permission exists
         perm_info = get_permission_by_codename(permission_codename)
         if not perm_info:
             raise PermissionManagementError(
-                f"Permission '{permission_codename}' does not exist"
-            )
+                f"Permission '{permission_codename}' does not exist", error_type='validation')
         
         # Check if it's an implicit permission (cannot be revoked)
         implicit = get_implicit_permissions(target_user.role)
         if implicit and (implicit == '__all__' or permission_codename in implicit):
             raise PermissionManagementError(
-                f"Permission '{permission_codename}' is implicit for role '{target_user.role}' and cannot be revoked"
-            )
+                f"Permission '{permission_codename}' is implicit for role '{target_user.role}' and cannot be revoked", error_type='validation')
+        
+        # Ensure permission exists in database
+        permission, _ = Permission.objects.get_or_create(
+            codename=permission_codename,
+            defaults={
+                'name': perm_info['name'],
+                'description': perm_info['description'],
+                'category': perm_info['category'],
+                'is_system_permission': True,
+            }
+        )
         
         # Revoke the permission
         target_user.revoke_permission(
@@ -379,9 +390,7 @@ class PermissionManagementService:
             dict with result info
         """
         if not self.can_manage_user(target_user):
-            raise PermissionManagementError(
-                f"You cannot manage permissions for user '{target_user.username}'"
-            )
+            raise PermissionManagementError(f"You cannot manage permissions for user '{target_user.username}'")
         
         cleared = target_user.clear_permission_override(permission_codename)
         
