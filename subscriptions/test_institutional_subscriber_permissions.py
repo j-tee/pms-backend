@@ -157,6 +157,8 @@ def sample_farm():
         farm_name='Test Farm Ltd',
         ownership_type='Sole Proprietorship',
         tin='1234567890',
+        total_bird_capacity=1000,
+        current_bird_count=800,
         application_status='approved',
     )
 
