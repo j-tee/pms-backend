@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.utils import timezone
+from django.shortcuts import redirect
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -69,13 +70,25 @@ class AdSenseStatusView(APIView):
         response_data = {
             'configured': service.is_configured(),
             'connected': service.is_available(),
+            'is_configured': service.is_configured(),  # Also include for compatibility
+            'is_connected': service.is_available(),     # Also include for compatibility
             'account_info': None,
+            'connected_at': None,
         }
         
         if service.is_available():
             account_info = service.get_account_info()
             if account_info:
                 response_data['account_info'] = account_info
+            
+            # Get connection timestamp
+            try:
+                from sales_revenue.models import PlatformSettings
+                settings_obj = PlatformSettings.get_settings()
+                if settings_obj.adsense_connected_at:
+                    response_data['connected_at'] = settings_obj.adsense_connected_at.isoformat()
+            except Exception:
+                pass
         
         return Response(response_data)
 
@@ -139,30 +152,35 @@ class AdSenseCallbackView(APIView):
     
     Handle OAuth callback from Google.
     
+    This endpoint is called by Google after user authorization.
+    Since it's a browser redirect, we allow unauthenticated access
+    but validate using the state parameter stored in cache.
+    
     Query Parameters:
         - code: Authorization code from Google
-        - state: State parameter for verification
+        - state: State parameter for verification (validates the request)
+        - error: Error message if authorization was denied
     """
-    permission_classes = [IsSuperAdmin]
+    # Allow unauthenticated access - validation is done via state parameter
+    permission_classes = []
+    authentication_classes = []
     
     def get(self, request):
         code = request.query_params.get('code')
         state = request.query_params.get('state')
         error = request.query_params.get('error')
         
+        # Get frontend URL for redirects
+        from django.conf import settings as django_settings
+        frontend_url = getattr(django_settings, 'FRONTEND_URL', 'http://localhost:3000')
+        admin_adsense_url = f"{frontend_url}/admin/revenue/adsense/setup"
+        
         if error:
-            return Response({
-                'error': 'Authorization denied',
-                'message': error,
-                'code': 'AUTH_DENIED'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            # Redirect to frontend with error
+            return redirect(f"{admin_adsense_url}?error={error}")
         
         if not code or not state:
-            return Response({
-                'error': 'Missing parameters',
-                'message': 'Authorization code and state are required',
-                'code': 'MISSING_PARAMS'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return redirect(f"{admin_adsense_url}?error=missing_params")
         
         service = get_adsense_service()
         
@@ -170,26 +188,14 @@ class AdSenseCallbackView(APIView):
             success = service.handle_oauth_callback(code, state)
             
             if success:
-                account_info = service.get_account_info()
-                return Response({
-                    'success': True,
-                    'message': 'AdSense connected successfully',
-                    'account_info': account_info
-                })
+                # Redirect to frontend with success
+                return redirect(f"{admin_adsense_url}?success=true")
             else:
-                return Response({
-                    'error': 'Failed to connect AdSense',
-                    'message': 'OAuth callback processing failed',
-                    'code': 'CALLBACK_FAILED'
-                }, status=status.HTTP_400_BAD_REQUEST)
+                return redirect(f"{admin_adsense_url}?error=callback_failed")
                 
         except Exception as e:
             logger.error(f"OAuth callback error: {e}")
-            return Response({
-                'error': 'Connection failed',
-                'message': str(e),
-                'code': 'CONNECTION_ERROR'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return redirect(f"{admin_adsense_url}?error=connection_error")
 
 
 class AdSenseDisconnectView(APIView):
@@ -251,14 +257,15 @@ class AdSenseEarningsView(APIView):
             top_pages = service.get_top_performing_pages(days=30, limit=5)
             
             # Convert Decimal to string for JSON serialization
-            for key in ['today', 'yesterday', 'this_week', 'this_month', 'last_month']:
-                if key in summary and isinstance(summary[key], Decimal):
-                    summary[key] = str(summary[key])
+            if summary:
+                for key in ['today', 'yesterday', 'this_week', 'this_month', 'last_month']:
+                    if key in summary and isinstance(summary[key], Decimal):
+                        summary[key] = str(summary[key])
             
             return Response({
                 'connected': True,
-                'earnings': summary,
-                'top_pages': top_pages,
+                'earnings': summary or {},
+                'top_pages': top_pages or [],
             })
             
         except Exception as e:

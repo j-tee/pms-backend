@@ -46,6 +46,9 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 # Frontend URL for email/sms links
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 
+# Backend URL (used for OAuth callbacks, etc.)
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')
+
 
 # =============================================================================
 # REDIS & CACHING (Required for scaling)
@@ -493,7 +496,7 @@ GOOGLE_ADSENSE_CLIENT_SECRET = os.getenv('GOOGLE_ADSENSE_CLIENT_SECRET', '')
 GOOGLE_ADSENSE_ACCOUNT_ID = os.getenv('GOOGLE_ADSENSE_ACCOUNT_ID', '')
 GOOGLE_ADSENSE_REDIRECT_URI = os.getenv(
     'GOOGLE_ADSENSE_REDIRECT_URI', 
-    f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/api/admin/adsense/callback/"
+    f"{BACKEND_URL}/api/admin/adsense/callback/"
 )
 
 
