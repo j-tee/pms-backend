@@ -121,11 +121,16 @@ class DualAuthentication(authentication.BaseAuthentication):
         return (subscriber, api_key_obj)
     
     def _get_api_key(self, request):
-        """Extract API key from Authorization header or query parameter"""
-        # Check Authorization header
+        """Extract API key from Authorization header, X-API-Key header, or query parameter"""
+        # Check Authorization header (format: "ApiKey yea_xxxxx...")
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
         if auth_header.lower().startswith('apikey '):
             return auth_header[7:].strip()
+        
+        # Check X-API-Key header (alternative format)
+        api_key_header = request.META.get('HTTP_X_API_KEY', '')
+        if api_key_header:
+            return api_key_header.strip()
         
         # Fall back to query parameter (less secure, but convenient for testing)
         return request.query_params.get('api_key', None)

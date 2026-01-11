@@ -123,10 +123,15 @@ class ProductionOverviewView(InstitutionalBaseView):
             average_flock_size=Avg('current_count'),
         )
         
-        # Regional breakdown
-        regional_breakdown = farms.values('region').annotate(
-            farm_count=Count('id'),
-        ).order_by('-farm_count')
+        # Regional breakdown - compute in Python since region is a property
+        from collections import defaultdict
+        region_counts = defaultdict(int)
+        for farm in farms:
+            region_counts[farm.region] += 1
+        regional_breakdown = [
+            {'region': region, 'farm_count': count}
+            for region, count in sorted(region_counts.items(), key=lambda x: -x[1])
+        ]
         
         return Response({
             'period': {
@@ -244,11 +249,15 @@ class RegionalBreakdownView(InstitutionalBaseView):
         if subscriber.preferred_regions:
             pass  # TODO: Fix region filtering - Farm model uses primary_constituency, not region
         
-        # Regional stats
+        # Regional stats - group farms by region property
+        from collections import defaultdict
+        farms_by_region = defaultdict(list)
+        for farm in farms:
+            farms_by_region[farm.region].append(farm)
+        
         regional_data = []
-        for region in farms.values_list('region', flat=True).distinct():
-            region_farms = farms.filter(region=region)
-            farm_ids = region_farms.values_list('id', flat=True)
+        for region, region_farms_list in farms_by_region.items():
+            farm_ids = [f.id for f in region_farms_list]
             
             production = DailyProduction.objects.filter(
                 flock__farm_id__in=farm_ids,
@@ -269,7 +278,7 @@ class RegionalBreakdownView(InstitutionalBaseView):
             
             regional_data.append({
                 'region': region,
-                'farms': region_farms.count(),
+                'farms': len(region_farms_list),
                 'active_flocks': flock_stats['total_flocks'] or 0,
                 'total_birds': flock_stats['total_birds'] or 0,
                 'total_eggs': production['total_eggs'] or 0,
@@ -308,17 +317,23 @@ class ConstituencyBreakdownView(InstitutionalBaseView):
         farms = Farm.objects.filter(farm_status='Active')
         if subscriber.preferred_regions:
             pass  # TODO: Fix region filtering - Farm model uses primary_constituency, not region
-        if region:
-            farms = farms.filter(region=region)
         
-        # Constituency stats
+        # Filter by region if provided
+        if region:
+            farms = [f for f in farms if f.region == region]
+        else:
+            farms = list(farms)
+        
+        # Constituency stats - group by region and constituency
+        from collections import defaultdict
+        constituency_groups = defaultdict(list)
+        for farm in farms:
+            key = (farm.region, farm.primary_constituency)
+            constituency_groups[key].append(farm)
+        
         constituency_data = []
-        for item in farms.values('region', 'constituency').distinct():
-            const_farms = farms.filter(
-                region=item['region'],
-                constituency=item['constituency']
-            )
-            farm_ids = const_farms.values_list('id', flat=True)
+        for (region_name, constituency_name), const_farms_list in constituency_groups.items():
+            farm_ids = [f.id for f in const_farms_list]
             
             production = DailyProduction.objects.filter(
                 flock__farm_id__in=farm_ids,
@@ -336,9 +351,9 @@ class ConstituencyBreakdownView(InstitutionalBaseView):
             )
             
             constituency_data.append({
-                'region': item['region'],
-                'constituency': item['constituency'],
-                'farms': const_farms.count(),
+                'region': region_name,
+                'constituency': constituency_name,
+                'farms': len(const_farms_list),
                 'total_birds': flock_stats['total_birds'] or 0,
                 'total_eggs': production['total_eggs'] or 0,
             })
@@ -375,20 +390,34 @@ class MarketPricesView(InstitutionalBaseView):
         farms = Farm.objects.filter(farm_status='Active')
         if subscriber.preferred_regions:
             pass  # TODO: Fix region filtering - Farm model uses primary_constituency, not region
-        farm_ids = farms.values_list('id', flat=True)
+        farm_ids = list(farms.values_list('id', flat=True))
         
-        # Egg prices by region
-        egg_prices = EggSale.objects.filter(
+        # Egg prices by region - compute in Python since region is a property
+        from collections import defaultdict
+        egg_sales_by_region = defaultdict(list)
+        
+        egg_sales = EggSale.objects.filter(
             farm_id__in=farm_ids,
             sale_date__gte=start_date,
             sale_date__lte=end_date,
             status='completed'
-        ).values('farm__region').annotate(
-            avg_price_per_crate=Avg('price_per_crate'),
-            total_crates=Sum('quantity_crates'),
-            total_value=Sum('gross_amount'),
-            transactions=Count('id'),
-        ).order_by('farm__region')
+        ).select_related('farm')
+        
+        for sale in egg_sales:
+            egg_sales_by_region[sale.farm.region].append(sale)
+        
+        egg_prices = []
+        for region, sales in egg_sales_by_region.items():
+            total_crates = sum(s.quantity_crates for s in sales)
+            total_value = sum(s.gross_amount for s in sales)
+            avg_price = sum(s.price_per_crate for s in sales) / len(sales) if sales else 0
+            egg_prices.append({
+                'farm__region': region,
+                'avg_price_per_crate': avg_price,
+                'total_crates': total_crates,
+                'total_value': total_value,
+                'transactions': len(sales),
+            })
         
         # Bird prices by type
         bird_prices = BirdSale.objects.filter(
@@ -451,12 +480,16 @@ class MortalityDataView(InstitutionalBaseView):
         farms = Farm.objects.filter(farm_status='Active')
         if subscriber.preferred_regions:
             pass  # TODO: Fix region filtering - Farm model uses primary_constituency, not region
-        farm_ids = farms.values_list('id', flat=True)
         
-        # Regional mortality
+        # Regional mortality - group farms by region
+        from collections import defaultdict
+        farms_by_region = defaultdict(list)
+        for farm in farms:
+            farms_by_region[farm.region].append(farm)
+        
         regional_mortality = []
-        for region in farms.values_list('region', flat=True).distinct():
-            region_farm_ids = farms.filter(region=region).values_list('id', flat=True)
+        for region, region_farms_list in farms_by_region.items():
+            region_farm_ids = [f.id for f in region_farms_list]
             
             mortality = MortalityRecord.objects.filter(
                 flock__farm_id__in=region_farm_ids,

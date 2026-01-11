@@ -899,8 +899,68 @@ class Farm(models.Model):
         return (
             self.application_status == 'Approved' and
             self.farm_status == 'Active' and
-            (self.is_government_farmer or bool(self.business_registration_number))
+            self.total_bird_capacity >= 500  # Minimum scale for bulk orders
         )
+    
+    @property
+    def region(self):
+        """
+        Derive region from primary_constituency.
+        
+        This is a temporary property to support institutional data API queries.
+        In the future, this should be replaced with a proper Location model
+        that maps constituencies to regions.
+        
+        Returns a best-guess region based on constituency name patterns.
+        For more accurate mapping, implement a Location model with constituency-region relationships.
+        """
+        if not self.primary_constituency:
+            return "Unknown"
+        
+        constituency = self.primary_constituency.lower()
+        
+        # Greater Accra Region constituencies
+        if any(term in constituency for term in ['accra', 'tema', 'ga', 'korle', 'ablekuma', 'ayawaso', 'okaikoi', 'ledzokuku', 'krowor', 'adentan', 'madina', 'dome']):
+            return "Greater Accra"
+        
+        # Ashanti Region constituencies  
+        if any(term in constituency for term in ['kumasi', 'ashanti', 'obuasi', 'ejisu', 'mampong', 'bekwai', 'asante']):
+            return "Ashanti"
+        
+        # Eastern Region constituencies
+        if any(term in constituency for term in ['koforidua', 'eastern', 'akuapem', 'kwahu', 'akyem', 'suhum', 'nsawam']):
+            return "Eastern"
+        
+        # Western Region constituencies
+        if any(term in constituency for term in ['sekondi', 'takoradi', 'western', 'tarkwa', 'axim', 'prestea']):
+            return "Western"
+        
+        # Central Region constituencies
+        if any(term in constituency for term in ['cape coast', 'central', 'winneba', 'kasoa', 'gomoa', 'agona', 'awutu']):
+            return "Central"
+        
+        # Northern Region constituencies
+        if any(term in constituency for term in ['tamale', 'northern', 'yendi', 'savelugu', 'tolon']):
+            return "Northern"
+        
+        # Upper East Region
+        if any(term in constituency for term in ['bolgatanga', 'upper east', 'bawku', 'navrongo']):
+            return "Upper East"
+        
+        # Upper West Region
+        if any(term in constituency for term in ['wa ', 'upper west', 'jirapa', 'lawra']):
+            return "Upper West"
+        
+        # Volta Region
+        if any(term in constituency for term in ['volta', 'ho ', 'hohoe', 'keta', 'tongu', 'kpando', 'ave']):
+            return "Volta"
+        
+        # Brong-Ahafo (now Bono, Bono East, Ahafo)
+        if any(term in constituency for term in ['sunyani', 'brong', 'ahafo', 'bono', 'techiman', 'kintampo', 'berekum']):
+            return "Bono"
+        
+        # Default to constituency name if no pattern matches
+        return self.primary_constituency
     
     @property
     def core_platform_accessible(self):
