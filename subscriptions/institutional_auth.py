@@ -141,12 +141,19 @@ class DualAuthentication(authentication.BaseAuthentication):
 class IsInstitutionalSubscriber(permissions.BasePermission):
     """
     Permission check for institutional API endpoints.
-    Requires valid API key with active subscription.
+    Requires valid API key with active subscription OR JWT-authenticated institutional user.
     """
     
     def has_permission(self, request, view):
-        # Check if authenticated via API key
+        # Check if authenticated via API key (subscriber set by DualAuthentication)
         subscriber = getattr(request, 'institutional_subscriber', None)
+        
+        # If not set by DualAuthentication, check if user is JWT-authenticated with INSTITUTIONAL_SUBSCRIBER role
+        if not subscriber and request.user and request.user.is_authenticated:
+            if request.user.role == 'INSTITUTIONAL_SUBSCRIBER' and hasattr(request.user, 'institutional_subscriber'):
+                subscriber = request.user.institutional_subscriber
+                # Set on request for consistency
+                request.institutional_subscriber = subscriber
         
         if not subscriber:
             return False
@@ -433,6 +440,13 @@ class HasDataAccess(permissions.BasePermission):
     
     def has_permission(self, request, view):
         subscriber = getattr(request, 'institutional_subscriber', None)
+        
+        # If not set by DualAuthentication, check if user is JWT-authenticated
+        if not subscriber and request.user and request.user.is_authenticated:
+            if request.user.role == 'INSTITUTIONAL_SUBSCRIBER' and hasattr(request.user, 'institutional_subscriber'):
+                subscriber = request.user.institutional_subscriber
+                request.institutional_subscriber = subscriber
+        
         if not subscriber:
             return False
         
