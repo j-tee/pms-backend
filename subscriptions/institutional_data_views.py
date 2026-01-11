@@ -103,14 +103,14 @@ class ProductionOverviewView(InstitutionalBaseView):
         # Production data
         production = DailyProduction.objects.filter(
             flock__farm_id__in=farm_ids,
-            collection_date__gte=start_date,
-            collection_date__lte=end_date
+            production_date__gte=start_date,
+            production_date__lte=end_date
         )
         
         production_stats = production.aggregate(
-            total_eggs=Sum('total_eggs_collected'),
+            total_eggs=Sum('eggs_collected'),
             good_eggs=Sum('good_eggs'),
-            average_production=Avg('total_eggs_collected'),
+            average_production=Avg('eggs_collected'),
         )
         
         # Flock data
@@ -119,8 +119,8 @@ class ProductionOverviewView(InstitutionalBaseView):
             status='Active'
         ).aggregate(
             total_flocks=Count('id'),
-            total_birds=Sum('current_bird_count'),
-            average_flock_size=Avg('current_bird_count'),
+            total_birds=Sum('current_count'),
+            average_flock_size=Avg('current_count'),
         )
         
         # Regional breakdown
@@ -181,22 +181,22 @@ class ProductionTrendsView(InstitutionalBaseView):
         # Get production data
         production = DailyProduction.objects.filter(
             flock__farm_id__in=farm_ids,
-            collection_date__gte=start_date,
-            collection_date__lte=end_date
+            production_date__gte=start_date,
+            production_date__lte=end_date
         )
         
         # Aggregate by granularity
         if granularity == 'day':
-            trunc_func = TruncDate('collection_date')
+            trunc_func = TruncDate('production_date')
         elif granularity == 'month':
-            trunc_func = TruncMonth('collection_date')
+            trunc_func = TruncMonth('production_date')
         else:
-            trunc_func = TruncWeek('collection_date')
+            trunc_func = TruncWeek('production_date')
         
         trends = production.annotate(
             period=trunc_func
         ).values('period').annotate(
-            total_eggs=Sum('total_eggs_collected'),
+            total_eggs=Sum('eggs_collected'),
             good_eggs=Sum('good_eggs'),
             farms_reporting=Count('flock__farm_id', distinct=True),
         ).order_by('period')
@@ -252,10 +252,10 @@ class RegionalBreakdownView(InstitutionalBaseView):
             
             production = DailyProduction.objects.filter(
                 flock__farm_id__in=farm_ids,
-                collection_date__gte=start_date,
-                collection_date__lte=end_date
+                production_date__gte=start_date,
+                production_date__lte=end_date
             ).aggregate(
-                total_eggs=Sum('total_eggs_collected'),
+                total_eggs=Sum('eggs_collected'),
                 good_eggs=Sum('good_eggs'),
             )
             
@@ -263,7 +263,7 @@ class RegionalBreakdownView(InstitutionalBaseView):
                 farm_id__in=farm_ids,
                 status='Active'
             ).aggregate(
-                total_birds=Sum('current_bird_count'),
+                total_birds=Sum('current_count'),
                 total_flocks=Count('id'),
             )
             
@@ -322,17 +322,17 @@ class ConstituencyBreakdownView(InstitutionalBaseView):
             
             production = DailyProduction.objects.filter(
                 flock__farm_id__in=farm_ids,
-                collection_date__gte=start_date,
-                collection_date__lte=end_date
+                production_date__gte=start_date,
+                production_date__lte=end_date
             ).aggregate(
-                total_eggs=Sum('total_eggs_collected'),
+                total_eggs=Sum('eggs_collected'),
             )
             
             flock_stats = Flock.objects.filter(
                 farm_id__in=farm_ids,
                 status='Active'
             ).aggregate(
-                total_birds=Sum('current_bird_count'),
+                total_birds=Sum('current_count'),
             )
             
             constituency_data.append({
@@ -471,7 +471,7 @@ class MortalityDataView(InstitutionalBaseView):
                 farm_id__in=region_farm_ids,
                 status='Active'
             ).aggregate(
-                total_birds=Sum('current_bird_count'),
+                total_birds=Sum('current_count'),
                 initial_birds=Sum('initial_bird_count'),
             )
             
@@ -536,7 +536,7 @@ class SupplyForecastView(InstitutionalBaseView):
         )
         
         flock_stats = active_flocks.aggregate(
-            total_birds=Sum('current_bird_count'),
+            total_birds=Sum('current_count'),
             total_flocks=Count('id'),
         )
         
@@ -544,11 +544,11 @@ class SupplyForecastView(InstitutionalBaseView):
         thirty_days_ago = timezone.now().date() - timedelta(days=30)
         recent_production = DailyProduction.objects.filter(
             flock__farm_id__in=farm_ids,
-            collection_date__gte=thirty_days_ago
+            production_date__gte=thirty_days_ago
         ).aggregate(
-            avg_daily_eggs=Avg('total_eggs_collected'),
+            avg_daily_eggs=Avg('eggs_collected'),
             avg_production_rate=Avg(
-                F('total_eggs_collected') * 100.0 / F('flock__current_bird_count')
+                F('eggs_collected') * 100.0 / F('flock__current_count')
             ),
         )
         
@@ -609,16 +609,16 @@ class FarmPerformanceView(InstitutionalBaseView):
         for farm in farms[:limit]:
             production = DailyProduction.objects.filter(
                 flock__farm=farm,
-                collection_date__gte=start_date,
-                collection_date__lte=end_date
+                production_date__gte=start_date,
+                production_date__lte=end_date
             ).aggregate(
-                total_eggs=Sum('total_eggs_collected'),
-                avg_daily=Avg('total_eggs_collected'),
+                total_eggs=Sum('eggs_collected'),
+                avg_daily=Avg('eggs_collected'),
             )
             
             flocks = Flock.objects.filter(farm=farm, status='Active')
             flock_stats = flocks.aggregate(
-                total_birds=Sum('current_bird_count'),
+                total_birds=Sum('current_count'),
             )
             
             farm_performance.append({
