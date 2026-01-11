@@ -105,7 +105,8 @@ class AdSenseService:
             from sales_revenue.models import PlatformSettings
             settings_obj = PlatformSettings.get_settings()
             settings_obj.adsense_oauth_token = token_data
-            settings_obj.save(update_fields=['adsense_oauth_token'])
+            settings_obj.adsense_connected_at = timezone.now()
+            settings_obj.save(update_fields=['adsense_oauth_token', 'adsense_connected_at'])
             cache.set(ADSENSE_TOKEN_CACHE_KEY, token_data, ADSENSE_CACHE_TIMEOUT)
             return True
         except Exception as e:
@@ -249,10 +250,18 @@ class AdSenseService:
                 name=f'accounts/{self.config.account_id}'
             ).execute()
             
+            # Extract timezone - it can be a dict with 'id' or just a string
+            timezone_data = account.get('timeZone', {})
+            if isinstance(timezone_data, dict):
+                timezone_str = timezone_data.get('id', 'UTC')
+            else:
+                timezone_str = timezone_data or 'UTC'
+            
             result = {
                 'account_id': self.config.account_id,
+                'account_name': account.get('displayName', ''),
                 'display_name': account.get('displayName', ''),
-                'timezone': account.get('timeZone', 'UTC'),
+                'timezone': timezone_str,
                 'state': account.get('state', 'UNKNOWN'),
             }
             
@@ -540,7 +549,8 @@ class AdSenseService:
             from sales_revenue.models import PlatformSettings
             settings_obj = PlatformSettings.get_settings()
             settings_obj.adsense_oauth_token = None
-            settings_obj.save(update_fields=['adsense_oauth_token'])
+            settings_obj.adsense_connected_at = None
+            settings_obj.save(update_fields=['adsense_oauth_token', 'adsense_connected_at'])
             
             # Clear cache
             cache.delete(ADSENSE_TOKEN_CACHE_KEY)
@@ -548,6 +558,9 @@ class AdSenseService:
             # Clear all earnings cache
             # Note: This is a simplified approach; in production you might want
             # to use cache.delete_pattern if using Redis
+            
+            self._service = None  # Reset the service instance
+            self._credentials = None
             
             return True
         except Exception as e:
