@@ -484,8 +484,10 @@ class MortalityDataView(InstitutionalBaseView):
         # Regional mortality - group farms by region
         from collections import defaultdict
         farms_by_region = defaultdict(list)
+        all_farm_ids = []  # Collect all farm IDs for causes breakdown
         for farm in farms:
             farms_by_region[farm.region].append(farm)
+            all_farm_ids.append(farm.id)
         
         regional_mortality = []
         for region, region_farms_list in farms_by_region.items():
@@ -520,7 +522,7 @@ class MortalityDataView(InstitutionalBaseView):
         
         # Causes breakdown (anonymized)
         causes = MortalityRecord.objects.filter(
-            flock__farm_id__in=farm_ids,
+            flock__farm_id__in=all_farm_ids,
             date__gte=start_date,
             date__lte=end_date
         ).values('cause').annotate(
