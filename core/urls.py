@@ -72,6 +72,7 @@ urlpatterns = [
     path('api/inventory/', include('sales_revenue.inventory_urls')),  # Farmer inventory management
     path('api/marketplace/', include('sales_revenue.marketplace_urls')),  # Marketplace (farmer-scoped)
     path('api/processing/', include('sales_revenue.processing_urls')),  # Processing batches (birds → products)
+    path('api/returns/', include('sales_revenue.returns_refunds_urls')),  # Returns and refunds
     path('api/subscriptions/', include((subscription_urls, 'subscriptions'))),  # Marketplace subscription payments
     path('api/subscriptions/webhooks/', include((subscription_webhook_urls, 'subscription_webhooks'))),  # Payment webhooks
     path('api/public/marketplace/', include('sales_revenue.public_marketplace_urls')),  # Public marketplace (no auth)

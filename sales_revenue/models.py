@@ -1025,3 +1025,4 @@ class FraudAlert(models.Model):
 # These are split into separate files for organization but must be registered here
 from .inventory_models import *  # noqa: F401, F403
 from .processing_models import *  # noqa: F401, F403
+from .returns_refunds_models import *  # noqa: F401, F403
