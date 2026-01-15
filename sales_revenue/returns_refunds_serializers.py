@@ -16,20 +16,21 @@ from accounts.serializers import UserSerializer
 class ReturnItemSerializer(serializers.ModelSerializer):
     """Serializer for individual return items."""
     
-    product_name = serializers.CharField(source='product.name', read_only=True)
-    product_code = serializers.CharField(source='product.product_code', read_only=True)
     order_item_quantity = serializers.IntegerField(source='order_item.quantity', read_only=True)
     max_returnable_quantity = serializers.SerializerMethodField()
     
     class Meta:
         model = ReturnItem
         fields = [
-            'id', 'return_request', 'order_item', 'product', 'product_name', 'product_code',
+            'id', 'return_request', 'order_item', 'product',
+            'product_name', 'product_sku', 'unit', 'unit_price',
             'quantity', 'order_item_quantity', 'max_returnable_quantity',
-            'reason', 'refund_amount', 'restocking_fee', 'condition_on_arrival',
-            'quality_notes', 'stock_restored', 'stock_movement', 'created_at'
+            'item_reason', 'item_notes', 'refund_amount',
+            'returned_in_good_condition',
+            'stock_restored', 'stock_restored_at', 'stock_movement_id',
+            'created_at'
         ]
-        read_only_fields = ['id', 'return_request', 'stock_restored', 'stock_movement', 'created_at']
+        read_only_fields = ['id', 'return_request', 'stock_restored', 'stock_restored_at', 'stock_movement_id', 'created_at']
     
     def get_max_returnable_quantity(self, obj):
         """Calculate maximum quantity that can be returned for this item."""
@@ -98,8 +99,8 @@ class RefundTransactionSerializer(serializers.ModelSerializer):
         model = RefundTransaction
         fields = [
             'id', 'return_request', 'return_number', 'transaction_id', 'amount',
-            'payment_method', 'payment_provider', 'status', 'initiated_by',
-            'processed_at', 'notes', 'created_at', 'updated_at'
+            'refund_method', 'payment_provider', 'status', 'processed_by',
+            'processed_at', 'notes', 'failure_reason', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -109,7 +110,7 @@ class ReturnRequestListSerializer(serializers.ModelSerializer):
     
     order_number = serializers.CharField(source='order.order_number', read_only=True)
     customer_name = serializers.SerializerMethodField()
-    items_count = serializers.IntegerField(source='items.count', read_only=True)
+    items_count = serializers.IntegerField(source='return_items.count', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
@@ -117,14 +118,14 @@ class ReturnRequestListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'return_number', 'order', 'order_number', 'customer',
             'customer_name', 'status', 'status_display', 'items_count',
-            'total_refund_amount', 'requested_at', 'processed_at'
+            'total_refund_amount', 'requested_at', 'reviewed_at'
         ]
-        read_only_fields = ['id', 'return_number', 'requested_at', 'processed_at']
+        read_only_fields = ['id', 'return_number', 'requested_at', 'reviewed_at']
     
     def get_customer_name(self, obj):
         """Get customer display name."""
-        if obj.customer and obj.customer.user:
-            return obj.customer.user.get_full_name() or obj.customer.user.email
+        if obj.customer:
+            return f"{obj.customer.first_name} {obj.customer.last_name}"
         return "Unknown Customer"
 
 
@@ -134,39 +135,42 @@ class ReturnRequestDetailSerializer(serializers.ModelSerializer):
     order_number = serializers.CharField(source='order.order_number', read_only=True)
     order_date = serializers.DateTimeField(source='order.created_at', read_only=True)
     customer_details = serializers.SerializerMethodField()
-    items = ReturnItemSerializer(many=True, read_only=True)
+    items = ReturnItemSerializer(many=True, read_only=True, source='return_items')
     refund_transactions = RefundTransactionSerializer(many=True, read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    approved_by_details = UserSerializer(source='approved_by', read_only=True)
-    rejected_by_details = UserSerializer(source='rejected_by', read_only=True)
+    reviewed_by_details = UserSerializer(source='reviewed_by', read_only=True)
     
     class Meta:
         model = ReturnRequest
         fields = [
             'id', 'return_number', 'order', 'order_number', 'order_date',
             'customer', 'customer_details', 'status', 'status_display',
-            'requested_at', 'approved_at', 'approved_by', 'approved_by_details',
-            'rejected_at', 'rejected_by', 'rejected_by_details', 'rejection_reason',
-            'items_received_at', 'refund_issued_at', 'completed_at',
-            'total_refund_amount', 'total_restocking_fee', 'items', 'refund_transactions',
-            'return_shipping_address', 'return_shipping_carrier', 'return_tracking_number',
-            'customer_notes', 'admin_notes', 'created_at', 'updated_at'
+            'reason', 'detailed_reason',
+            'requested_at', 'reviewed_at', 'reviewed_by', 'reviewed_by_details',
+            'review_notes',
+            'items_received_at', 'items_condition',
+            'refund_issued_at', 'refund_transaction_id', 'refund_notes',
+            'refund_method', 'total_refund_amount', 'restocking_fee',
+            'return_quality_acceptable',
+            'customer_images', 'farmer_images',
+            'items', 'refund_transactions',
+            'completed_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'return_number', 'requested_at', 'approved_at', 'approved_by',
-            'rejected_at', 'rejected_by', 'items_received_at', 'refund_issued_at',
-            'completed_at', 'created_at', 'updated_at'
+            'id', 'return_number', 'requested_at', 'reviewed_at', 'reviewed_by',
+            'items_received_at', 'refund_issued_at',
+            'completed_at', 'updated_at'
         ]
     
     def get_customer_details(self, obj):
         """Get detailed customer information."""
-        if obj.customer and obj.customer.user:
-            user = obj.customer.user
+        if obj.customer:
+            customer = obj.customer
             return {
-                'id': obj.customer.id,
-                'name': user.get_full_name() or user.email,
-                'email': user.email,
-                'phone': str(user.phone) if user.phone else None,
+                'id': str(customer.id),
+                'name': f"{customer.first_name} {customer.last_name}",
+                'email': customer.email,
+                'phone': str(customer.phone_number) if customer.phone_number else None,
             }
         return None
 

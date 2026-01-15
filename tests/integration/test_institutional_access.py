@@ -23,6 +23,7 @@ class InstitutionalDataAccessTest(TestCase):
             username='super_admin',
             password='testpass123',
             role='SUPER_ADMIN',
+            phone='+233201111111',
             is_active=True,
             is_verified=True
         )
@@ -32,6 +33,7 @@ class InstitutionalDataAccessTest(TestCase):
             username='national_admin',
             password='testpass123',
             role='NATIONAL_ADMIN',
+            phone='+233201111112',
             is_active=True,
             is_verified=True
         )
@@ -42,6 +44,7 @@ class InstitutionalDataAccessTest(TestCase):
             password='testpass123',
             role='REGIONAL_ADMIN',
             region='Greater Accra',
+            phone='+233201111113',
             is_active=True,
             is_verified=True
         )

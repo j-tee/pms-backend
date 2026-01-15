@@ -190,36 +190,94 @@ class ReturnRequest(models.Model):
         self.total_refund_amount = items_total - self.restocking_fee
         return self.total_refund_amount
     
-    def approve_return(self, reviewed_by, notes=''):
+    def approve_return(self, approved_by=None, reviewed_by=None, notes='', admin_notes=''):
         """Approve return request"""
         self.status = 'approved'
-        self.reviewed_by = reviewed_by
+        self.reviewed_by = approved_by or reviewed_by
         self.reviewed_at = timezone.now()
-        self.review_notes = notes
+        self.review_notes = notes or admin_notes
         self.save()
     
-    def reject_return(self, reviewed_by, notes=''):
+    def reject_return(self, rejected_by=None, reviewed_by=None, reason='', notes='', admin_notes=''):
         """Reject return request"""
         self.status = 'rejected'
-        self.reviewed_by = reviewed_by
+        self.reviewed_by = rejected_by or reviewed_by
         self.reviewed_at = timezone.now()
-        self.review_notes = notes
+        self.review_notes = reason or notes or admin_notes
         self.save()
     
-    def mark_items_received(self, quality_acceptable=True, condition_notes=''):
-        """Mark return items as received by farmer"""
+    def mark_items_received(self, items_conditions=None, quality_acceptable=True, condition_notes='', admin_notes=''):
+        """
+        Mark return items as received by farmer.
+        
+        Args:
+            items_conditions: List of dicts with item conditions
+                [{'id': uuid, 'condition_on_arrival': 'good'|'damaged', 'quality_notes': '...'}]
+            quality_acceptable: Overall quality assessment (legacy parameter)
+            condition_notes: Notes about items condition (legacy parameter)
+            admin_notes: Admin notes about receipt
+        """
         self.status = 'items_received'
         self.items_received_at = timezone.now()
-        self.items_condition = condition_notes
-        self.return_quality_acceptable = quality_acceptable
+        self.items_condition = condition_notes or admin_notes
+        
+        # Process individual item conditions
+        if items_conditions:
+            all_good = True
+            for item_data in items_conditions:
+                item_id = item_data.get('id')
+                condition = item_data.get('condition_on_arrival', 'good')
+                quality_notes = item_data.get('quality_notes', '')
+                
+                try:
+                    return_item = self.return_items.get(id=item_id)
+                    return_item.returned_in_good_condition = (condition == 'good')
+                    return_item.item_notes = quality_notes
+                    return_item.save(update_fields=['returned_in_good_condition', 'item_notes'])
+                    
+                    if condition != 'good':
+                        all_good = False
+                except ReturnItem.DoesNotExist:
+                    pass
+            
+            self.return_quality_acceptable = all_good
+        else:
+            self.return_quality_acceptable = quality_acceptable
+        
         self.save()
         
-        # If quality acceptable, restore stock
-        if quality_acceptable:
-            self._restore_inventory()
+        # Restore stock for items in good condition
+        self._restore_inventory()
     
-    def issue_refund(self, transaction_id='', notes=''):
-        """Mark refund as issued"""
+    def issue_refund(self, initiated_by=None, processed_by=None, payment_method='', 
+                      refund_method='', payment_provider='', transaction_id='', notes=''):
+        """
+        Issue refund and create RefundTransaction record.
+        
+        Args:
+            initiated_by/processed_by: User issuing the refund
+            payment_method/refund_method: Method of refund (mobile_money, cash, etc.)
+            payment_provider: e.g., MTN MoMo, Paystack
+            transaction_id: External reference if any
+            notes: Additional notes
+            
+        Returns:
+            RefundTransaction instance
+        """
+        # Create refund transaction
+        refund_transaction = RefundTransaction.objects.create(
+            return_request=self,
+            amount=self.total_refund_amount or self.calculate_refund_amount(),
+            refund_method=payment_method or refund_method or 'mobile_money',
+            status='completed',
+            transaction_id=transaction_id,
+            payment_provider=payment_provider,
+            processed_by=initiated_by or processed_by,
+            processed_at=timezone.now(),
+            notes=notes
+        )
+        
+        # Update return request status
         self.status = 'refund_issued'
         self.refund_issued_at = timezone.now()
         self.refund_transaction_id = transaction_id
@@ -229,6 +287,8 @@ class ReturnRequest(models.Model):
         # Update order payment status
         self.order.payment_status = 'refunded'
         self.order.save()
+        
+        return refund_transaction
     
     def complete_return(self):
         """Mark return as completed"""
@@ -339,6 +399,24 @@ class ReturnItem(models.Model):
         return f"{self.product_name} x {self.quantity} - {self.return_request.return_number}"
     
     def save(self, *args, **kwargs):
+        # Validate return quantity doesn't exceed ordered quantity
+        if self.order_item:
+            ordered_qty = self.order_item.quantity
+            # Calculate already returned quantity (excluding this item if updating)
+            existing_returns = ReturnItem.objects.filter(
+                order_item=self.order_item
+            ).exclude(pk=self.pk).aggregate(
+                total_returned=models.Sum('quantity')
+            )['total_returned'] or 0
+            
+            max_returnable = ordered_qty - existing_returns
+            if self.quantity > max_returnable:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(
+                    f"Cannot return {self.quantity} items. Maximum returnable: {max_returnable} "
+                    f"(ordered: {ordered_qty}, already returned: {existing_returns})"
+                )
+        
         # Calculate refund amount if not set
         if not self.refund_amount:
             self.refund_amount = self.unit_price * self.quantity

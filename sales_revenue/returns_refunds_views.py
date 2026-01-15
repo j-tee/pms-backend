@@ -71,7 +71,7 @@ class ReturnRequestListCreateView(generics.ListCreateAPIView):
         if date_to:
             queryset = queryset.filter(requested_at__lte=date_to)
         
-        return queryset.select_related('order', 'customer', 'customer__user').order_by('-requested_at')
+        return queryset.select_related('order', 'customer', 'order__farm').order_by('-requested_at')
     
     def perform_create(self, serializer):
         """Create return request and notify seller."""
@@ -98,9 +98,9 @@ class ReturnRequestDetailView(generics.RetrieveAPIView):
         user = self.request.user
         
         queryset = ReturnRequest.objects.select_related(
-            'order', 'customer', 'customer__user', 'approved_by', 'rejected_by'
+            'order', 'order__farm', 'customer', 'reviewed_by'
         ).prefetch_related(
-            'items__product', 'items__order_item', 'refund_transactions'
+            'return_items__product', 'return_items__order_item', 'refund_transactions'
         )
         
         # Customers see only their own returns
