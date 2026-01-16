@@ -53,6 +53,10 @@ from contact.admin_urls import urlpatterns as contact_admin_urls
 from cms.urls import urlpatterns as cms_public_urls
 from cms.admin_urls import urlpatterns as cms_admin_urls
 
+# Import Procurement URL patterns
+from procurement.urls import farmer_urlpatterns as procurement_farmer_urls
+from procurement.admin_urls import urlpatterns as procurement_admin_urls
+
 urlpatterns = [
     path('', RedirectView.as_view(url='/admin/', permanent=False)),
     path('admin/', yea_admin_site.urls),
@@ -65,6 +69,7 @@ urlpatterns = [
     path('api/admin/inventory/', include('sales_revenue.inventory_urls', namespace='admin-inventory')),  # Government inventory analytics
     path('api/admin/platform-settings/', include((platform_settings_admin_urls, 'platform_settings'))),  # Platform settings (Super Admin)
     path('api/admin/subscriptions/', include((subscription_admin_urls, 'admin_subscriptions'))),  # Admin subscription management
+    path('api/admin/procurement/', include((procurement_admin_urls, 'admin_procurement'))),  # Admin procurement management (orders, invoices, assignments)
     path('api/farms/', include('farms.management_urls')),  # Authenticated farm management
     path('api/extension/', include('farms.extension_urls')),  # Extension officer / field officer endpoints
     path('api/flocks/', include('flock_management.urls')),  # Flock management
@@ -73,6 +78,7 @@ urlpatterns = [
     path('api/marketplace/', include('sales_revenue.marketplace_urls')),  # Marketplace (farmer-scoped)
     path('api/processing/', include('sales_revenue.processing_urls')),  # Processing batches (birds → products)
     path('api/returns/', include('sales_revenue.returns_refunds_urls')),  # Returns and refunds
+    path('api/procurement/', include((procurement_farmer_urls, 'farmer_procurement'))),  # Farmer procurement (assignments, deliveries, earnings)
     path('api/subscriptions/', include((subscription_urls, 'subscriptions'))),  # Marketplace subscription payments
     path('api/subscriptions/webhooks/', include((subscription_webhook_urls, 'subscription_webhooks'))),  # Payment webhooks
     path('api/public/marketplace/', include('sales_revenue.public_marketplace_urls')),  # Public marketplace (no auth)

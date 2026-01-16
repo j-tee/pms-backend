@@ -20,6 +20,7 @@ PERMISSION_CATEGORIES = {
     'analytics': 'Analytics & Reporting',
     'financial': 'Financial Management',
     'marketplace': 'Marketplace Management',
+    'procurement': 'Procurement Management',
     'content': 'Content Management',
     'system': 'System Administration',
 }
@@ -259,6 +260,94 @@ SYSTEM_PERMISSIONS = [
     ),
     
     # ========================================
+    # PROCUREMENT MANAGEMENT
+    # ========================================
+    (
+        'view_procurement_orders',
+        'View Procurement Orders',
+        'Can view government procurement orders',
+        'procurement',
+        ['NATIONAL_STAFF', 'REGIONAL_STAFF', 'PROCUREMENT_OFFICER', 'FINANCE_OFFICER', 'AUDITOR']
+    ),
+    (
+        'create_procurement_orders',
+        'Create Procurement Orders',
+        'Can create new government procurement orders',
+        'procurement',
+        ['NATIONAL_STAFF', 'PROCUREMENT_OFFICER']
+    ),
+    (
+        'edit_procurement_orders',
+        'Edit Procurement Orders',
+        'Can edit procurement order details',
+        'procurement',
+        ['NATIONAL_STAFF', 'PROCUREMENT_OFFICER']
+    ),
+    (
+        'publish_procurement_orders',
+        'Publish Procurement Orders',
+        'Can publish orders to make them available for farm assignment',
+        'procurement',
+        ['NATIONAL_STAFF', 'PROCUREMENT_OFFICER']
+    ),
+    (
+        'assign_procurement_farms',
+        'Assign Farms to Orders',
+        'Can assign farms to fulfill procurement orders',
+        'procurement',
+        ['NATIONAL_STAFF', 'PROCUREMENT_OFFICER']
+    ),
+    (
+        'cancel_procurement_orders',
+        'Cancel Procurement Orders',
+        'Can cancel procurement orders',
+        'procurement',
+        ['NATIONAL_STAFF', 'PROCUREMENT_OFFICER']
+    ),
+    (
+        'receive_procurement_deliveries',
+        'Receive Deliveries',
+        'Can confirm receipt of deliveries from farms',
+        'procurement',
+        ['NATIONAL_STAFF', 'PROCUREMENT_OFFICER']
+    ),
+    (
+        'verify_procurement_quality',
+        'Verify Delivery Quality',
+        'Can verify quality of delivered products',
+        'procurement',
+        ['NATIONAL_STAFF', 'PROCUREMENT_OFFICER', 'VETERINARY_OFFICER']
+    ),
+    (
+        'manage_procurement_invoices',
+        'Manage Procurement Invoices',
+        'Can create and edit procurement invoices',
+        'procurement',
+        ['NATIONAL_STAFF', 'PROCUREMENT_OFFICER', 'FINANCE_OFFICER']
+    ),
+    (
+        'approve_procurement_invoices',
+        'Approve Procurement Invoices',
+        'Can approve invoices for payment processing',
+        'procurement',
+        ['NATIONAL_STAFF', 'FINANCE_OFFICER']
+    ),
+    (
+        'process_procurement_payments',
+        'Process Procurement Payments',
+        'Can execute payments to farms for deliveries',
+        'procurement',
+        ['NATIONAL_STAFF', 'FINANCE_OFFICER']
+    ),
+    (
+        'view_procurement_reports',
+        'View Procurement Reports',
+        'Can view procurement analytics and reports',
+        'procurement',
+        ['NATIONAL_STAFF', 'REGIONAL_STAFF', 'PROCUREMENT_OFFICER', 'FINANCE_OFFICER', 'AUDITOR']
+    ),
+    
+    # ========================================
     # CONTENT MANAGEMENT
     # ========================================
     (
@@ -306,6 +395,11 @@ ADMIN_IMPLICIT_PERMISSIONS = {
         'view_basic_analytics', 'view_detailed_analytics', 'view_national_analytics', 'export_reports', 'view_audit_logs',
         'view_financial_data', 'manage_subscriptions', 'view_payment_records',
         'view_marketplace_listings', 'moderate_listings', 'manage_marketplace_settings',
+        # Procurement - National Admin has full access
+        'view_procurement_orders', 'create_procurement_orders', 'edit_procurement_orders',
+        'publish_procurement_orders', 'assign_procurement_farms', 'cancel_procurement_orders',
+        'receive_procurement_deliveries', 'verify_procurement_quality', 'manage_procurement_invoices',
+        'approve_procurement_invoices', 'process_procurement_payments', 'view_procurement_reports',
         'manage_cms_content', 'manage_contact_messages',
         'view_system_health', 'manage_cache',
     ],
@@ -317,6 +411,8 @@ ADMIN_IMPLICIT_PERMISSIONS = {
         'view_basic_analytics', 'view_detailed_analytics', 'export_reports',
         'view_payment_records',
         'view_marketplace_listings', 'moderate_listings',
+        # Procurement - Regional can view orders in their region
+        'view_procurement_orders', 'view_procurement_reports',
         'manage_contact_messages',
     ],
     'CONSTITUENCY_ADMIN': [
@@ -326,6 +422,31 @@ ADMIN_IMPLICIT_PERMISSIONS = {
         'view_applications', 'review_applications',
         'view_basic_analytics',
         'view_marketplace_listings',
+    ],
+    # Specialized Roles - Implicit permissions based on role responsibility
+    'PROCUREMENT_OFFICER': [
+        # Procurement Officer - Full operational access, no payment approval
+        'view_procurement_orders', 'create_procurement_orders', 'edit_procurement_orders',
+        'publish_procurement_orders', 'assign_procurement_farms', 'cancel_procurement_orders',
+        'receive_procurement_deliveries', 'verify_procurement_quality', 'manage_procurement_invoices',
+        'view_procurement_reports',
+        # View access for related areas
+        'view_farms', 'view_basic_analytics',
+    ],
+    'FINANCE_OFFICER': [
+        # Finance Officer - Payment focus with separation of duties
+        'view_procurement_orders', 'manage_procurement_invoices',
+        'approve_procurement_invoices', 'process_procurement_payments',
+        'view_procurement_reports',
+        # Financial access
+        'view_financial_data', 'view_payment_records',
+        'view_basic_analytics',
+    ],
+    'AUDITOR': [
+        # Auditor - Read-only oversight of all financial and procurement data
+        'view_procurement_orders', 'view_procurement_reports',
+        'view_financial_data', 'view_payment_records', 'view_audit_logs',
+        'view_farms', 'view_basic_analytics', 'view_detailed_analytics',
     ],
 }
 
@@ -346,10 +467,18 @@ DEFAULT_STAFF_PERMISSIONS = {
 
 # Which admin can manage which staff roles
 PERMISSION_MANAGEMENT_HIERARCHY = {
-    'SUPER_ADMIN': ['NATIONAL_ADMIN', 'NATIONAL_STAFF', 'REGIONAL_ADMIN', 'REGIONAL_STAFF', 
-                    'CONSTITUENCY_ADMIN', 'CONSTITUENCY_STAFF', 'EXTENSION_OFFICER', 
-                    'VETERINARY_OFFICER', 'YEA_OFFICIAL'],
-    'NATIONAL_ADMIN': ['NATIONAL_STAFF', 'REGIONAL_ADMIN', 'REGIONAL_STAFF', 'REGIONAL_COORDINATOR'],  # Added legacy alias
+    'SUPER_ADMIN': [
+        'NATIONAL_ADMIN', 'NATIONAL_STAFF', 'REGIONAL_ADMIN', 'REGIONAL_STAFF', 
+        'CONSTITUENCY_ADMIN', 'CONSTITUENCY_STAFF', 'EXTENSION_OFFICER', 
+        'VETERINARY_OFFICER', 'YEA_OFFICIAL',
+        # Specialized roles managed by Super Admin
+        'PROCUREMENT_OFFICER', 'FINANCE_OFFICER', 'AUDITOR',
+    ],
+    'NATIONAL_ADMIN': [
+        'NATIONAL_STAFF', 'REGIONAL_ADMIN', 'REGIONAL_STAFF', 'REGIONAL_COORDINATOR',
+        # National Admin can manage specialized roles
+        'PROCUREMENT_OFFICER', 'FINANCE_OFFICER', 'AUDITOR',
+    ],
     'REGIONAL_ADMIN': ['REGIONAL_STAFF', 'CONSTITUENCY_ADMIN', 'CONSTITUENCY_STAFF'],
     'REGIONAL_COORDINATOR': ['REGIONAL_STAFF', 'CONSTITUENCY_ADMIN', 'CONSTITUENCY_STAFF'],  # Legacy alias for REGIONAL_ADMIN
     'CONSTITUENCY_ADMIN': ['CONSTITUENCY_STAFF', 'EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'YEA_OFFICIAL'],
@@ -367,6 +496,11 @@ GRANTABLE_PERMISSIONS = {
         'view_basic_analytics', 'view_detailed_analytics', 'view_national_analytics', 'export_reports',
         'view_financial_data', 'view_payment_records',
         'view_marketplace_listings', 'moderate_listings',
+        # Procurement permissions grantable to NATIONAL_STAFF
+        'view_procurement_orders', 'create_procurement_orders', 'edit_procurement_orders',
+        'publish_procurement_orders', 'assign_procurement_farms', 'cancel_procurement_orders',
+        'receive_procurement_deliveries', 'verify_procurement_quality', 'manage_procurement_invoices',
+        'approve_procurement_invoices', 'process_procurement_payments', 'view_procurement_reports',
         'manage_cms_content', 'manage_contact_messages',
         'view_system_health', 'manage_cache',  # System permissions for NATIONAL_STAFF
     ],
@@ -376,6 +510,8 @@ GRANTABLE_PERMISSIONS = {
         'view_batches', 'manage_batch_enrollment',
         'view_applications', 'review_applications', 'approve_applications', 'reject_applications',
         'view_basic_analytics', 'view_detailed_analytics', 'export_reports',
+        # Regional can grant view access to procurement
+        'view_procurement_orders', 'view_procurement_reports',
     ],
     'REGIONAL_COORDINATOR': [  # Legacy alias - same as REGIONAL_ADMIN
         'view_users', 'create_users', 'edit_users',
@@ -384,6 +520,8 @@ GRANTABLE_PERMISSIONS = {
         'view_applications', 'review_applications', 'approve_applications', 'reject_applications',
         'view_basic_analytics', 'view_detailed_analytics', 'export_reports',
         'view_marketplace_listings', 'moderate_listings',
+        # Regional can grant view access to procurement
+        'view_procurement_orders', 'view_procurement_reports',
     ],
     'CONSTITUENCY_ADMIN': [
         'view_users', 'view_farms', 'edit_farms', 'verify_farms', 'assign_extension_officers',

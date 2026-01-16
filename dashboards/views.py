@@ -5,6 +5,7 @@ Provides REST API endpoints for dashboard data consumption.
 Frontend applications will call these endpoints to render dashboard widgets.
 """
 
+import logging
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -12,6 +13,8 @@ from rest_framework.permissions import IsAuthenticated
 
 from .permissions import IsExecutive, IsProcurementOfficer, IsFarmer
 from .services import ExecutiveDashboardService, OfficerDashboardService, FarmerDashboardService
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutiveDashboardView(APIView):
@@ -136,10 +139,30 @@ class OfficerOverviewView(APIView):
 
 class OfficerOrdersView(APIView):
     """
-    Officer Orders List
+    Officer Orders List and Create
     
     GET /api/dashboards/officer/orders/
     GET /api/dashboards/officer/orders/?status=active
+    
+    POST /api/dashboards/officer/orders/
+    POST /api/admin/procurement/orders/
+    
+    Create order with optional pre-selected farms from distress recommendations.
+    Request body:
+    {
+        "title": "Order Title",
+        "description": "Description",
+        "production_type": "Broilers",
+        "quantity_needed": 1000,
+        "unit": "birds",
+        "price_per_unit": 50.00,
+        "delivery_deadline": "2024-03-01",
+        "delivery_location": "Ministry of Health, Accra",
+        "preferred_region": "Greater Accra",
+        "selected_farm_ids": ["farm-uuid-1", "farm-uuid-2"],  // Optional
+        "farm_quantities": {"farm-uuid-1": 500, "farm-uuid-2": 500},  // Optional
+        "auto_assign": false
+    }
     """
     permission_classes = [IsAuthenticated, IsProcurementOfficer]
     
@@ -151,6 +174,129 @@ class OfficerOrdersView(APIView):
         
         data = service.get_my_orders(status=status_filter, limit=limit)
         return Response(data, status=status.HTTP_200_OK)
+    
+    def post(self, request):
+        """Create a new procurement order with optional farm pre-selection."""
+        from procurement.services.procurement_workflow import ProcurementWorkflowService
+        from decimal import Decimal
+        
+        data = request.data
+        
+        # Validate required fields
+        required_fields = ['title', 'production_type', 'quantity_needed']
+        missing = [f for f in required_fields if not data.get(f)]
+        if missing:
+            return Response(
+                {'error': f'Missing required fields: {", ".join(missing)}', 'code': 'MISSING_FIELDS'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Parse and validate data
+        try:
+            quantity_needed = int(data['quantity_needed'])
+            if quantity_needed <= 0:
+                raise ValueError("Quantity must be positive")
+        except (ValueError, TypeError):
+            return Response(
+                {'error': 'quantity_needed must be a positive integer', 'code': 'INVALID_QUANTITY'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        price_per_unit = data.get('price_per_unit')
+        if price_per_unit:
+            try:
+                price_per_unit = Decimal(str(price_per_unit))
+            except:
+                price_per_unit = None
+        
+        # Extract farm selection data (from frontend distress recommendations)
+        selected_farm_ids = data.get('selected_farm_ids', [])
+        farm_quantities = data.get('farm_quantities')  # Optional {farm_id: quantity}
+        
+        # Build order data
+        order_data = {
+            'title': data['title'],
+            'description': data.get('description', ''),
+            'production_type': data['production_type'],
+            'quantity_needed': quantity_needed,
+            'unit': data.get('unit', 'birds'),
+            'price_per_unit': price_per_unit,
+            'delivery_location': data.get('delivery_location', ''),
+            'delivery_deadline': data.get('delivery_deadline'),
+            'preferred_region': data.get('preferred_region'),
+            'max_farms': data.get('max_farms', 10),
+            'auto_assign': data.get('auto_assign', False),
+            'priority': data.get('priority', 'medium'),
+            'quality_requirements': data.get('quality_requirements', ''),
+            'delivery_instructions': data.get('delivery_instructions', ''),
+        }
+        
+        # Remove None values
+        order_data = {k: v for k, v in order_data.items() if v is not None}
+        
+        service = ProcurementWorkflowService()
+        
+        try:
+            if selected_farm_ids:
+                # Create order and assign to selected farms in one operation
+                result = service.create_and_assign_order(
+                    created_by=request.user,
+                    selected_farm_ids=selected_farm_ids,
+                    farm_quantities=farm_quantities,
+                    **order_data
+                )
+                
+                order = result['order']
+                
+                return Response({
+                    'success': True,
+                    'message': 'Order created and farms assigned',
+                    'order': {
+                        'id': str(order.id),
+                        'order_number': order.order_number,
+                        'title': order.title,
+                        'status': order.status,
+                        'quantity_needed': order.quantity_needed,
+                        'quantity_assigned': order.quantity_assigned,
+                        'remaining': order.quantity_needed - order.quantity_assigned,
+                    },
+                    'assignments': {
+                        'count': result['assignment_count'],
+                        'total_assigned': result['total_assigned'],
+                    }
+                }, status=status.HTTP_201_CREATED)
+            else:
+                # Create draft order without farm assignment
+                result = service.create_order(
+                    created_by=request.user,
+                    **order_data
+                )
+                
+                order = result['order']
+                
+                return Response({
+                    'success': True,
+                    'message': 'Order created as draft',
+                    'order': {
+                        'id': str(order.id),
+                        'order_number': order.order_number,
+                        'title': order.title,
+                        'status': order.status,
+                        'quantity_needed': order.quantity_needed,
+                    }
+                }, status=status.HTTP_201_CREATED)
+                
+        except ValueError as e:
+            return Response(
+                {'error': str(e), 'code': 'VALIDATION_ERROR'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error creating order: {e}")
+            return Response(
+                {'error': 'Failed to create order', 'code': 'CREATE_ERROR'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class OfficerOrderTimelineView(APIView):
@@ -423,11 +569,14 @@ class FarmDistressDetailView(APIView):
     Returns complete distress assessment matching frontend spec:
     - distress_score (0-100)
     - distress_level (CRITICAL, HIGH, MODERATE, LOW, STABLE)
-    - distress_factors (array of contributing factors)
+    - distress_factors (array of contributing factors with weights)
+    - recommended_action (URGENT_PURCHASE, PRIORITY_PURCHASE, etc.)
     - capacity info
-    - sales_history
+    - inventory (total_birds_available, stock_age_days)
+    - sales_history (days_without_sales, last_sale_date)
     - procurement_history
-    - contact info
+    - contact info (phone, email, constituency)
+    - historical_trend (90-day trend data)
     """
     permission_classes = [IsAuthenticated, IsProcurementOfficer]
     
@@ -445,13 +594,81 @@ class FarmDistressDetailView(APIView):
             )
         
         service = get_distress_service(days_lookback=30)
-        assessment = service.calculate_distress_score(farm)
+        assessment = service.calculate_distress_score(farm, include_full_details=True)
         
-        # Also get historical trend
+        # Get historical trend for 90-day chart
         trend = FarmDistressHistory.get_farm_trend(farm, days=90)
-        assessment['distress_trend'] = trend
+        assessment['historical_trend'] = trend
+        
+        # Get average daily production from flock data
+        avg_daily_production = self._get_avg_daily_production(farm)
+        assessment['avg_daily_production'] = avg_daily_production
         
         return Response(assessment, status=status.HTTP_200_OK)
+    
+    def _get_avg_daily_production(self, farm):
+        """Get average daily egg production for the farm."""
+        try:
+            from flock_management.models import DailyProduction
+            from django.db.models import Avg
+            from datetime import timedelta
+            from django.utils import timezone
+            
+            thirty_days_ago = timezone.now() - timedelta(days=30)
+            avg = DailyProduction.objects.filter(
+                flock__farm=farm,
+                date__gte=thirty_days_ago.date()
+            ).aggregate(avg_eggs=Avg('eggs_collected'))
+            
+            return round(avg['avg_eggs'] or 0, 1)
+        except Exception:
+            return 0
+
+
+class OrderRecommendationsView(APIView):
+    """
+    AI-powered order recommendations for distressed farmers.
+    
+    GET /api/admin/procurement/order-recommendations/
+    GET /api/admin/procurement/order-recommendations/?production_type=Broilers&region=Ashanti
+    
+    This endpoint provides smart recommendations for which farms should
+    receive procurement orders based on their distress levels and available capacity.
+    
+    Query Parameters:
+    - production_type: Filter by 'Broilers', 'Layers' (optional)
+    - region: Filter by region name (optional)
+    - limit: Maximum recommendations (default: 20)
+    
+    Response matches frontend spec:
+    - recommendations array with distress info, urgency, suggested_quantity
+    - summary with total_recommendations, critical_farms, can_fulfill_demand
+    - pending_orders showing current unfulfilled orders
+    """
+    permission_classes = [IsAuthenticated, IsProcurementOfficer]
+    
+    def get(self, request):
+        from procurement.services.farmer_distress_v2 import get_distress_service
+        
+        # Parse query parameters
+        production_type = request.query_params.get('production_type')
+        region = request.query_params.get('region')
+        
+        try:
+            limit = int(request.query_params.get('limit', 20))
+            if limit < 1:
+                limit = 20
+        except (ValueError, TypeError):
+            limit = 20
+        
+        service = get_distress_service(days_lookback=30)
+        result = service.get_order_recommendations(
+            production_type=production_type,
+            region=region,
+            limit=limit
+        )
+        
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class OrderFarmRecommendationsView(APIView):

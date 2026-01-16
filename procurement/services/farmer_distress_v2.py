@@ -84,23 +84,45 @@ class FarmerDistressService:
         self.cutoff_date = timezone.now() - timedelta(days=days_lookback)
         self.ninety_days_ago = timezone.now() - timedelta(days=90)
     
-    def calculate_distress_score(self, farm):
+    def calculate_distress_score(self, farm, include_full_details=True):
         """
         Calculate comprehensive distress score for a single farm.
         Returns detailed breakdown matching frontend spec.
         
         Args:
             farm: Farm instance
+            include_full_details: If True, include full breakdown (for detail view).
+                                 If False, return minimal data (for list view).
             
         Returns:
             dict with full distress assessment
         """
-        # Calculate individual factor scores
+        # Calculate core factor scores first (these affect market_access)
         inventory_result = self._score_inventory_stagnation(farm)
         sales_result = self._score_sales_performance(farm)
         financial_result = self._score_financial_stress(farm)
         production_result = self._score_production_issues(farm)
-        market_result = self._score_market_access(farm)
+        
+        # CONDITIONAL MARKET ACCESS SCORING
+        # Per frontend spec: "Market access alone isn't distress - 
+        # only when farmer has inventory/sales problems"
+        # Only apply market_access if inventory OR sales show elevated distress
+        inventory_sales_distress_threshold = 40  # Score >= 40 indicates distress
+        has_inventory_or_sales_issues = (
+            inventory_result['score'] >= inventory_sales_distress_threshold or
+            sales_result['score'] >= inventory_sales_distress_threshold
+        )
+        
+        if has_inventory_or_sales_issues:
+            # Market access problems compound other issues
+            market_result = self._score_market_access(farm)
+        else:
+            # Market access doesn't matter if no inventory/sales problems
+            market_result = {
+                'score': 0, 
+                'detail': 'N/A (no inventory/sales issues)',
+                'applied': False
+            }
         
         # Collect raw scores
         scores = {
@@ -121,46 +143,40 @@ class FarmerDistressService:
         # Determine distress level
         distress_level = get_distress_level(total_score)
         
-        # Build distress factors array (frontend format)
+        # Determine recommended_action based on distress level (Frontend spec codes)
+        recommended_action = self._get_recommended_action(distress_level)
+        
+        # Build distress factors array with full details (frontend spec format)
+        # Include scores, weights, weighted_score, descriptions
+        all_results = {
+            'inventory_stagnation': inventory_result,
+            'sales_performance': sales_result,
+            'financial_stress': financial_result,
+            'production_issues': production_result,
+            'market_access': market_result,
+        }
+        
         distress_factors = []
         
-        if inventory_result['score'] >= 40:
-            distress_factors.append({
-                'factor': 'INVENTORY_STAGNATION',
-                'score': inventory_result['score'],
-                'detail': inventory_result['detail'],
-            })
+        for factor_key, result in all_results.items():
+            factor_score = result['score']
+            weight = self.WEIGHTS[factor_key]
+            weighted_score = round(factor_score * (weight / 100), 1)
+            
+            # Only include factors that contribute to distress (score >= 30)
+            if factor_score >= 30:
+                distress_factors.append({
+                    'factor': factor_key.upper(),
+                    'score': factor_score,
+                    'weight': weight,
+                    'weighted_score': weighted_score,
+                    'description': self._get_factor_description(factor_key),
+                    'detail': result['detail'],
+                    'details': result.get('details', {}),  # Extended details if available
+                })
         
-        if sales_result['score'] >= 40:
-            distress_factors.append({
-                'factor': 'SALES_PERFORMANCE',
-                'score': sales_result['score'],
-                'detail': sales_result['detail'],
-            })
-        
-        if financial_result['score'] >= 40:
-            distress_factors.append({
-                'factor': 'FINANCIAL_STRESS',
-                'score': financial_result['score'],
-                'detail': financial_result['detail'],
-            })
-        
-        if production_result['score'] >= 40:
-            distress_factors.append({
-                'factor': 'PRODUCTION_ISSUES',
-                'score': production_result['score'],
-                'detail': production_result['detail'],
-            })
-        
-        if market_result['score'] >= 40:
-            distress_factors.append({
-                'factor': 'MARKET_ACCESS',
-                'score': market_result['score'],
-                'detail': market_result['detail'],
-            })
-        
-        # Sort by score descending
-        distress_factors.sort(key=lambda x: x['score'], reverse=True)
+        # Sort by weighted_score descending (factors contributing most to distress)
+        distress_factors.sort(key=lambda x: x['weighted_score'], reverse=True)
         
         # Get sales history
         sales_history = self._get_sales_history(farm)
@@ -171,45 +187,139 @@ class FarmerDistressService:
         # Get capacity information
         capacity = self._get_capacity_info(farm)
         
-        return {
+        # Get inventory details for frontend
+        inventory_details = self._get_inventory_details(farm)
+        
+        # Build response matching frontend spec
+        response = {
+            # Core identifiers
             'farm_id': str(farm.id),
             'farm_name': farm.farm_name,
             'farmer_name': farm.user.get_full_name() if farm.user else 'N/A',
+            'farmer_phone': str(farm.primary_phone),
+            'farmer_email': farm.email or (farm.user.email if farm.user else None),
+            
+            # Location (Frontend spec fields)
             'region': farm.region,
             'district': farm.district,
+            'constituency': farm.primary_constituency,
             'production_type': farm.primary_production_type,
             
+            # Distress Assessment (Core fields)
             'distress_score': total_score,
             'distress_level': distress_level,
+            'recommended_action': recommended_action,
+            
+            # Distress Factors (Frontend spec format - detailed breakdown)
             'distress_factors': distress_factors,
             
+            # Capacity and inventory info
             'capacity': capacity,
+            'inventory': inventory_details,
+            
+            # Sales metrics (Frontend spec fields)
+            'days_without_sales': sales_history.get('days_since_sale'),
+            'last_sale_date': sales_history.get('last_sale_date'),
+            
+            # Historical data
             'sales_history': sales_history,
             'procurement_history': procurement_history,
             
+            # Contact info (expanded)
             'contact': {
                 'phone': str(farm.primary_phone),
+                'email': farm.email or (farm.user.email if farm.user else None),
                 'location_coordinates': self._get_coordinates(farm),
                 'constituency': farm.primary_constituency,
             },
-            
-            # Detailed score breakdown for debugging/analytics
-            'score_breakdown': {
+        }
+        
+        # Add full score breakdown if requested (for detail view)
+        if include_full_details:
+            response['score_breakdown'] = {
                 key: {
                     'score': round(scores[key], 1),
                     'weight': self.WEIGHTS[key],
                     'weighted_contribution': round(scores[key] * (self.WEIGHTS[key] / 100), 1),
-                    'detail': {
-                        'inventory_stagnation': inventory_result,
-                        'sales_performance': sales_result,
-                        'financial_stress': financial_result,
-                        'production_issues': production_result,
-                        'market_access': market_result,
-                    }.get(key, {}).get('detail', '')
+                    'applied': True if key != 'market_access' else has_inventory_or_sales_issues,
+                    'detail': all_results[key].get('detail', ''),
                 }
                 for key in scores
-            },
+            }
+        
+        return response
+    
+    def _get_recommended_action(self, distress_level):
+        """
+        Get recommended action code based on distress level.
+        Frontend spec action codes:
+        - URGENT_PURCHASE: Critical distress, needs immediate intervention
+        - PRIORITY_PURCHASE: High distress, high priority for orders
+        - STANDARD_PURCHASE: Moderate distress, include in regular assignments
+        - MONITOR: Low distress, monitor and include if capacity needed
+        - NONE: Stable, no intervention needed
+        """
+        action_mapping = {
+            'CRITICAL': 'URGENT_PURCHASE',
+            'HIGH': 'PRIORITY_PURCHASE', 
+            'MODERATE': 'STANDARD_PURCHASE',
+            'LOW': 'MONITOR',
+            'STABLE': 'NONE',
         }
+        return action_mapping.get(distress_level, 'NONE')
+    
+    def _get_factor_description(self, factor_key):
+        """Get human-readable description for a distress factor."""
+        descriptions = {
+            'inventory_stagnation': 'Products sitting unsold for extended periods',
+            'sales_performance': 'Declining or low sales compared to capacity',
+            'financial_stress': 'Outstanding payments or financial difficulties',
+            'production_issues': 'High mortality or low production efficiency',
+            'market_access': 'Limited access to buyers or marketplace',
+        }
+        return descriptions.get(factor_key, factor_key.replace('_', ' ').title())
+    
+    def _get_inventory_details(self, farm):
+        """Get detailed inventory information for frontend display."""
+        try:
+            from sales_revenue.inventory_models import FarmInventory
+            
+            inventory = FarmInventory.objects.filter(farm=farm, quantity_available__gt=0)
+            
+            total_birds = 0
+            total_eggs = 0
+            oldest_stock_date = None
+            stock_age_days = None
+            
+            for item in inventory:
+                if item.category in ['live_birds', 'broilers', 'layers']:
+                    total_birds += int(item.quantity_available or 0)
+                    if item.oldest_stock_date:
+                        if oldest_stock_date is None or item.oldest_stock_date < oldest_stock_date:
+                            oldest_stock_date = item.oldest_stock_date
+                elif item.category == 'eggs':
+                    total_eggs += int(item.quantity_available or 0)
+                    if item.oldest_stock_date:
+                        if oldest_stock_date is None or item.oldest_stock_date < oldest_stock_date:
+                            oldest_stock_date = item.oldest_stock_date
+            
+            if oldest_stock_date:
+                stock_age_days = (timezone.now().date() - oldest_stock_date).days
+            
+            return {
+                'total_birds_available': total_birds or farm.current_bird_count or 0,
+                'total_eggs_available': total_eggs,
+                'oldest_stock_date': oldest_stock_date.isoformat() if oldest_stock_date else None,
+                'stock_age_days': stock_age_days,
+            }
+        except Exception as e:
+            logger.warning(f"Error getting inventory details for farm {farm.id}: {e}")
+            return {
+                'total_birds_available': farm.current_bird_count or 0,
+                'total_eggs_available': 0,
+                'oldest_stock_date': None,
+                'stock_age_days': None,
+            }
     
     def _score_inventory_stagnation(self, farm):
         """
@@ -1039,6 +1149,129 @@ class FarmerDistressService:
             'by_region': by_region,
             'by_production_type': by_production_type,
             'trends': trends,
+        }
+    
+    def get_order_recommendations(self, production_type=None, region=None, limit=20):
+        """
+        Get AI-powered order recommendations for distressed farmers.
+        
+        This is for the new endpoint:
+        GET /api/admin/procurement/order-recommendations/
+        
+        Returns farms with highest distress that should be prioritized for
+        procurement orders, along with recommended actions and order suggestions.
+        
+        Args:
+            production_type: Filter by 'Broilers', 'Layers', or None for all
+            region: Filter by region name
+            limit: Maximum number of recommendations
+            
+        Returns:
+            dict with recommendations array and summary stats
+        """
+        from procurement.models import ProcurementOrder, OrderAssignment
+        
+        # Get current pending orders to understand demand
+        pending_orders = ProcurementOrder.objects.filter(
+            status='published'
+        ).order_by('-created_at')
+        
+        total_demand = pending_orders.aggregate(
+            total_qty=Coalesce(Sum('quantity_needed'), 0),
+            total_assigned=Coalesce(Sum('quantity_assigned'), 0)
+        )
+        remaining_demand = total_demand['total_qty'] - total_demand['total_assigned']
+        
+        # Get distressed farmers
+        distressed = self.get_distressed_farmers(
+            production_type=production_type,
+            region=region,
+            min_distress_score=40,  # Only moderate+ distress
+            has_available_stock=True,
+            limit=limit * 2,  # Get more to filter
+            ordering='-distress_score'
+        )
+        
+        # Build recommendations with order suggestions
+        recommendations = []
+        total_capacity = 0
+        
+        for farm_data in distressed['results'][:limit]:
+            available = farm_data.get('capacity', {}).get('available_for_sale', 0) or 0
+            if available <= 0:
+                available = farm_data.get('inventory', {}).get('total_birds_available', 0) or 0
+            
+            total_capacity += available
+            
+            # Determine suggested order quantity based on capacity
+            suggested_qty = min(available, remaining_demand - total_capacity + available)
+            
+            # Determine urgency based on distress level
+            urgency_mapping = {
+                'CRITICAL': 'immediate',
+                'HIGH': 'high',
+                'MODERATE': 'normal',
+                'LOW': 'low',
+                'STABLE': 'none'
+            }
+            
+            recommendations.append({
+                'farm_id': farm_data['farm_id'],
+                'farm_name': farm_data['farm_name'],
+                'farmer_name': farm_data['farmer_name'],
+                'farmer_phone': farm_data.get('farmer_phone'),
+                
+                # Distress info
+                'distress_score': farm_data['distress_score'],
+                'distress_level': farm_data['distress_level'],
+                'recommended_action': farm_data['recommended_action'],
+                'distress_factors': farm_data['distress_factors'][:3],  # Top 3 factors
+                
+                # Recommendation details
+                'urgency': urgency_mapping.get(farm_data['distress_level'], 'normal'),
+                'suggested_quantity': suggested_qty,
+                'available_quantity': available,
+                'priority_reason': farm_data['distress_factors'][0]['detail'] if farm_data['distress_factors'] else 'Farm needs sales support',
+                
+                # Location
+                'region': farm_data['region'],
+                'district': farm_data['district'],
+                'production_type': farm_data['production_type'],
+                
+                # Sales context
+                'days_without_sales': farm_data.get('days_without_sales'),
+                'last_sale_date': farm_data.get('last_sale_date'),
+            })
+        
+        # Summary
+        summary = {
+            'total_recommendations': len(recommendations),
+            'critical_farms': sum(1 for r in recommendations if r['distress_level'] == 'CRITICAL'),
+            'high_priority_farms': sum(1 for r in recommendations if r['distress_level'] in ['CRITICAL', 'HIGH']),
+            'total_available_capacity': total_capacity,
+            'pending_order_demand': remaining_demand,
+            'can_fulfill_demand': total_capacity >= remaining_demand,
+            'filters_applied': {
+                'production_type': production_type,
+                'region': region,
+            }
+        }
+        
+        return {
+            'recommendations': recommendations,
+            'summary': summary,
+            'pending_orders': [
+                {
+                    'id': str(o.id),
+                    'order_number': o.order_number,
+                    'title': o.title,
+                    'quantity_needed': o.quantity_needed,
+                    'quantity_assigned': o.quantity_assigned,
+                    'remaining': o.quantity_needed - o.quantity_assigned,
+                    'production_type': o.production_type,
+                }
+                for o in pending_orders[:5]  # Show top 5 pending orders
+            ]
         }
 
 

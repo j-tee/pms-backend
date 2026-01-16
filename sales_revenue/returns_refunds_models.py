@@ -18,13 +18,24 @@ Affected Features:
 - Product: total_sold and total_revenue adjust
 - Statistics: Metrics recalculate to exclude returned items
 - Customer: Purchase history reflects returns
+
+ATOMICITY & IDEMPOTENCY:
+- All mutating operations use @transaction.atomic
+- Critical operations use select_for_update() to prevent race conditions
+- State machine validation ensures valid status transitions
+- Audit logging provides full traceability
+- Idempotency checks prevent duplicate refunds and stock restorations
 """
 
-from django.db import models
+from django.db import models, transaction
+from django.db.models import F
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from decimal import Decimal
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ReturnReason(models.TextChoices):
@@ -190,25 +201,96 @@ class ReturnRequest(models.Model):
         self.total_refund_amount = items_total - self.restocking_fee
         return self.total_refund_amount
     
+    @transaction.atomic
     def approve_return(self, approved_by=None, reviewed_by=None, notes='', admin_notes=''):
-        """Approve return request"""
-        self.status = 'approved'
-        self.reviewed_by = approved_by or reviewed_by
-        self.reviewed_at = timezone.now()
-        self.review_notes = notes or admin_notes
-        self.save()
+        """
+        Approve return request.
+        
+        Atomicity: Uses select_for_update to prevent concurrent modifications
+        State Validation: Validates pending -> approved transition
+        """
+        from .returns_safety import (
+            validate_return_status_transition, ReturnLock, ReturnStatusTransitionError
+        )
+        
+        # Lock the return request
+        locked_self = ReturnRequest.objects.select_for_update().get(pk=self.pk)
+        
+        # Validate state transition
+        validate_return_status_transition(locked_self.status, 'approved')
+        
+        previous_status = locked_self.status
+        locked_self.status = 'approved'
+        locked_self.reviewed_by = approved_by or reviewed_by
+        locked_self.reviewed_at = timezone.now()
+        locked_self.review_notes = notes or admin_notes
+        locked_self.save()
+        
+        # Update self with new values
+        self.status = locked_self.status
+        self.reviewed_by = locked_self.reviewed_by
+        self.reviewed_at = locked_self.reviewed_at
+        self.review_notes = locked_self.review_notes
+        
+        # Audit log
+        ReturnAuditLog.log(
+            operation='approve_return',
+            return_request=self,
+            user=approved_by or reviewed_by,
+            previous_state={'status': previous_status},
+            new_state={'status': 'approved'},
+        )
+        
+        logger.info(f"Return {self.return_number} approved by {approved_by or reviewed_by}")
     
+    @transaction.atomic
     def reject_return(self, rejected_by=None, reviewed_by=None, reason='', notes='', admin_notes=''):
-        """Reject return request"""
-        self.status = 'rejected'
-        self.reviewed_by = rejected_by or reviewed_by
-        self.reviewed_at = timezone.now()
-        self.review_notes = reason or notes or admin_notes
-        self.save()
+        """
+        Reject return request.
+        
+        Atomicity: Uses select_for_update to prevent concurrent modifications
+        State Validation: Validates pending -> rejected transition
+        """
+        from .returns_safety import validate_return_status_transition
+        
+        # Lock the return request
+        locked_self = ReturnRequest.objects.select_for_update().get(pk=self.pk)
+        
+        # Validate state transition
+        validate_return_status_transition(locked_self.status, 'rejected')
+        
+        previous_status = locked_self.status
+        locked_self.status = 'rejected'
+        locked_self.reviewed_by = rejected_by or reviewed_by
+        locked_self.reviewed_at = timezone.now()
+        locked_self.review_notes = reason or notes or admin_notes
+        locked_self.save()
+        
+        # Update self with new values
+        self.status = locked_self.status
+        self.reviewed_by = locked_self.reviewed_by
+        self.reviewed_at = locked_self.reviewed_at
+        self.review_notes = locked_self.review_notes
+        
+        # Audit log
+        ReturnAuditLog.log(
+            operation='reject_return',
+            return_request=self,
+            user=rejected_by or reviewed_by,
+            previous_state={'status': previous_status},
+            new_state={'status': 'rejected', 'reason': reason or notes or admin_notes},
+        )
+        
+        logger.info(f"Return {self.return_number} rejected by {rejected_by or reviewed_by}")
     
-    def mark_items_received(self, items_conditions=None, quality_acceptable=True, condition_notes='', admin_notes=''):
+    @transaction.atomic
+    def mark_items_received(self, items_conditions=None, quality_acceptable=True, 
+                           condition_notes='', admin_notes='', received_by=None):
         """
         Mark return items as received by farmer.
+        
+        Atomicity: Uses select_for_update and distributed lock
+        State Validation: Validates approved -> items_received transition
         
         Args:
             items_conditions: List of dicts with item conditions
@@ -216,43 +298,92 @@ class ReturnRequest(models.Model):
             quality_acceptable: Overall quality assessment (legacy parameter)
             condition_notes: Notes about items condition (legacy parameter)
             admin_notes: Admin notes about receipt
+            received_by: User who received the items
         """
-        self.status = 'items_received'
-        self.items_received_at = timezone.now()
-        self.items_condition = condition_notes or admin_notes
+        from .returns_safety import validate_return_status_transition, ReturnLock
         
-        # Process individual item conditions
-        if items_conditions:
-            all_good = True
-            for item_data in items_conditions:
-                item_id = item_data.get('id')
-                condition = item_data.get('condition_on_arrival', 'good')
-                quality_notes = item_data.get('quality_notes', '')
-                
-                try:
-                    return_item = self.return_items.get(id=item_id)
-                    return_item.returned_in_good_condition = (condition == 'good')
-                    return_item.item_notes = quality_notes
-                    return_item.save(update_fields=['returned_in_good_condition', 'item_notes'])
-                    
-                    if condition != 'good':
-                        all_good = False
-                except ReturnItem.DoesNotExist:
-                    pass
+        # Use distributed lock to prevent concurrent item processing
+        with ReturnLock(f"return:{self.id}:receive", ttl_seconds=60):
+            # Lock the return request
+            locked_self = ReturnRequest.objects.select_for_update().get(pk=self.pk)
             
-            self.return_quality_acceptable = all_good
-        else:
-            self.return_quality_acceptable = quality_acceptable
+            # Validate state transition
+            validate_return_status_transition(locked_self.status, 'items_received')
+            
+            previous_status = locked_self.status
+            locked_self.status = 'items_received'
+            locked_self.items_received_at = timezone.now()
+            locked_self.items_condition = condition_notes or admin_notes
+            
+            items_processed = []
+            
+            # Process individual item conditions
+            if items_conditions:
+                all_good = True
+                for item_data in items_conditions:
+                    item_id = item_data.get('id')
+                    condition = item_data.get('condition_on_arrival', 'good')
+                    quality_notes = item_data.get('quality_notes', '')
+                    
+                    try:
+                        # Lock each return item
+                        return_item = ReturnItem.objects.select_for_update().get(
+                            id=item_id, return_request=locked_self
+                        )
+                        return_item.returned_in_good_condition = (condition == 'good')
+                        return_item.item_notes = quality_notes
+                        return_item.save(update_fields=['returned_in_good_condition', 'item_notes'])
+                        
+                        items_processed.append({
+                            'id': str(item_id),
+                            'condition': condition,
+                            'good': condition == 'good'
+                        })
+                        
+                        if condition != 'good':
+                            all_good = False
+                    except ReturnItem.DoesNotExist:
+                        logger.warning(f"ReturnItem {item_id} not found for return {self.return_number}")
+                
+                locked_self.return_quality_acceptable = all_good
+            else:
+                locked_self.return_quality_acceptable = quality_acceptable
+            
+            locked_self.save()
+            
+            # Update self with new values
+            self.status = locked_self.status
+            self.items_received_at = locked_self.items_received_at
+            self.items_condition = locked_self.items_condition
+            self.return_quality_acceptable = locked_self.return_quality_acceptable
+            
+            # Audit log
+            ReturnAuditLog.log(
+                operation='mark_items_received',
+                return_request=self,
+                user=received_by,
+                previous_state={'status': previous_status},
+                new_state={
+                    'status': 'items_received',
+                    'quality_acceptable': locked_self.return_quality_acceptable,
+                    'items_processed': len(items_processed)
+                },
+            )
+            
+            # Restore stock for items in good condition
+            self._restore_inventory()
         
-        self.save()
-        
-        # Restore stock for items in good condition
-        self._restore_inventory()
+        logger.info(f"Return {self.return_number} items received, {len(items_processed)} items processed")
     
+    @transaction.atomic
     def issue_refund(self, initiated_by=None, processed_by=None, payment_method='', 
                       refund_method='', payment_provider='', transaction_id='', notes=''):
         """
         Issue refund and create RefundTransaction record.
+        
+        Atomicity: Uses select_for_update and distributed lock
+        State Validation: Validates items_received -> refund_issued transition
+        Idempotency: Checks for existing refund transaction before creating
         
         Args:
             initiated_by/processed_by: User issuing the refund
@@ -264,60 +395,179 @@ class ReturnRequest(models.Model):
         Returns:
             RefundTransaction instance
         """
-        # Create refund transaction
-        refund_transaction = RefundTransaction.objects.create(
-            return_request=self,
-            amount=self.total_refund_amount or self.calculate_refund_amount(),
-            refund_method=payment_method or refund_method or 'mobile_money',
-            status='completed',
-            transaction_id=transaction_id,
-            payment_provider=payment_provider,
-            processed_by=initiated_by or processed_by,
-            processed_at=timezone.now(),
-            notes=notes
+        from .returns_safety import (
+            validate_return_status_transition, ReturnLock,
+            check_refund_idempotency, mark_refund_issued
         )
         
-        # Update return request status
-        self.status = 'refund_issued'
-        self.refund_issued_at = timezone.now()
-        self.refund_transaction_id = transaction_id
-        self.refund_notes = notes
-        self.save()
+        user = initiated_by or processed_by
         
-        # Update order payment status
-        self.order.payment_status = 'refunded'
-        self.order.save()
+        # Use distributed lock to prevent duplicate refunds
+        with ReturnLock(f"return:{self.id}:refund", ttl_seconds=60):
+            # Check idempotency - has refund already been issued?
+            existing_refund = check_refund_idempotency(str(self.id))
+            if existing_refund:
+                logger.warning(f"Duplicate refund attempt for return {self.return_number}")
+                # Return existing refund transaction
+                try:
+                    return RefundTransaction.objects.get(
+                        id=existing_refund['refund_transaction_id']
+                    )
+                except RefundTransaction.DoesNotExist:
+                    pass  # Proceed with new refund if cache entry is stale
+            
+            # Lock the return request
+            locked_self = ReturnRequest.objects.select_for_update().get(pk=self.pk)
+            
+            # Check if refund already exists in database
+            if locked_self.status == 'refund_issued':
+                existing = locked_self.refund_transactions.filter(status='completed').first()
+                if existing:
+                    logger.info(f"Refund already issued for return {self.return_number}")
+                    return existing
+            
+            # Validate state transition
+            validate_return_status_transition(locked_self.status, 'refund_issued')
+            
+            previous_status = locked_self.status
+            refund_amount = locked_self.total_refund_amount or locked_self.calculate_refund_amount()
+            
+            # Create refund transaction
+            refund_transaction = RefundTransaction.objects.create(
+                return_request=locked_self,
+                amount=refund_amount,
+                refund_method=payment_method or refund_method or 'mobile_money',
+                status='completed',
+                transaction_id=transaction_id,
+                payment_provider=payment_provider,
+                processed_by=user,
+                processed_at=timezone.now(),
+                notes=notes
+            )
+            
+            # Update return request status
+            locked_self.status = 'refund_issued'
+            locked_self.refund_issued_at = timezone.now()
+            locked_self.refund_transaction_id = transaction_id
+            locked_self.refund_notes = notes
+            locked_self.save()
+            
+            # Update order payment status atomically
+            from .marketplace_models import MarketplaceOrder
+            MarketplaceOrder.objects.filter(pk=locked_self.order_id).update(
+                payment_status='refunded',
+                updated_at=timezone.now()
+            )
+            
+            # Update self with new values
+            self.status = locked_self.status
+            self.refund_issued_at = locked_self.refund_issued_at
+            self.refund_transaction_id = locked_self.refund_transaction_id
+            self.refund_notes = locked_self.refund_notes
+            
+            # Mark in cache for idempotency
+            mark_refund_issued(
+                str(self.id), 
+                str(refund_transaction.id), 
+                str(refund_amount)
+            )
+            
+            # Audit log
+            ReturnAuditLog.log(
+                operation='issue_refund',
+                return_request=self,
+                user=user,
+                previous_state={'status': previous_status},
+                new_state={
+                    'status': 'refund_issued',
+                    'refund_transaction_id': str(refund_transaction.id),
+                    'amount': str(refund_amount),
+                    'payment_method': payment_method or refund_method,
+                },
+            )
         
+        logger.info(f"Refund {refund_transaction.id} issued for return {self.return_number}: GHS {refund_amount}")
         return refund_transaction
     
-    def complete_return(self):
-        """Mark return as completed"""
-        self.status = 'completed'
-        self.completed_at = timezone.now()
-        self.save()
+    @transaction.atomic
+    def complete_return(self, completed_by=None):
+        """
+        Mark return as completed.
+        
+        Atomicity: Uses select_for_update to prevent concurrent modifications
+        State Validation: Validates refund_issued -> completed transition
+        """
+        from .returns_safety import validate_return_status_transition
+        
+        # Lock the return request
+        locked_self = ReturnRequest.objects.select_for_update().get(pk=self.pk)
+        
+        # Validate state transition
+        validate_return_status_transition(locked_self.status, 'completed')
+        
+        previous_status = locked_self.status
+        locked_self.status = 'completed'
+        locked_self.completed_at = timezone.now()
+        locked_self.save()
+        
+        # Update self with new values
+        self.status = locked_self.status
+        self.completed_at = locked_self.completed_at
         
         # Adjust revenue metrics
         self._adjust_revenue_metrics()
+        
+        # Audit log
+        ReturnAuditLog.log(
+            operation='complete_return',
+            return_request=self,
+            user=completed_by,
+            previous_state={'status': previous_status},
+            new_state={'status': 'completed'},
+        )
+        
+        logger.info(f"Return {self.return_number} completed")
     
     def _restore_inventory(self):
-        """Restore returned items to inventory"""
+        """
+        Restore returned items to inventory.
+        
+        Called within transaction from mark_items_received().
+        Each item's restore_to_inventory() handles its own idempotency check.
+        """
+        restored_count = 0
         for return_item in self.return_items.all():
-            return_item.restore_to_inventory()
+            if return_item.restore_to_inventory():
+                restored_count += 1
+        
+        logger.info(f"Restored {restored_count} items to inventory for return {self.return_number}")
+        return restored_count
     
+    @transaction.atomic
     def _adjust_revenue_metrics(self):
-        """Adjust product and farm revenue statistics"""
-        from django.db.models import F
+        """
+        Adjust product and farm revenue statistics.
         
-        # Adjust product metrics
-        for return_item in self.return_items.all():
-            product = return_item.product
-            if product:
-                product.total_sold = F('total_sold') - return_item.quantity
-                product.total_revenue = F('total_revenue') - return_item.refund_amount
-                product.save(update_fields=['total_sold', 'total_revenue'])
-                product.refresh_from_db()
+        Uses F() expressions for atomic updates.
+        """
+        from .marketplace_models import Product
         
-        # Inventory metrics are already adjusted via _restore_inventory
+        adjusted_products = []
+        
+        # Adjust product metrics atomically
+        for return_item in self.return_items.select_related('product').all():
+            if return_item.product_id:
+                Product.objects.filter(pk=return_item.product_id).update(
+                    total_sold=F('total_sold') - return_item.quantity,
+                    total_revenue=F('total_revenue') - return_item.refund_amount
+                )
+                adjusted_products.append({
+                    'product_id': str(return_item.product_id),
+                    'quantity_adjusted': return_item.quantity,
+                    'revenue_adjusted': str(return_item.refund_amount)
+                })
+        
+        logger.info(f"Adjusted revenue metrics for {len(adjusted_products)} products from return {self.return_number}")
 
 
 class ReturnItem(models.Model):
@@ -431,50 +681,104 @@ class ReturnItem(models.Model):
         super().save(*args, **kwargs)
     
     def restore_to_inventory(self):
-        """Add returned items back to inventory"""
+        """
+        Add returned items back to inventory.
+        
+        Idempotency: Checks stock_restored flag and uses cache lock
+        Atomicity: Uses transaction.atomic and select_for_update
+        
+        Returns:
+            bool: True if stock was restored, False if skipped
+        """
+        from .returns_safety import (
+            check_stock_restoration_idempotency,
+            mark_stock_restored,
+            ReturnLock
+        )
+        
+        # Quick check - already restored?
         if self.stock_restored:
-            return  # Already restored
+            logger.debug(f"ReturnItem {self.id}: Stock already restored, skipping")
+            return False
         
+        # Cannot restock damaged items
         if not self.returned_in_good_condition:
-            return  # Cannot restock damaged items
+            logger.info(f"ReturnItem {self.id}: Not in good condition, skipping inventory restoration")
+            return False
         
-        # Add to FarmInventory
-        from sales_revenue.inventory_models import FarmInventory, StockMovementType
+        # Idempotency check via cache
+        if check_stock_restoration_idempotency(str(self.id)):
+            logger.warning(f"ReturnItem {self.id}: Stock restoration already processed (idempotency check)")
+            return False
         
-        farm = self.return_request.order.farm
-        
-        # Find or create inventory record
-        inventory, created = FarmInventory.objects.get_or_create(
-            farm=farm,
-            category=self.product.category.name if self.product and self.product.category else 'Products',
-            product_name=self.product_name,
-            defaults={
-                'unit': self.unit,
-                'unit_cost': self.unit_price,
-            }
-        )
-        
-        # Add stock back
-        movement = inventory.add_stock(
-            quantity=float(self.quantity),
-            movement_type=StockMovementType.RETURN,
-            source_record=self.return_request,
-            unit_cost=float(self.unit_price),
-            notes=f"Returned from order {self.return_request.order.order_number}",
-            recorded_by=self.return_request.reviewed_by
-        )
-        
-        # Mark as restored
-        self.stock_restored = True
-        self.stock_restored_at = timezone.now()
-        if movement:
-            self.stock_movement_id = movement.id
-        self.save(update_fields=['stock_restored', 'stock_restored_at', 'stock_movement_id'])
-        
-        # Update product stock if linked
-        if self.product:
-            self.product.stock_quantity += self.quantity
-            self.product.save(update_fields=['stock_quantity'])
+        # Acquire distributed lock
+        with ReturnLock(f"return_item:{self.id}:restore"):
+            # Double-check within lock (another process might have just completed)
+            self.refresh_from_db()
+            if self.stock_restored:
+                return False
+            
+            with transaction.atomic():
+                # Lock this return item row
+                locked_item = ReturnItem.objects.select_for_update().get(pk=self.pk)
+                
+                if locked_item.stock_restored:
+                    return False
+                
+                # Add to FarmInventory
+                from sales_revenue.inventory_models import FarmInventory, StockMovementType
+                
+                farm = self.return_request.order.farm
+                
+                # Find or create inventory record with lock
+                inventory, created = FarmInventory.objects.select_for_update().get_or_create(
+                    farm=farm,
+                    category=self.product.category.name if self.product and self.product.category else 'Products',
+                    product_name=self.product_name,
+                    defaults={
+                        'unit': self.unit,
+                        'unit_cost': self.unit_price,
+                    }
+                )
+                
+                # Add stock back
+                movement = inventory.add_stock(
+                    quantity=float(self.quantity),
+                    movement_type=StockMovementType.RETURN,
+                    source_record=self.return_request,
+                    unit_cost=float(self.unit_price),
+                    notes=f"Returned from order {self.return_request.order.order_number}",
+                    recorded_by=self.return_request.reviewed_by
+                )
+                
+                # Mark as restored
+                locked_item.stock_restored = True
+                locked_item.stock_restored_at = timezone.now()
+                if movement:
+                    locked_item.stock_movement_id = movement.id
+                locked_item.save(update_fields=['stock_restored', 'stock_restored_at', 'stock_movement_id'])
+                
+                # Update self
+                self.stock_restored = True
+                self.stock_restored_at = locked_item.stock_restored_at
+                self.stock_movement_id = locked_item.stock_movement_id
+                
+                # Update product stock if linked
+                if self.product:
+                    from .marketplace_models import Product
+                    Product.objects.filter(pk=self.product_id).update(
+                        stock_quantity=F('stock_quantity') + self.quantity
+                    )
+                
+                # Mark in cache for idempotency
+                mark_stock_restored(str(self.id))
+                
+                logger.info(
+                    f"ReturnItem {self.id}: Restored {self.quantity} units of {self.product_name} "
+                    f"to inventory (movement: {movement.id if movement else 'N/A'})"
+                )
+                
+                return True
 
 
 class RefundTransaction(models.Model):
@@ -538,16 +842,193 @@ class RefundTransaction(models.Model):
     def __str__(self):
         return f"Refund GHS {self.amount} - {self.return_request.return_number}"
     
+    @transaction.atomic
     def mark_completed(self, transaction_id='', processed_by=None):
-        """Mark refund as completed"""
-        self.status = 'completed'
-        self.transaction_id = transaction_id
-        self.processed_by = processed_by
-        self.processed_at = timezone.now()
-        self.save()
+        """
+        Mark refund as completed.
+        
+        Atomicity: Uses select_for_update to prevent concurrent modifications
+        State Validation: Validates pending/processing -> completed transition
+        """
+        from .returns_safety import validate_refund_status_transition
+        
+        # Lock the refund transaction
+        locked_self = RefundTransaction.objects.select_for_update().get(pk=self.pk)
+        
+        # Validate state transition
+        validate_refund_status_transition(locked_self.status, 'completed')
+        
+        previous_status = locked_self.status
+        locked_self.status = 'completed'
+        locked_self.transaction_id = transaction_id
+        locked_self.processed_by = processed_by
+        locked_self.processed_at = timezone.now()
+        locked_self.save()
+        
+        # Update self with new values
+        self.status = locked_self.status
+        self.transaction_id = locked_self.transaction_id
+        self.processed_by = locked_self.processed_by
+        self.processed_at = locked_self.processed_at
+        
+        # Audit log
+        ReturnAuditLog.log(
+            operation='refund_completed',
+            return_request=self.return_request,
+            user=processed_by,
+            previous_state={'status': previous_status},
+            new_state={
+                'status': 'completed',
+                'transaction_id': transaction_id,
+                'amount': str(self.amount),
+            },
+            details={'refund_transaction_id': str(self.id)}
+        )
+        
+        logger.info(f"RefundTransaction {self.id} marked completed (external ref: {transaction_id})")
     
-    def mark_failed(self, reason=''):
-        """Mark refund as failed"""
-        self.status = 'failed'
-        self.failure_reason = reason
-        self.save()
+    @transaction.atomic
+    def mark_failed(self, reason='', failed_by=None):
+        """
+        Mark refund as failed.
+        
+        Atomicity: Uses select_for_update to prevent concurrent modifications
+        State Validation: Validates pending/processing -> failed transition
+        """
+        from .returns_safety import validate_refund_status_transition
+        
+        # Lock the refund transaction
+        locked_self = RefundTransaction.objects.select_for_update().get(pk=self.pk)
+        
+        # Validate state transition
+        validate_refund_status_transition(locked_self.status, 'failed')
+        
+        previous_status = locked_self.status
+        locked_self.status = 'failed'
+        locked_self.failure_reason = reason
+        locked_self.save()
+        
+        # Update self with new values
+        self.status = locked_self.status
+        self.failure_reason = locked_self.failure_reason
+        
+        # Audit log
+        ReturnAuditLog.log(
+            operation='refund_failed',
+            return_request=self.return_request,
+            user=failed_by,
+            previous_state={'status': previous_status},
+            new_state={
+                'status': 'failed',
+                'failure_reason': reason,
+            },
+            details={'refund_transaction_id': str(self.id)}
+        )
+        
+        logger.warning(f"RefundTransaction {self.id} marked failed: {reason}")
+
+
+class ReturnAuditLog(models.Model):
+    """
+    Audit log for return/refund operations.
+    
+    Provides complete audit trail of all state changes and operations
+    for returns and refunds. Essential for:
+    - Debugging issues
+    - Compliance and accountability
+    - Dispute resolution
+    - Forensic analysis
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # What operation was performed
+    operation = models.CharField(
+        max_length=50,
+        db_index=True,
+        help_text='e.g., approve_return, reject_return, issue_refund, restore_stock'
+    )
+    
+    # The return request (central reference)
+    return_request = models.ForeignKey(
+        ReturnRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='audit_logs'
+    )
+    
+    # Who performed the action
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+'
+    )
+    
+    # State before operation (JSON)
+    previous_state = models.JSONField(default=dict, blank=True)
+    
+    # State after operation (JSON)
+    new_state = models.JSONField(default=dict, blank=True)
+    
+    # Additional details (JSON)
+    details = models.JSONField(default=dict, blank=True)
+    
+    # Error information if operation failed
+    error_message = models.TextField(blank=True)
+    
+    # Request metadata
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True)
+    
+    # Timing
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    
+    class Meta:
+        db_table = 'return_audit_logs'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['return_request', '-created_at']),
+            models.Index(fields=['operation', '-created_at']),
+            models.Index(fields=['user', '-created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.operation} on {self.return_request_id} at {self.created_at}"
+    
+    @classmethod
+    def log(
+        cls,
+        operation: str,
+        return_request=None,
+        user=None,
+        previous_state: dict = None,
+        new_state: dict = None,
+        details: dict = None,
+        error_message: str = '',
+        ip_address: str = None,
+        user_agent: str = '',
+    ):
+        """
+        Create an audit log entry.
+        
+        This method is designed to be safe - it won't raise exceptions
+        even if logging fails, to avoid disrupting the main operation.
+        """
+        try:
+            return cls.objects.create(
+                operation=operation,
+                return_request=return_request,
+                user=user,
+                previous_state=previous_state or {},
+                new_state=new_state or {},
+                details=details or {},
+                error_message=error_message,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+        except Exception as e:
+            # Log but don't raise - audit logging should never break operations
+            logger.error(f"Failed to create ReturnAuditLog: {e}")
+            return None

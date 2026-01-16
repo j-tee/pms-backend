@@ -6,18 +6,98 @@
 
 ---
 
+## ⚠️ IMPORTANT: API Implementation Status
+
+> **Last Updated: January 2025**
+
+### URL Structure
+
+The procurement module uses clear URL naming:
+
+| Audience | URL Prefix | Description |
+|----------|------------|-------------|
+| **Farmers** | `/api/procurement/` | Farmer's view of assignments, deliveries, earnings |
+| **Admin/Staff** | `/api/admin/procurement/` | YEA Staff & Admin order management |
+
+### Currently Available Endpoints ✅
+
+#### Farmer Procurement Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/procurement/` | GET | Farmer procurement dashboard |
+| `/api/procurement/overview/` | GET | Farmer overview stats only |
+| `/api/procurement/assignments/` | GET | Farmer assignments list |
+| `/api/procurement/earnings/` | GET | Farmer earnings breakdown |
+| `/api/procurement/pending-actions/` | GET | Farmer pending actions |
+
+#### Admin/Staff Procurement Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/admin/procurement/` | GET | Admin procurement dashboard |
+| `/api/admin/procurement/overview/` | GET | Admin overview stats only |
+| `/api/admin/procurement/orders/` | GET | List procurement orders |
+| `/api/admin/procurement/orders/{order_id}/timeline/` | GET | Order timeline details |
+| `/api/admin/procurement/orders/{order_id}/recommend-farms/` | GET | **Get farm recommendations prioritized by distress** |
+| `/api/admin/procurement/invoices/` | GET | List procurement invoices |
+| `/api/admin/procurement/deliveries/` | GET | List delivery confirmations |
+| `/api/admin/procurement/distressed-farmers/` | GET | **List farmers in distress (priority purchasing)** |
+| `/api/admin/procurement/farms/{farm_id}/distress/` | GET | **Get distress details for a specific farm** |
+
+---
+
+## 🆕 Farmer Distress Scoring System
+
+The procurement system includes a **Farmer Distress Score** to help government officers identify and prioritize purchasing from farmers who are struggling the most.
+
+### Distress Score Levels
+
+| Score Range | Level | Priority | Description |
+|-------------|-------|----------|-------------|
+| 76-100 | **Critical** | Urgent | Farmer needs immediate intervention |
+| 51-75 | **High** | High | Farmer is struggling significantly |
+| 26-50 | **Moderate** | Normal | Some concerns, monitor closely |
+| 0-25 | **Healthy** | Low | Farmer is doing well |
+
+### Distress Indicators
+
+The score is calculated from multiple factors:
+
+| Factor | Weight | Description |
+|--------|--------|-------------|
+| Inventory Aging | 25% | Unsold inventory, aging eggs/birds |
+| Sales Activity | 25% | Recent sales volume (low = distress) |
+| Mortality Rate | 15% | Recent bird deaths |
+| Marketplace Engagement | 15% | Platform usage (not using = may need help) |
+| Capacity Utilization | 10% | Overstocking or underutilization |
+| Payment History | 10% | Pending payments from government |
+
+### Workflow for Officers
+
+1. **View Distressed Farmers**: `GET /api/admin/procurement/distressed-farmers/`
+2. **Create Order**: Target product type and region
+3. **Get Recommendations**: `GET /api/admin/procurement/orders/{id}/recommend-farms/`
+   - Returns farms sorted by distress score (highest first)
+4. **Assign Farms**: Start with most distressed farmers
+5. **Track Deliveries**: Monitor fulfillment
+
+### Planned (Coming Soon) 🚧
+
+CRUD operations for orders, assignments, and invoices are coming soon.
+
+---
+
 ## Table of Contents
 
 1. [Overview](#overview)
 2. [User Roles & Permissions](#user-roles--permissions)
 3. [Core Concepts](#core-concepts)
-4. [Officer Endpoints](#officer-endpoints)
-5. [Farmer Endpoints](#farmer-endpoints)
-6. [Admin Management](#admin-management)
-7. [Workflow Examples](#workflow-examples)
-8. [Frontend Integration Guide](#frontend-integration-guide)
-9. [TypeScript Types](#typescript-types)
-10. [Error Handling](#error-handling)
+4. [Farmer Procurement API](#farmer-procurement-api)
+5. [Admin Procurement API](#admin-procurement-api)
+6. [Workflow Examples](#workflow-examples)
+7. [TypeScript Integration](#typescript-integration)
+8. [Error Handling](#error-handling)
 
 ---
 
@@ -32,11 +112,10 @@
 
 ### API Prefixes
 
-| Prefix | Purpose | Authentication | Roles |
-|--------|---------|----------------|-------|
-| `/api/dashboards/officer/` | Procurement officer dashboard | JWT | Procurement Officer, National Admin |
-| `/api/dashboards/farmer/` | Farmer procurement dashboard | JWT | Farmer |
-| `/api/admin/procurement/` | Admin order management | JWT | National Admin, Super Admin |
+| Prefix | Purpose | Authentication | Status |
+|--------|---------|----------------|--------|
+| `/api/procurement/` | Farmer procurement view | JWT (FARMER) | ✅ **AVAILABLE** |
+| `/api/admin/procurement/` | Admin order management | JWT (PROCUREMENT_OFFICER, NATIONAL_ADMIN, SUPER_ADMIN) | ✅ **AVAILABLE** |
 
 ---
 
@@ -163,7 +242,115 @@ The system recommends farms based on:
 
 ---
 
-## Officer Endpoints
+## Available Dashboard Endpoints
+
+> ✅ **These endpoints are currently implemented and working**
+
+### Officer Dashboard (Procurement Officers)
+
+#### Full Dashboard
+
+**`GET /api/dashboards/officer/`**
+
+Returns comprehensive dashboard with overview, orders, pending approvals, overdue items, and performance.
+
+**Authentication:** JWT (Procurement Officer, National Admin)
+
+**Example Response:**
+```json
+{
+  "overview": {
+    "orders": { "total": 45, "active": 12, "draft": 3, "completed": 28, "overdue": 2 },
+    "pending_actions": { "deliveries": 5, "verifications": 3, "total": 8 },
+    "budget": { "allocated": 500000.00, "spent": 385000.00, "remaining": 115000.00 }
+  },
+  "my_orders": [...],
+  "pending_approvals": {...},
+  "overdue_items": {...},
+  "performance": {...}
+}
+```
+
+#### Overview Only
+
+**`GET /api/dashboards/officer/overview/`**
+
+Returns just the overview statistics (lightweight, for quick loading).
+
+#### Orders List
+
+**`GET /api/dashboards/officer/orders/`**
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | string | Filter by status (active, completed, etc.) |
+| `limit` | integer | Max results (default: 50) |
+
+#### Order Timeline
+
+**`GET /api/dashboards/officer/orders/{order_id}/timeline/`**
+
+Returns timeline events for a specific order.
+
+---
+
+### Farmer Dashboard
+
+#### Full Dashboard
+
+**`GET /api/dashboards/farmer/`**
+
+Returns comprehensive farmer dashboard with overview, assignments, earnings, delivery history.
+
+**Authentication:** JWT (Farmer role)
+
+**Example Response:**
+```json
+{
+  "overview": {
+    "farm": { "farm_name": "Addo Poultry Farm", "farm_id": "YEA-GA-2025-0123" },
+    "assignments": { "total": 12, "pending": 1, "accepted": 2, "completed": 8 },
+    "earnings": { "total": 680000.00, "pending": 127500.00 }
+  },
+  "my_assignments": [...],
+  "pending_actions": {...},
+  "earnings_breakdown": {...},
+  "delivery_history": [...]
+}
+```
+
+#### Overview Only
+
+**`GET /api/dashboards/farmer/overview/`**
+
+#### Assignments List
+
+**`GET /api/dashboards/farmer/assignments/`**
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | string | Filter by assignment status |
+| `limit` | integer | Max results (default: 50) |
+
+#### Earnings
+
+**`GET /api/dashboards/farmer/earnings/`**
+
+Returns earnings breakdown by status, monthly trend, and invoice list.
+
+#### Pending Actions
+
+**`GET /api/dashboards/farmer/pending-actions/`**
+
+Returns list of items requiring farmer attention.
+
+---
+
+## Planned Officer Endpoints
+
+> ⚠️ **NOT YET IMPLEMENTED** - The following endpoints are planned but not available
 
 ### Dashboard Overview
 
@@ -267,6 +454,8 @@ The system recommends farms based on:
 ---
 
 ### Create Procurement Order
+
+> ⚠️ **NOT YET IMPLEMENTED** - Use Django Admin at `/admin/procurement/procurementorder/` instead
 
 **Endpoint:** `POST /api/admin/procurement/orders/`
 
@@ -1656,6 +1845,371 @@ The system automatically sends SMS notifications at key events:
 | Procurement Officer | procurement@yeapoultry.gov.gh | 4 hours |
 | Farmer | farmer-support@yeapoultry.gov.gh | 24 hours |
 | Admin | admin@yeapoultry.gov.gh | Immediate |
+
+---
+
+## Transaction Safety & Concurrency Protection
+
+> **Added in January 2026**
+> 
+> The Government Procurement System includes robust transaction safety mechanisms to prevent financial discrepancies, duplicate payments, and race conditions during high-volume operations.
+
+### State Machine Validation
+
+All status transitions are validated server-side to prevent invalid state changes:
+
+#### Order Status State Machine
+
+```
+ORDER STATES:
+┌───────┐   publish   ┌───────────┐   assign   ┌──────────┐   accept   ┌─────────────┐
+│ draft ├────────────►│ published ├───────────►│ assigned ├──────────►│ in_progress │
+└───────┘             └─────┬─────┘            └──────────┘           └──────┬──────┘
+                            │                                                 │
+                            │  cancel                                        │ partial
+                            ▼                                                ▼
+                      ┌───────────┐                              ┌─────────────────────┐
+                      │ cancelled │                              │ partially_delivered │
+                      └───────────┘                              └──────────┬──────────┘
+                                                                            │ all delivered
+                                                                            ▼
+                                                                   ┌─────────────────┐
+                                                                   │ fully_delivered │
+                                                                   └────────┬────────┘
+                                                                            │ all paid
+                                                                            ▼
+                                                                     ┌───────────┐
+                                                                     │ completed │
+                                                                     └───────────┘
+```
+
+**Valid Order Transitions:**
+| Current Status | Allowed Next States |
+|----------------|---------------------|
+| `draft` | `published`, `cancelled` |
+| `published` | `assigning`, `assigned`, `cancelled` |
+| `assigning` | `assigned`, `cancelled` |
+| `assigned` | `in_progress`, `cancelled` |
+| `in_progress` | `partially_delivered`, `fully_delivered` |
+| `partially_delivered` | `fully_delivered` |
+| `fully_delivered` | `completed` |
+| `completed` | *(terminal)* |
+| `cancelled` | *(terminal)* |
+
+#### Assignment Status State Machine
+
+```
+ASSIGNMENT STATES:
+┌─────────┐   accept   ┌──────────┐   prepare   ┌───────────┐   ready   ┌───────┐
+│ pending ├───────────►│ accepted ├────────────►│ preparing ├─────────►│ ready │
+└────┬────┘            └──────────┘             └───────────┘          └───┬───┘
+     │                                                                     │
+     │  reject                                                            │ ship
+     ▼                                                                    ▼
+┌──────────┐                                                       ┌────────────┐
+│ rejected │                                                       │ in_transit │
+└──────────┘                                                       └─────┬──────┘
+                                                                         │ deliver
+                                                                         ▼
+                                                                   ┌───────────┐
+                                                                   │ delivered │
+                                                                   └─────┬─────┘
+                                                                         │ verify
+                                                                         ▼
+                                                                    ┌──────────┐
+                                                                    │ verified │
+                                                                    └────┬─────┘
+                                                                         │ pay
+                                                                         ▼
+                                                                      ┌──────┐
+                                                                      │ paid │
+                                                                      └──────┘
+```
+
+#### Invoice Status State Machine
+
+```
+INVOICE STATES:
+┌─────────┐   submit   ┌───────────┐   approve   ┌──────────┐   pay   ┌──────┐
+│ pending ├───────────►│ submitted ├────────────►│ approved ├────────►│ paid │
+└────┬────┘            └─────┬─────┘             └──────────┘         └──────┘
+     │                       │
+     │  reject               │  reject
+     ▼                       ▼
+┌──────────┐            ┌──────────┐
+│ rejected │            │ rejected │
+└──────────┘            └──────────┘
+```
+
+**Frontend Handling:**
+```typescript
+// Handle state transition errors
+try {
+  await procurementApi.publishOrder(orderId);
+} catch (error) {
+  if (error.code === 'INVALID_STATE_TRANSITION') {
+    // e.g., "Cannot publish order - current status is 'completed'"
+    showToast('This order cannot be published in its current state', 'warning');
+    refreshOrderDetails(); // Get fresh state from server
+  }
+}
+```
+
+### Idempotency Protection
+
+Critical financial operations are protected against duplicate execution:
+
+#### Payment Processing
+
+```typescript
+// First request
+POST /api/admin/procurement/invoices/{id}/process-payment/
+→ 200 OK { "payment_id": "uuid", "amount": "152575.00" }
+
+// Duplicate request (same invoice)
+POST /api/admin/procurement/invoices/{id}/process-payment/
+→ 200 OK { "is_duplicate": true, "existing_payment_id": "uuid", "message": "Payment already processed" }
+```
+
+The backend uses an **idempotency key** system:
+- Payments are tracked with unique keys per invoice
+- Duplicate payment attempts return the existing payment instead of creating a new one
+- Cache-based checking provides fast duplicate detection
+
+#### Delivery Confirmation
+
+```json
+// Duplicate delivery confirmation
+{
+  "message": "Delivery already confirmed",
+  "is_duplicate": true,
+  "existing_delivery": {
+    "delivery_id": "uuid",
+    "confirmed_at": "2026-01-15T10:30:00Z",
+    "quantity": 1800
+  }
+}
+```
+
+#### Farm Assignment
+
+```json
+// Duplicate farm assignment attempt
+{
+  "error": "Farm already assigned to this order",
+  "code": "DUPLICATE_ASSIGNMENT",
+  "existing_assignment": {
+    "assignment_number": "ORD-2026-00013-A01",
+    "quantity": 1800,
+    "assigned_at": "2026-01-09T10:10:00Z"
+  }
+}
+```
+
+### Concurrent Request Protection
+
+The backend uses distributed locking to prevent race conditions in multi-user environments:
+
+**Protected Operations:**
+| Operation | Lock Scope | Timeout |
+|-----------|------------|---------|
+| Publish Order | Per Order | 30s |
+| Auto-Assign Farms | Per Order | 60s |
+| Manual Farm Assignment | Per Order | 30s |
+| Accept/Reject Assignment | Per Assignment | 30s |
+| Confirm Delivery | Per Assignment | 30s |
+| Verify Delivery | Per Delivery | 30s |
+| Approve Invoice | Per Invoice | 30s |
+| Process Payment | Per Invoice | 60s |
+
+**Frontend Best Practices:**
+
+```typescript
+// 1. Immediately disable action buttons
+const handleProcessPayment = async (invoiceId: string) => {
+  setProcessingInvoices(prev => [...prev, invoiceId]);
+  
+  try {
+    const result = await procurementApi.processPayment(invoiceId, paymentData);
+    
+    if (result.is_duplicate) {
+      showToast('Payment was already processed', 'info');
+    } else {
+      showToast('Payment processed successfully', 'success');
+    }
+    
+    refreshInvoiceList();
+  } catch (error) {
+    if (error.message.includes('locked') || error.status === 423) {
+      showToast('Another user is processing this payment. Please wait.', 'warning');
+      // Retry after delay
+      setTimeout(() => refreshInvoiceList(), 3000);
+    } else {
+      showToast(error.message, 'error');
+    }
+  } finally {
+    setProcessingInvoices(prev => prev.filter(id => id !== invoiceId));
+  }
+};
+
+// 2. Show processing indicator for locked resources
+const InvoiceRow = ({ invoice }) => {
+  const isLocked = processingInvoices.includes(invoice.id);
+  
+  return (
+    <tr className={isLocked ? 'opacity-50' : ''}>
+      {/* ... */}
+      <td>
+        <button 
+          disabled={isLocked}
+          onClick={() => handleProcessPayment(invoice.id)}
+        >
+          {isLocked ? <Spinner /> : 'Process Payment'}
+        </button>
+      </td>
+    </tr>
+  );
+};
+```
+
+### Atomic Operations
+
+All critical operations are wrapped in database transactions:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    ATOMIC: processPayment()                   │
+├──────────────────────────────────────────────────────────────┤
+│  1. Lock invoice row (SELECT FOR UPDATE)                      │
+│  2. Validate invoice status (must be 'approved')              │
+│  3. Check idempotency (has payment already been made?)        │
+│  4. Create payment record                                     │
+│  5. Update invoice status to 'paid'                           │
+│  6. Update assignment status to 'paid'                        │
+│  7. Update order fulfillment stats                            │
+│  8. Create audit log entry                                    │
+│  9. Send SMS notification to farmer                           │
+│                                                               │
+│  ⚡ All or nothing - partial updates are impossible           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Audit Trail
+
+All procurement operations are logged for compliance, debugging, and dispute resolution:
+
+```json
+{
+  "id": "uuid",
+  "operation": "process_payment",
+  "order_id": "uuid",
+  "invoice_id": "uuid",
+  "user_id": "uuid",
+  "user_role": "PROCUREMENT_OFFICER",
+  "timestamp": "2026-01-15T14:30:00Z",
+  "previous_state": {
+    "invoice_status": "approved",
+    "assignment_status": "verified"
+  },
+  "new_state": {
+    "invoice_status": "paid",
+    "assignment_status": "paid",
+    "payment_amount": "152575.00",
+    "payment_reference": "TXN-20260115-001"
+  },
+  "ip_address": "192.168.1.100",
+  "details": {
+    "payment_method": "bank_transfer",
+    "farm_id": "uuid",
+    "farm_name": "Addo Poultry Farm"
+  }
+}
+```
+
+**Audit Log Queries (Admin Only):**
+
+```http
+GET /api/admin/procurement/audit-logs/?order_id={uuid}
+GET /api/admin/procurement/audit-logs/?operation=process_payment&date_from=2026-01-01
+GET /api/admin/procurement/audit-logs/?user_id={uuid}
+```
+
+### Error Response Codes (New)
+
+| HTTP Status | Error Code | Description | Frontend Action |
+|-------------|------------|-------------|-----------------|
+| 400 | `INVALID_STATE_TRANSITION` | Invalid status change | Refresh, show current state |
+| 409 | `DUPLICATE_ASSIGNMENT` | Farm already assigned | Show existing assignment |
+| 409 | `DUPLICATE_PAYMENT` | Payment already processed | Show existing payment |
+| 409 | `DUPLICATE_DELIVERY` | Delivery already confirmed | Show existing delivery |
+| 423 | `RESOURCE_LOCKED` | Resource being modified | Wait and retry |
+| 500 | `TRANSACTION_FAILED` | Database transaction failed | Show error, allow retry |
+
+### Separation of Duties
+
+The system enforces financial separation of duties through role-based permissions:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PROCUREMENT WORKFLOW                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  PROCUREMENT_OFFICER                                         │
+│  ├── Create orders                                           │
+│  ├── Assign farms                                            │
+│  ├── Verify deliveries                                       │
+│  └── Create invoices                                         │
+│                                                              │
+│  FINANCE_OFFICER (cannot create orders)                      │
+│  ├── Approve invoices                                        │
+│  ├── Process payments                                        │
+│  └── View financial reports                                  │
+│                                                              │
+│  AUDITOR (read-only access)                                  │
+│  ├── View all orders and invoices                            │
+│  ├── View audit logs                                         │
+│  └── Export reports                                          │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+This prevents:
+- Same person creating and paying invoices
+- Unauthorized payment processing
+- Audit trail manipulation
+
+### Real-Time Status Updates
+
+For dashboard pages showing multiple orders/assignments, consider implementing polling or WebSocket updates:
+
+```typescript
+// Polling approach (recommended for this system)
+const useProcurementDashboard = () => {
+  const [data, setData] = useState(null);
+  
+  useEffect(() => {
+    const fetchData = async () => {
+      const result = await procurementApi.getDashboard();
+      setData(result);
+    };
+    
+    fetchData();
+    
+    // Poll every 30 seconds for updates
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  return data;
+};
+
+// Manual refresh after actions
+const handlePaymentProcessed = async (invoiceId: string) => {
+  await processPayment(invoiceId);
+  // Force immediate refresh
+  await refetchDashboard();
+};
+```
 
 ---
 

@@ -370,6 +370,42 @@ class OrderAssignment(models.Model):
         help_text="Notes from procurement officer"
     )
     
+    # =========================================================================
+    # DISTRESS TRACKING (Captured at assignment time for impact measurement)
+    # =========================================================================
+    
+    SELECTION_REASON_CHOICES = [
+        ('DISTRESS_PRIORITY', 'Selected due to high distress score'),
+        ('CAPACITY_MATCH', 'Selected based on capacity availability'),
+        ('LOCATION_MATCH', 'Selected based on geographic proximity'),
+        ('OFFICER_SELECTED', 'Manually selected by procurement officer'),
+        ('AUTO_ASSIGNED', 'Auto-assigned by system'),
+    ]
+    
+    farmer_distress_score = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Farmer's distress score at time of assignment (0-100)"
+    )
+    farmer_distress_level = models.CharField(
+        max_length=20,
+        choices=[
+            ('STABLE', 'Stable'),
+            ('LOW', 'Low'),
+            ('MODERATE', 'Moderate'),
+            ('HIGH', 'High'),
+            ('CRITICAL', 'Critical'),
+        ],
+        blank=True,
+        help_text="Farmer's distress level at time of assignment"
+    )
+    selection_reason = models.CharField(
+        max_length=50,
+        choices=SELECTION_REASON_CHOICES,
+        default='CAPACITY_MATCH',
+        help_text="Why this farm was selected for assignment"
+    )
+    
     class Meta:
         ordering = ['order', 'assigned_at']
         indexes = [
@@ -681,3 +717,364 @@ class ProcurementInvoice(models.Model):
         if self.payment_status == 'paid':
             return False
         return timezone.now().date() > self.due_date
+
+
+# ==============================================================================
+# IDEMPOTENCY AND AUDIT MODELS
+# ==============================================================================
+
+class IdempotencyKey(models.Model):
+    """
+    Stores idempotency keys to prevent duplicate operations.
+    
+    Usage:
+        - Client sends unique idempotency_key header with request
+        - Server checks if key exists before processing
+        - If key exists, return cached response
+        - If not, process request and store response
+        
+    Cleanup:
+        - Run IdempotencyKey.cleanup_expired() periodically via Celery
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    key = models.CharField(max_length=255, unique=True, db_index=True)
+    
+    # Request context
+    user_id = models.UUIDField(null=True, blank=True)
+    operation = models.CharField(max_length=100)
+    resource_type = models.CharField(max_length=100)
+    resource_id = models.CharField(max_length=100, null=True, blank=True)
+    
+    # Response caching
+    response_status = models.IntegerField(null=True)
+    response_data = models.JSONField(null=True, blank=True)
+    
+    # Status
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('processing', 'Processing'),
+            ('completed', 'Completed'),
+            ('failed', 'Failed'),
+        ],
+        default='processing'
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    
+    class Meta:
+        db_table = 'procurement_idempotency_keys'
+        indexes = [
+            models.Index(fields=['key']),
+            models.Index(fields=['expires_at']),
+            models.Index(fields=['user_id', 'operation']),
+        ]
+    
+    def __str__(self):
+        return f"{self.operation} - {self.status} - {self.key[:16]}..."
+    
+    @classmethod
+    def generate_key(cls, user_id: str, operation: str, **kwargs) -> str:
+        """Generate a deterministic idempotency key based on operation parameters."""
+        import hashlib
+        key_parts = [str(user_id), operation]
+        for k, v in sorted(kwargs.items()):
+            key_parts.append(f"{k}:{v}")
+        
+        key_string = "|".join(key_parts)
+        return hashlib.sha256(key_string.encode()).hexdigest()
+    
+    @classmethod
+    def get_if_exists(cls, key: str):
+        """Check if idempotency key exists and return cached response if completed."""
+        try:
+            record = cls.objects.get(key=key)
+            if record.status == 'completed' and record.response_data:
+                return record.response_data
+            elif record.status == 'processing':
+                # Request is still being processed
+                raise ValueError("Request is already being processed")
+            return None
+        except cls.DoesNotExist:
+            return None
+    
+    @classmethod
+    def store(cls, key: str, response_data: dict, ttl_hours: int = 24):
+        """Store completed response for idempotency key."""
+        from datetime import timedelta
+        record, _ = cls.objects.update_or_create(
+            key=key,
+            defaults={
+                'status': 'completed',
+                'response_data': response_data,
+                'completed_at': timezone.now(),
+                'expires_at': timezone.now() + timedelta(hours=ttl_hours)
+            }
+        )
+        return record
+    
+    @classmethod
+    def cleanup_expired(cls):
+        """Remove expired idempotency keys. Run periodically via Celery."""
+        deleted, _ = cls.objects.filter(expires_at__lt=timezone.now()).delete()
+        return deleted
+
+
+class ProcurementAuditLog(models.Model):
+    """
+    Comprehensive audit log for all procurement operations.
+    
+    Records every state change for:
+    - Compliance and accountability
+    - Debugging issues
+    - Fraud detection
+    - Historical analysis
+    
+    This is a write-only table - records should never be updated or deleted.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Operation details
+    operation = models.CharField(max_length=100, db_index=True)
+    resource_type = models.CharField(max_length=100, db_index=True)
+    resource_id = models.UUIDField(db_index=True)
+    
+    # User who performed the action
+    user = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='procurement_audit_logs'
+    )
+    user_role = models.CharField(max_length=50, null=True, blank=True)
+    
+    # State changes
+    previous_state = models.JSONField(default=dict)
+    new_state = models.JSONField(default=dict)
+    
+    # Context
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(null=True, blank=True)
+    idempotency_key = models.CharField(max_length=255, null=True, blank=True)
+    
+    # Timestamp
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    
+    class Meta:
+        db_table = 'procurement_audit_log'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['resource_type', 'resource_id']),
+            models.Index(fields=['user', 'timestamp']),
+            models.Index(fields=['operation', 'timestamp']),
+        ]
+    
+    def __str__(self):
+        return f"{self.operation} on {self.resource_type} by {self.user} at {self.timestamp}"
+    
+    @classmethod
+    def log(cls, operation: str, resource_type: str, resource_id, 
+            user=None, previous_state: dict = None, new_state: dict = None,
+            ip_address: str = None, user_agent: str = None, 
+            idempotency_key: str = None):
+        """
+        Create an audit log entry.
+        
+        This method should be called within the same transaction as the operation
+        it's logging to ensure atomicity.
+        """
+        return cls.objects.create(
+            operation=operation,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            user=user,
+            user_role=user.role if user else None,
+            previous_state=previous_state or {},
+            new_state=new_state or {},
+            ip_address=ip_address,
+            user_agent=user_agent,
+            idempotency_key=idempotency_key,
+        )
+    
+    @classmethod
+    def get_history(cls, resource_type: str, resource_id):
+        """Get complete audit history for a resource."""
+        return cls.objects.filter(
+            resource_type=resource_type,
+            resource_id=resource_id
+        ).order_by('timestamp')
+
+
+# =============================================================================
+# FARM DISTRESS HISTORY MODEL
+# =============================================================================
+
+class FarmDistressHistory(models.Model):
+    """
+    Historical record of farm distress scores.
+    
+    Used for:
+    - Tracking distress trends over time
+    - Measuring impact of interventions (procurement, training)
+    - Analytics on program effectiveness
+    """
+    
+    DISTRESS_LEVEL_CHOICES = [
+        ('STABLE', 'Stable - Healthy operations'),
+        ('LOW', 'Low - Minor issues'),
+        ('MODERATE', 'Moderate - Some difficulties'),
+        ('HIGH', 'High - Significant struggle'),
+        ('CRITICAL', 'Critical - Urgent intervention needed'),
+    ]
+    
+    INTERVENTION_TYPE_CHOICES = [
+        ('PROCUREMENT', 'Government Procurement Order'),
+        ('LOAN', 'Government Loan/Subsidy'),
+        ('TRAINING', 'Training/Extension Visit'),
+        ('EQUIPMENT', 'Equipment Support'),
+        ('VETERINARY', 'Veterinary Intervention'),
+        ('MARKETPLACE', 'Marketplace Activation'),
+        ('OTHER', 'Other Intervention'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    farm = models.ForeignKey(
+        Farm,
+        on_delete=models.CASCADE,
+        related_name='distress_history'
+    )
+    
+    recorded_at = models.DateTimeField(auto_now_add=True)
+    
+    # Score at time of recording
+    distress_score = models.PositiveIntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Distress score at time of recording (0-100)"
+    )
+    distress_level = models.CharField(
+        max_length=20,
+        choices=DISTRESS_LEVEL_CHOICES,
+        help_text="Distress level category"
+    )
+    
+    # Detailed breakdown stored as JSON
+    factors = models.JSONField(
+        default=dict,
+        help_text="""
+        Detailed factor breakdown:
+        {
+            'inventory_stagnation': {'score': 85, 'detail': '...'},
+            'sales_performance': {'score': 70, 'detail': '...'},
+            'financial_stress': {'score': 60, 'detail': '...'},
+            'production_issues': {'score': 30, 'detail': '...'},
+            'market_access': {'score': 40, 'detail': '...'}
+        }
+        """
+    )
+    
+    # Optional intervention tracking
+    intervention_type = models.CharField(
+        max_length=50,
+        choices=INTERVENTION_TYPE_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Type of intervention if this record follows an intervention"
+    )
+    intervention_value = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Value of intervention (e.g., procurement amount)"
+    )
+    intervention_reference = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Reference ID of intervention (e.g., order number)"
+    )
+    intervention_notes = models.TextField(
+        blank=True,
+        help_text="Notes about the intervention"
+    )
+    
+    # Who triggered this calculation
+    calculated_by = models.CharField(
+        max_length=50,
+        default='system',
+        help_text="Who triggered: 'system' (daily task), 'officer' (on-demand), 'api'"
+    )
+    
+    class Meta:
+        db_table = 'procurement_farm_distress_history'
+        ordering = ['-recorded_at']
+        indexes = [
+            models.Index(fields=['farm', '-recorded_at']),
+            models.Index(fields=['distress_level', '-recorded_at']),
+            models.Index(fields=['intervention_type']),
+        ]
+    
+    def __str__(self):
+        return f"{self.farm.farm_name} - Score {self.distress_score} at {self.recorded_at}"
+    
+    @classmethod
+    def record(cls, farm, assessment: dict, intervention_type=None, 
+               intervention_value=None, intervention_reference=None,
+               calculated_by='system'):
+        """
+        Record a distress score snapshot.
+        
+        Args:
+            farm: Farm instance
+            assessment: Dict from FarmerDistressService.calculate_distress_score()
+            intervention_type: Optional intervention that preceded this
+            intervention_value: Value of intervention
+            intervention_reference: Reference ID (order number, etc.)
+            calculated_by: Who triggered this calculation
+            
+        Returns:
+            FarmDistressHistory instance
+        """
+        factors = {}
+        if 'score_breakdown' in assessment:
+            for key, data in assessment['score_breakdown'].items():
+                factors[key] = {
+                    'score': data.get('score', 0),
+                    'detail': data.get('detail', ''),
+                }
+        
+        return cls.objects.create(
+            farm=farm,
+            distress_score=assessment.get('distress_score', 0),
+            distress_level=assessment.get('distress_level', 'STABLE'),
+            factors=factors,
+            intervention_type=intervention_type,
+            intervention_value=intervention_value,
+            intervention_reference=intervention_reference,
+            calculated_by=calculated_by,
+        )
+    
+    @classmethod
+    def get_farm_trend(cls, farm, days=90):
+        """
+        Get distress score trend for a farm.
+        
+        Returns list of (date, score) tuples for charting.
+        """
+        cutoff = timezone.now() - timezone.timedelta(days=days)
+        records = cls.objects.filter(
+            farm=farm,
+            recorded_at__gte=cutoff
+        ).order_by('recorded_at').values('recorded_at', 'distress_score')
+        
+        return [
+            {
+                'date': r['recorded_at'].date().isoformat(),
+                'score': r['distress_score']
+            }
+            for r in records
+        ]
