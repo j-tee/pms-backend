@@ -48,6 +48,7 @@ db.sqlite3-journal
 .pytest_cache/
 htmlcov/
 .tox/
+tests/**/__pycache__/
 
 # Celery
 celerybeat-schedule

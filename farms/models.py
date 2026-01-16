@@ -684,6 +684,51 @@ class Farm(models.Model):
         help_text="Auto-calculated: infrastructure + equipment + initial capital"
     )
     
+    # ============================================================================
+    # SECTION 10B: DISTRESS TRACKING (For Government Procurement Prioritization)
+    # These fields cache the distress score to avoid recalculating on every query.
+    # Updated daily by Celery task or on-demand when procurement officer queries.
+    # ============================================================================
+    
+    DISTRESS_LEVEL_CHOICES = [
+        ('STABLE', 'Stable - Healthy operations'),
+        ('LOW', 'Low - Minor issues'),
+        ('MODERATE', 'Moderate - Some difficulties'),
+        ('HIGH', 'High - Significant struggle'),
+        ('CRITICAL', 'Critical - Urgent intervention needed'),
+    ]
+    
+    distress_score = models.PositiveIntegerField(
+        default=0,
+        help_text="Cached distress score (0-100). Updated by background task."
+    )
+    distress_level = models.CharField(
+        max_length=20,
+        choices=DISTRESS_LEVEL_CHOICES,
+        default='STABLE',
+        db_index=True,
+        help_text="Current distress level category"
+    )
+    distress_last_calculated = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When distress score was last calculated"
+    )
+    
+    # Quick-access metrics for procurement officer dashboards
+    days_since_last_sale = models.PositiveIntegerField(
+        default=0,
+        help_text="Days since last recorded sale (any type)"
+    )
+    unsold_inventory_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of birds/crates ready for sale but unsold"
+    )
+    inventory_stagnation_days = models.PositiveIntegerField(
+        default=0,
+        help_text="Days oldest inventory has been sitting unsold"
+    )
+    
     # Timestamps
     application_date = models.DateTimeField(auto_now_add=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -708,6 +753,10 @@ class Farm(models.Model):
             models.Index(fields=['fast_track_eligible']),
             models.Index(fields=['primary_constituency']),
             models.Index(fields=['registration_source', 'primary_constituency']),
+            # Distress tracking indexes for procurement
+            models.Index(fields=['distress_score']),
+            models.Index(fields=['distress_level']),
+            models.Index(fields=['-distress_score', 'farm_status']),
         ]
     
     def __str__(self):

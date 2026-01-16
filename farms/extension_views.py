@@ -5,7 +5,9 @@ Extension Officer / Field Officer Views
 All three roles below have field officer access:
 - EXTENSION_OFFICER (primary field officer role)
 - VETERINARY_OFFICER (field officer with animal health focus)
-- CONSTITUENCY_OFFICIAL (senior field officer with assignment privileges)
+- YEA_OFFICIAL (YEA field staff for data collection, farmer support)
+
+Note: CONSTITUENCY_ADMIN can also access these endpoints for oversight purposes.
 
 PRIMARY RESPONSIBILITY:
 Field officers ensure farmers are feeding the system with accurate data.
@@ -45,19 +47,40 @@ from accounts.models import User
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
+# Field officer roles that can access /api/extension/ endpoints
+FIELD_OFFICER_ROLES = [
+    'EXTENSION_OFFICER',
+    'VETERINARY_OFFICER',
+    'YEA_OFFICIAL',
+]
+
+# Roles that can assign extension officers to farms (admin-level)
+OFFICER_ASSIGNMENT_ROLES = [
+    'CONSTITUENCY_ADMIN',
+    'CONSTITUENCY_OFFICIAL',  # Legacy alias
+    'REGIONAL_ADMIN',
+    'REGIONAL_COORDINATOR',  # Legacy alias
+    'NATIONAL_ADMIN',
+    'SUPER_ADMIN',
+]
+
+# Combined: field officers + admins who can access extension endpoints
+EXTENSION_ACCESS_ROLES = FIELD_OFFICER_ROLES + [
+    'CONSTITUENCY_ADMIN',
+    'CONSTITUENCY_OFFICIAL',  # Legacy alias
+]
+
 
 class IsFieldOfficer:
     """
-    Permission check for field officers (Extension Officers, Vet Officers, Constituency Officials).
+    Permission check for field officers (Extension Officers, Vet Officers, YEA Officials).
+    
+    Note: CONSTITUENCY_ADMIN can also access these endpoints for oversight.
     """
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        return request.user.role in [
-            'EXTENSION_OFFICER',
-            'VETERINARY_OFFICER', 
-            'CONSTITUENCY_OFFICIAL'
-        ]
+        return request.user.role in EXTENSION_ACCESS_ROLES
 
 
 class FieldOfficerDashboardView(APIView):
@@ -72,7 +95,7 @@ class FieldOfficerDashboardView(APIView):
     def get(self, request):
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -129,9 +152,11 @@ class FieldOfficerDashboardView(APIView):
     
     def _get_jurisdiction_farms(self, user):
         """Get farms based on user's role and jurisdiction"""
-        if user.role == 'CONSTITUENCY_OFFICIAL':
+        # Constituency admins see all farms in their constituency
+        if user.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:
             return Farm.objects.filter(primary_constituency=user.constituency)
-        elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+        # Field officers see farms they're assigned to or in their constituency
+        elif user.role in FIELD_OFFICER_ROLES:
             return Farm.objects.filter(
                 Q(extension_officer=user) | 
                 Q(assigned_extension_officer=user) |
@@ -151,7 +176,7 @@ class FieldOfficerFarmListView(APIView):
     def get(self, request):
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -215,9 +240,11 @@ class FieldOfficerFarmListView(APIView):
     
     def _get_jurisdiction_farms(self, user):
         """Get farms based on user's role and jurisdiction"""
-        if user.role == 'CONSTITUENCY_OFFICIAL':
+        # Constituency admins see all farms in their constituency
+        if user.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:
             return Farm.objects.filter(primary_constituency=user.constituency)
-        elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+        # Field officers see farms they're assigned to or in their constituency
+        elif user.role in FIELD_OFFICER_ROLES:
             return Farm.objects.filter(
                 Q(extension_officer=user) | 
                 Q(assigned_extension_officer=user) |
@@ -238,7 +265,7 @@ class FieldOfficerFarmDetailView(APIView):
     def get(self, request, farm_id):
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -310,7 +337,7 @@ class FieldOfficerFarmDetailView(APIView):
         """Update farm information"""
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -341,7 +368,7 @@ class FieldOfficerFarmDetailView(APIView):
         ]
         
         # Additional fields for constituency officials
-        if user.role == 'CONSTITUENCY_OFFICIAL':
+        if user.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:
             allowed_fields.extend([
                 'farm_status',
                 'extension_officer',
@@ -394,10 +421,10 @@ class FieldOfficerFarmDetailView(APIView):
         try:
             farm = Farm.objects.get(id=farm_id)
             
-            if user.role == 'CONSTITUENCY_OFFICIAL':
+            if user.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:
                 if farm.primary_constituency == user.constituency:
                     return farm
-            elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+            elif user.role in FIELD_OFFICER_ROLES:
                 if (farm.extension_officer == user or 
                     farm.assigned_extension_officer == user or
                     farm.primary_constituency == user.constituency):
@@ -422,7 +449,7 @@ class RegisterFarmerView(APIView):
     def post(self, request):
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -563,9 +590,10 @@ class AssignExtensionOfficerView(APIView):
     def post(self, request, farm_id):
         user = request.user
         
-        if user.role != 'CONSTITUENCY_OFFICIAL':
+        # Only constituency admins can assign extension officers
+        if user.role not in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:
             return Response(
-                {'error': 'Only constituency officials can assign extension officers', 'code': 'PERMISSION_DENIED'},
+                {'error': 'Only constituency admins can assign extension officers', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -636,7 +664,7 @@ class ListExtensionOfficersView(APIView):
     def get(self, request):
         user = request.user
         
-        if user.role not in ['CONSTITUENCY_OFFICIAL', 'REGIONAL_COORDINATOR', 'NATIONAL_ADMIN', 'SUPER_ADMIN']:
+        if user.role not in OFFICER_ASSIGNMENT_ROLES:
             return Response(
                 {'error': 'Access denied', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -647,10 +675,10 @@ class ListExtensionOfficersView(APIView):
             is_active=True
         )
         
-        # Filter by constituency for constituency officials
-        if user.role == 'CONSTITUENCY_OFFICIAL' and hasattr(user, 'constituency'):
+        # Filter by constituency for constituency admins
+        if user.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL'] and hasattr(user, 'constituency'):
             officers = officers.filter(constituency=user.constituency)
-        elif user.role == 'REGIONAL_COORDINATOR' and hasattr(user, 'region'):
+        elif user.role in ['REGIONAL_ADMIN', 'REGIONAL_COORDINATOR'] and hasattr(user, 'region'):
             officers = officers.filter(region=user.region)
         
         officer_list = [{
@@ -683,7 +711,7 @@ class BulkUpdateFarmsView(APIView):
     def post(self, request):
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -707,11 +735,11 @@ class BulkUpdateFarmsView(APIView):
                 farm = Farm.objects.get(id=farm_id)
                 
                 # Check access
-                if user.role == 'CONSTITUENCY_OFFICIAL':
+                if user.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:
                     if farm.primary_constituency != user.constituency:
                         results.append({'farm_id': farm_id, 'success': False, 'error': 'Access denied'})
                         continue
-                elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+                elif user.role in FIELD_OFFICER_ROLES:
                     if not (farm.extension_officer == user or 
                             farm.assigned_extension_officer == user or
                             farm.primary_constituency == user.constituency):
@@ -759,7 +787,7 @@ class FarmDataVerificationView(APIView):
         """Get recent data entries for verification"""
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -858,7 +886,7 @@ class FarmDataVerificationView(APIView):
         """Verify or flag data entries"""
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -945,10 +973,10 @@ class FarmDataVerificationView(APIView):
         try:
             farm = Farm.objects.get(id=farm_id)
             
-            if user.role == 'CONSTITUENCY_OFFICIAL':
+            if user.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:
                 if farm.primary_constituency == user.constituency:
                     return farm
-            elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+            elif user.role in FIELD_OFFICER_ROLES:
                 if (farm.extension_officer == user or 
                     farm.assigned_extension_officer == user or
                     farm.primary_constituency == user.constituency):
@@ -995,7 +1023,7 @@ class FarmerDataAssistanceView(APIView):
         """Enter data on behalf of farmer"""
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -1173,10 +1201,10 @@ class FarmerDataAssistanceView(APIView):
         try:
             farm = Farm.objects.get(id=farm_id)
             
-            if user.role == 'CONSTITUENCY_OFFICIAL':
+            if user.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:
                 if farm.primary_constituency == user.constituency:
                     return farm
-            elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+            elif user.role in FIELD_OFFICER_ROLES:
                 if (farm.extension_officer == user or 
                     farm.assigned_extension_officer == user or
                     farm.primary_constituency == user.constituency):
@@ -1199,7 +1227,7 @@ class DataQualityDashboardView(APIView):
     def get(self, request):
         user = request.user
         
-        if user.role not in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER', 'CONSTITUENCY_OFFICIAL']:
+        if user.role not in EXTENSION_ACCESS_ROLES:
             return Response(
                 {'error': 'Field officer access required', 'code': 'PERMISSION_DENIED'},
                 status=status.HTTP_403_FORBIDDEN
@@ -1283,12 +1311,14 @@ class DataQualityDashboardView(APIView):
     
     def _get_jurisdiction_farms(self, user):
         """Get farms based on user's role and jurisdiction"""
-        if user.role == 'CONSTITUENCY_OFFICIAL':
+        # Constituency admins see all farms in their constituency
+        if user.role in ['CONSTITUENCY_ADMIN', 'CONSTITUENCY_OFFICIAL']:
             return Farm.objects.filter(
                 primary_constituency=user.constituency,
                 application_status='Approved'
             )
-        elif user.role in ['EXTENSION_OFFICER', 'VETERINARY_OFFICER']:
+        # Field officers see farms they're assigned to or in their constituency
+        elif user.role in FIELD_OFFICER_ROLES:
             return Farm.objects.filter(
                 Q(extension_officer=user) | 
                 Q(assigned_extension_officer=user) |

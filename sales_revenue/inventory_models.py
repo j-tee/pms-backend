@@ -41,6 +41,7 @@ class StockMovementType(models.TextChoices):
     TRANSFER_IN = 'transfer_in', 'Transfer In'
     ADJUSTMENT_ADD = 'adjustment_add', 'Inventory Adjustment (Add)'
     PROCESSING = 'processing', 'From Processing Batch'  # NEW: Processed products added to inventory
+    RETURN = 'return', 'Customer Return'  # NEW: Items returned by customers
     
     # Deductions
     SALE = 'sale', 'Sold'

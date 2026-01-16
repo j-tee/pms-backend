@@ -13,6 +13,7 @@ from .production_policy import ProductionPolicy
 from .inventory_policy import InventoryPolicy
 from .batch_policy import BatchPolicy
 from .user_policy import UserPolicy
+from .procurement_policy import ProcurementPolicy
 
 # Policy registry maps model names to their policy classes
 POLICY_REGISTRY = {
@@ -31,6 +32,11 @@ POLICY_REGISTRY = {
     'Batch': BatchPolicy,
     'BatchEnrollmentApplication': BatchPolicy,
     'User': UserPolicy,
+    # Procurement models
+    'ProcurementOrder': ProcurementPolicy,
+    'OrderAssignment': ProcurementPolicy,
+    'DeliveryConfirmation': ProcurementPolicy,
+    'ProcurementInvoice': ProcurementPolicy,
 }
 
 
@@ -90,6 +96,7 @@ __all__ = [
     'InventoryPolicy',
     'BatchPolicy',
     'UserPolicy',
+    'ProcurementPolicy',
     'get_policy_for_resource',
     'authorize',
 ]

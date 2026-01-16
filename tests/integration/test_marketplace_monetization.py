@@ -297,12 +297,13 @@ class TestPlatformSettingsAPI:
         assert 'marketplace_activation_fee' in response.data
         assert 'enable_government_subsidy' in response.data
     
-    def test_yea_official_can_get_settings(self, api_client, yea_official_user, platform_settings):
-        """YEA Official can access full platform settings."""
+    def test_yea_official_cannot_access_admin_settings(self, api_client, yea_official_user, platform_settings):
+        """YEA Official cannot access admin platform settings (SUPER_ADMIN only)."""
         api_client.force_authenticate(user=yea_official_user)
         response = api_client.get('/api/admin/platform-settings/')
         
-        assert response.status_code == status.HTTP_200_OK
+        # YEA officials are government staff, not platform admins
+        assert response.status_code == status.HTTP_403_FORBIDDEN
     
     def test_farmer_cannot_access_admin_settings(self, api_client, farmer_user, platform_settings):
         """Farmers cannot access admin platform settings."""
