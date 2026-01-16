@@ -10,6 +10,7 @@ Background tasks for:
 from celery import shared_task
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Q, Count, Avg
 import logging
 
 logger = logging.getLogger(__name__)
