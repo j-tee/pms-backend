@@ -143,6 +143,7 @@ INSTALLED_APPS = [
     'advertising',
     'contact',
     'cms',  # Content Management System (About Us, Privacy Policy, etc.)
+    'expenses',  # Expense tracking (labor, utilities, bedding, transport, maintenance, etc.)
 ]
 
 SITE_ID = 1  # Required for django.contrib.sites
