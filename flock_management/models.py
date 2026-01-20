@@ -166,6 +166,64 @@ class Flock(models.Model):
         help_text="Total vaccination cost accumulated (GHS)"
     )
     
+    # Additional Accumulated Costs (from expenses app)
+    total_labor_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total labor/wages cost accumulated (GHS)"
+    )
+    total_utilities_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total utilities (electricity, water) cost accumulated (GHS)"
+    )
+    total_bedding_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total litter/bedding cost accumulated (GHS)"
+    )
+    total_transport_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total transport cost accumulated (GHS)"
+    )
+    total_maintenance_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total equipment/maintenance cost accumulated (GHS)"
+    )
+    total_overhead_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total overhead/admin cost accumulated (GHS)"
+    )
+    total_mortality_loss_value = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total economic value lost from mortality (GHS)"
+    )
+    total_miscellaneous_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Total miscellaneous costs accumulated (GHS)"
+    )
+    
     # Performance Metrics (auto-calculated)
     total_mortality = models.PositiveIntegerField(
         default=0,
@@ -399,6 +457,102 @@ class Flock(models.Model):
         if self.housed_in:
             return self.housed_in.bird_capacity
         return None
+    
+    @property
+    def total_operational_cost(self):
+        """
+        Total operational cost for the flock.
+        Includes: feed, medication, vaccination, labor, utilities, bedding,
+        transport, maintenance, overhead, and miscellaneous costs.
+        """
+        return (
+            self.total_feed_cost +
+            self.total_medication_cost +
+            self.total_vaccination_cost +
+            self.total_labor_cost +
+            self.total_utilities_cost +
+            self.total_bedding_cost +
+            self.total_transport_cost +
+            self.total_maintenance_cost +
+            self.total_overhead_cost +
+            self.total_miscellaneous_cost
+        )
+    
+    @property
+    def total_investment(self):
+        """
+        Total investment in the flock.
+        Includes acquisition cost + all operational costs.
+        """
+        return self.total_acquisition_cost + self.total_operational_cost
+    
+    @property
+    def total_economic_loss(self):
+        """
+        Total economic value lost from mortality.
+        This is the value of birds that died (book value loss).
+        """
+        return self.total_mortality_loss_value
+    
+    def get_cost_breakdown(self):
+        """
+        Get detailed breakdown of all costs for this flock.
+        
+        Returns:
+            dict: Cost breakdown with amounts and percentages
+        """
+        total = self.total_operational_cost
+        
+        costs = {
+            'feed': {
+                'amount': self.total_feed_cost,
+                'percentage': (self.total_feed_cost / total * 100) if total > 0 else Decimal('0')
+            },
+            'medication': {
+                'amount': self.total_medication_cost,
+                'percentage': (self.total_medication_cost / total * 100) if total > 0 else Decimal('0')
+            },
+            'vaccination': {
+                'amount': self.total_vaccination_cost,
+                'percentage': (self.total_vaccination_cost / total * 100) if total > 0 else Decimal('0')
+            },
+            'labor': {
+                'amount': self.total_labor_cost,
+                'percentage': (self.total_labor_cost / total * 100) if total > 0 else Decimal('0')
+            },
+            'utilities': {
+                'amount': self.total_utilities_cost,
+                'percentage': (self.total_utilities_cost / total * 100) if total > 0 else Decimal('0')
+            },
+            'bedding': {
+                'amount': self.total_bedding_cost,
+                'percentage': (self.total_bedding_cost / total * 100) if total > 0 else Decimal('0')
+            },
+            'transport': {
+                'amount': self.total_transport_cost,
+                'percentage': (self.total_transport_cost / total * 100) if total > 0 else Decimal('0')
+            },
+            'maintenance': {
+                'amount': self.total_maintenance_cost,
+                'percentage': (self.total_maintenance_cost / total * 100) if total > 0 else Decimal('0')
+            },
+            'overhead': {
+                'amount': self.total_overhead_cost,
+                'percentage': (self.total_overhead_cost / total * 100) if total > 0 else Decimal('0')
+            },
+            'miscellaneous': {
+                'amount': self.total_miscellaneous_cost,
+                'percentage': (self.total_miscellaneous_cost / total * 100) if total > 0 else Decimal('0')
+            },
+        }
+        
+        return {
+            'breakdown': costs,
+            'total_operational': total,
+            'acquisition_cost': self.total_acquisition_cost,
+            'total_investment': self.total_investment,
+            'mortality_loss': self.total_mortality_loss_value,
+        }
     
     def get_current_bird_count(self, as_of_date=None):
         """
@@ -1140,17 +1294,70 @@ class MortalityRecord(models.Model):
 
 
 class HealthRecord(models.Model):
-    """Tracks flock health interventions such as vaccinations, treatments, and checkups."""
+    """
+    Tracks flock health interventions such as vaccinations, treatments, and checkups.
+    
+    UNIFIED HEALTH TRACKING:
+    This is the primary entry point for all health-related events. When a HealthRecord
+    is created, the system automatically creates the corresponding detailed record
+    in medication_management based on record_type:
+    
+    - "Vaccination" → VaccinationRecord
+    - "Medication" / "Treatment" → MedicationRecord
+    - "Vet Visit" / "Health Check" → VetVisit
+    
+    This prevents double-counting of costs by ensuring:
+    1. User enters data ONCE via this simplified form
+    2. Detailed record is auto-created for analytics/reporting
+    3. BirdInvestmentCalculator uses the detailed records (no duplicates)
+    
+    The cost_ghs field here is the SOURCE of cost data - the auto-created
+    detailed records will use this value.
+    """
+    
+    RECORD_TYPE_CHOICES = [
+        ('Vaccination', 'Vaccination'),
+        ('Medication', 'Medication/Treatment'),
+        ('Health Check', 'Health Check'),
+        ('Vet Visit', 'Veterinary Visit'),
+        ('Other', 'Other'),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     # Associations
     farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='health_records')
     flock = models.ForeignKey(Flock, on_delete=models.CASCADE, related_name='health_records')
+    
+    # === LINKS TO DETAILED RECORDS (auto-populated by signal) ===
+    medication_record = models.OneToOneField(
+        'medication_management.MedicationRecord',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='source_health_record',
+        help_text="Auto-created MedicationRecord for detailed tracking"
+    )
+    vaccination_record = models.OneToOneField(
+        'medication_management.VaccinationRecord',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='source_health_record',
+        help_text="Auto-created VaccinationRecord for detailed tracking"
+    )
+    vet_visit = models.OneToOneField(
+        'medication_management.VetVisit',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='source_health_record',
+        help_text="Auto-created VetVisit for detailed tracking"
+    )
 
     # Event metadata
     record_date = models.DateField(db_index=True)
-    record_type = models.CharField(max_length=50, default='Health Check')
+    record_type = models.CharField(max_length=50, choices=RECORD_TYPE_CHOICES, default='Health Check')
     outcome = models.CharField(max_length=100, blank=True)
     follow_up_date = models.DateField(null=True, blank=True)
 
