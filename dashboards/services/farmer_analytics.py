@@ -33,6 +33,8 @@ from sales_revenue.models import EggSale, BirdSale
 from sales_revenue.marketplace_models import MarketplaceOrder, OrderItem, Product
 from sales_revenue.inventory_models import FarmInventory, StockMovement
 from procurement.models import ProcurementInvoice
+from expenses.models import Expense, ExpenseCategory
+from medication_management.models import VetVisit
 
 logger = logging.getLogger(__name__)
 
@@ -515,8 +517,9 @@ class FarmerAnalyticsService:
         )
         
         # === EXPENSES ===
+        # Now properly includes ALL expense categories from the Expense model
         
-        # Feed costs (from purchases)
+        # Feed costs (from FeedPurchase - more accurate than Expense model for feed)
         feed_purchases = FeedPurchase.objects.filter(
             farm=self.farm,
             purchase_date__gte=start_date,
@@ -527,14 +530,92 @@ class FarmerAnalyticsService:
             total=Coalesce(Sum('total_cost'), Decimal('0'))
         )['total']
         
-        # Flock-accumulated costs
-        flocks = Flock.objects.filter(farm=self.farm, status='Active')
-        flock_costs = flocks.aggregate(
-            medication=Coalesce(Sum('total_medication_cost'), Decimal('0')),
-            vaccination=Coalesce(Sum('total_vaccination_cost'), Decimal('0')),
+        # Get ALL expenses from the Expense model by category
+        # This includes: LABOR, UTILITIES, BEDDING, TRANSPORT, MAINTENANCE, 
+        # OVERHEAD, MORTALITY_LOSS, MISCELLANEOUS
+        expenses = Expense.objects.filter(
+            farm=self.farm,
+            expense_date__gte=start_date,
+            expense_date__lte=end_date
         )
         
-        total_expenses = feed_cost + flock_costs['medication'] + flock_costs['vaccination']
+        expense_by_category = expenses.values('category').annotate(
+            total=Coalesce(Sum('total_amount'), Decimal('0'))
+        )
+        
+        # Build expense breakdown dictionary
+        expense_breakdown = {
+            'feed': float(feed_cost),
+            'labor': Decimal('0'),
+            'utilities': Decimal('0'),
+            'bedding': Decimal('0'),
+            'transport': Decimal('0'),
+            'maintenance': Decimal('0'),
+            'overhead': Decimal('0'),
+            'mortality_loss': Decimal('0'),
+            'miscellaneous': Decimal('0'),
+        }
+        
+        for exp in expense_by_category:
+            category = exp['category'].lower()
+            expense_breakdown[category] = exp['total']
+        
+        # Get medication and vaccination from actual records (not flock accumulated totals)
+        # This gives us the ACTUAL costs in the period, not lifetime accumulations
+        from medication_management.models import MedicationRecord, VaccinationRecord
+        
+        medication_records = MedicationRecord.objects.filter(
+            flock__farm=self.farm,
+            administered_date__gte=start_date,
+            administered_date__lte=end_date
+        )
+        medication_cost = medication_records.aggregate(
+            total=Coalesce(Sum('total_cost'), Decimal('0'))
+        )['total']
+        
+        vaccination_records = VaccinationRecord.objects.filter(
+            flock__farm=self.farm,
+            vaccination_date__gte=start_date,
+            vaccination_date__lte=end_date
+        )
+        vaccination_cost = vaccination_records.aggregate(
+            total=Coalesce(Sum('total_cost'), Decimal('0'))
+        )['total']
+        
+        # Get vet visit costs (NEW - from unified data architecture)
+        vet_visits = VetVisit.objects.filter(
+            flock__farm=self.farm,
+            visit_date__gte=start_date,
+            visit_date__lte=end_date,
+            status='COMPLETED'
+        )
+        vet_visit_cost = vet_visits.aggregate(
+            total=Coalesce(Sum('visit_fee'), Decimal('0'))
+        )['total']
+        
+        # Add medication/vaccination/vet to breakdown
+        expense_breakdown['medication'] = float(medication_cost)
+        expense_breakdown['vaccination'] = float(vaccination_cost)
+        expense_breakdown['vet_visits'] = float(vet_visit_cost)
+        
+        # Calculate total expenses
+        total_expenses = (
+            feed_cost +
+            medication_cost +
+            vaccination_cost +
+            vet_visit_cost +
+            expense_breakdown['labor'] +
+            expense_breakdown['utilities'] +
+            expense_breakdown['bedding'] +
+            expense_breakdown['transport'] +
+            expense_breakdown['maintenance'] +
+            expense_breakdown['overhead'] +
+            expense_breakdown['mortality_loss'] +
+            expense_breakdown['miscellaneous']
+        )
+        
+        # Convert Decimals to float for expense_breakdown
+        expense_breakdown = {k: float(v) for k, v in expense_breakdown.items()}
         
         # === PROFIT ===
         gross_profit = total_revenue - total_expenses
@@ -636,11 +717,7 @@ class FarmerAnalyticsService:
                     'orders': procurement_revenue['count'],
                 },
             },
-            'expenses_breakdown': {
-                'feed': float(feed_cost),
-                'medication': float(flock_costs['medication']),
-                'vaccination': float(flock_costs['vaccination']),
-            },
+            'expenses_breakdown': expense_breakdown,
             'monthly_trend': monthly_revenue,
             'metrics': {
                 'avg_daily_revenue': round(float(total_revenue) / days, 2) if days > 0 else 0,
