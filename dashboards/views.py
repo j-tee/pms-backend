@@ -801,3 +801,40 @@ class FarmerPendingActionsView(APIView):
         service = FarmerDashboardService(request.user)
         data = service.get_pending_actions()
         return Response(data, status=status.HTTP_200_OK)
+
+
+class FarmerDeliveriesView(APIView):
+    """
+    Farmer Delivery History
+    
+    GET /api/procurement/deliveries/
+    GET /api/procurement/deliveries/?limit=50
+    
+    Returns delivery history for the farmer's farm, showing:
+    - Delivery number and order details
+    - Quantities delivered
+    - Quality inspection results
+    - Verification status
+    """
+    permission_classes = [IsAuthenticated, IsFarmer]
+    
+    def get(self, request):
+        service = FarmerDashboardService(request.user)
+        
+        # Parse limit parameter with validation
+        try:
+            limit = int(request.query_params.get('limit', 50))
+            # Ensure limit is positive
+            if limit < 0:
+                limit = 0
+        except (ValueError, TypeError):
+            return Response(
+                {'error': 'Invalid limit parameter. Must be a positive integer.', 'code': 'INVALID_LIMIT'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = service.get_delivery_history(limit=limit)
+        return Response({
+            'count': len(data),
+            'results': data,
+        }, status=status.HTTP_200_OK)

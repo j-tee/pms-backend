@@ -19,6 +19,7 @@ from dashboards.views import (
     FarmerAssignmentsView,
     FarmerEarningsView,
     FarmerPendingActionsView,
+    FarmerDeliveriesView,
 )
 
 app_name = 'procurement'
@@ -42,4 +43,7 @@ farmer_urlpatterns = [
     
     # Pending actions (accept/reject, mark ready, etc.)
     path('pending-actions/', FarmerPendingActionsView.as_view(), name='farmer-pending-actions'),
+    
+    # Delivery history
+    path('deliveries/', FarmerDeliveriesView.as_view(), name='farmer-deliveries'),
 ]

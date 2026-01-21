@@ -233,13 +233,35 @@ class FarmInventory(models.Model):
         self.sync_marketplace_product()
     
     def sync_marketplace_product(self):
-        """Sync stock quantity with linked marketplace product."""
+        """
+        Sync stock quantity and status with linked marketplace product.
+        
+        This ensures the marketplace product reflects the true inventory state:
+        - stock_quantity is updated from inventory
+        - status is set to 'out_of_stock' if no stock available
+        - status is restored to 'active' when stock is replenished
+        """
         if self.marketplace_product:
             from sales_revenue.marketplace_models import Product
-            Product.objects.filter(id=self.marketplace_product_id).update(
-                stock_quantity=int(self.quantity_available),
-                updated_at=timezone.now()
-            )
+            
+            # Determine the correct status based on inventory
+            new_status = 'active' if self.quantity_available > 0 else 'out_of_stock'
+            
+            # Only update status if transitioning between active/out_of_stock
+            # Don't override draft or discontinued
+            current_status = self.marketplace_product.status
+            if current_status in ['active', 'out_of_stock']:
+                Product.objects.filter(id=self.marketplace_product_id).update(
+                    stock_quantity=int(self.quantity_available),
+                    status=new_status,
+                    updated_at=timezone.now()
+                )
+            else:
+                # Just update quantity, don't change status
+                Product.objects.filter(id=self.marketplace_product_id).update(
+                    stock_quantity=int(self.quantity_available),
+                    updated_at=timezone.now()
+                )
     
     def add_stock(self, quantity, movement_type, source_record=None, 
                   unit_cost=None, notes='', recorded_by=None, stock_date=None):
@@ -303,6 +325,10 @@ class FarmInventory(models.Model):
         """
         Remove stock from inventory with movement tracking.
         
+        ATOMICITY: This method should be called within a transaction.
+        The caller is responsible for using @transaction.atomic and select_for_update()
+        to prevent race conditions.
+        
         Args:
             quantity: Amount to remove
             movement_type: StockMovementType value
@@ -310,7 +336,12 @@ class FarmInventory(models.Model):
             unit_price: Sale price per unit (for revenue tracking)
             notes: Additional notes
             recorded_by: User who made the entry
+            
+        Raises:
+            ValueError: If quantity is invalid or exceeds available stock
         """
+        from django.db import transaction
+        
         quantity = Decimal(str(quantity))
         
         if quantity <= 0:
@@ -339,9 +370,10 @@ class FarmInventory(models.Model):
             self.oldest_stock_date = None
             self.average_age_days = 0
         
+        # Save inventory (this also syncs marketplace product)
         self.save()
         
-        # Create movement record
+        # Create movement record (audit trail)
         movement = StockMovement.objects.create(
             inventory=self,
             farm=self.farm,

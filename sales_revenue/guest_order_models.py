@@ -510,6 +510,11 @@ class POSSale(models.Model):
     Farmer records the sale - no customer verification needed.
     
     Payment is assumed to be received at time of recording.
+    
+    ATOMICITY & IDEMPOTENCY:
+    - idempotency_key prevents duplicate submissions from retries
+    - Stock is deducted atomically via FarmInventory.remove_stock()
+    - Unique constraint on (farm, idempotency_key) ensures no duplicates
     """
     
     PAYMENT_METHOD_CHOICES = [
@@ -524,6 +529,14 @@ class POSSale(models.Model):
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     sale_number = models.CharField(max_length=20, unique=True, editable=False)
+    
+    # Idempotency key to prevent duplicate submissions
+    idempotency_key = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        help_text='Client-provided key to prevent duplicate submissions'
+    )
     
     # Farm recording the sale
     farm = models.ForeignKey(
@@ -596,6 +609,14 @@ class POSSale(models.Model):
             models.Index(fields=['farm', 'is_credit_sale']),
             models.Index(fields=['sale_number']),
             models.Index(fields=['recorded_by', '-sale_date']),
+        ]
+        constraints = [
+            # Ensure idempotency_key is unique per farm (prevents duplicate submissions)
+            models.UniqueConstraint(
+                fields=['farm', 'idempotency_key'],
+                name='unique_pos_sale_idempotency_key_per_farm',
+                condition=models.Q(idempotency_key__isnull=False)
+            )
         ]
     
     def __str__(self):
@@ -684,5 +705,9 @@ class POSSaleItem(models.Model):
         
         super().save(*args, **kwargs)
         
-        # Reduce product stock
-        self.product.reduce_stock(self.quantity)
+        # NOTE: Stock is now managed through FarmInventory.
+        # The serializer calls inventory.remove_stock() which:
+        # 1. Deducts from FarmInventory.quantity_available
+        # 2. Syncs to Product.stock_quantity via sync_marketplace_product()
+        # 3. Updates Product.status if needed
+        # Do NOT call self.product.reduce_stock() here to avoid double deduction.

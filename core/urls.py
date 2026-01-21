@@ -74,6 +74,7 @@ urlpatterns = [
     path('api/extension/', include('farms.extension_urls')),  # Extension officer / field officer endpoints
     path('api/flocks/', include('flock_management.urls')),  # Flock management
     path('api/feed/', include('feed_inventory.urls')),  # Feed inventory management
+    path('api/expenses/', include('expenses.urls')),  # Expense tracking (labor, utilities, bedding, transport, etc.)
     path('api/inventory/', include('sales_revenue.inventory_urls')),  # Farmer inventory management
     path('api/marketplace/', include('sales_revenue.marketplace_urls')),  # Marketplace (farmer-scoped)
     path('api/processing/', include('sales_revenue.processing_urls')),  # Processing batches (birds → products)
