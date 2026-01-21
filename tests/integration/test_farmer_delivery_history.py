@@ -26,6 +26,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
 import uuid
+import os
 
 from farms.models import Farm
 from procurement.models import (
@@ -38,6 +39,9 @@ from dashboards.services.farmer import FarmerDashboardService
 User = get_user_model()
 
 pytestmark = pytest.mark.django_db
+
+# Test password - use environment variable or default for CI/testing only
+TEST_USER_PASSWORD = os.environ.get('TEST_USER_PASSWORD', 'test-only-not-real')
 
 
 # =============================================================================
@@ -114,7 +118,7 @@ def farmer_user(db):
         username='test_farmer',
         email='farmer@test.com',
         phone='0241234567',
-        password='testpass123',
+        password=TEST_USER_PASSWORD,
         role='FARMER',
         first_name='Test',
         last_name='Farmer',
@@ -129,7 +133,7 @@ def admin_user(db):
         username='test_admin',
         email='admin@test.com',
         phone='0249876543',
-        password='testpass123',
+        password=TEST_USER_PASSWORD,
         role='NATIONAL_ADMIN',
         first_name='Test',
         last_name='Admin',
@@ -144,7 +148,7 @@ def officer_user(db):
         username='test_officer',
         email='officer@test.com',
         phone='0245551234',
-        password='testpass123',
+        password=TEST_USER_PASSWORD,
         role='PROCUREMENT_OFFICER',
         first_name='Test',
         last_name='Officer',
@@ -283,7 +287,7 @@ class TestDeliveryHistoryAuthentication:
             username='farmer_no_farm',
             email='nofarm@test.com',
             phone='0240001111',
-            password='testpass123',
+            password=TEST_USER_PASSWORD,
             role='FARMER',
         )
         api_client.force_authenticate(user=farmer_no_farm)
@@ -625,7 +629,7 @@ class TestFarmerDashboardServiceDeliveryHistory:
             username='no_farm_user',
             email='no@farm.com',
             phone='0240002222',
-            password='test123',
+            password=TEST_USER_PASSWORD,
             role='FARMER',
         )
         
@@ -704,7 +708,7 @@ class TestDeliveryHistoryDataIsolation:
             username='farmer1',
             email='farmer1@test.com',
             phone='0241111111',
-            password='testpass123',
+            password=TEST_USER_PASSWORD,
             role='FARMER',
             first_name='Farmer',
             last_name='One',
@@ -715,7 +719,7 @@ class TestDeliveryHistoryDataIsolation:
             username='farmer2',
             email='farmer2@test.com',
             phone='0242222222',
-            password='testpass123',
+            password=TEST_USER_PASSWORD,
             role='FARMER',
             first_name='Farmer',
             last_name='Two',
