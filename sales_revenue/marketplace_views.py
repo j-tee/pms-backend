@@ -547,12 +547,44 @@ class MarketplaceDashboardView(FarmScopedMixin, APIView):
     Get marketplace dashboard overview.
     
     SECURITY: Only returns statistics for the farmer's own farm.
+    
+    NOTE: Includes visibility status. All farmers can access marketplace,
+    but only those with active subscriptions appear in public searches.
     """
     
     def get(self, request):
         farm = self.get_farm()
         today = timezone.now().date()
         month_start = today.replace(day=1)
+        
+        # =================================================================
+        # VISIBILITY STATUS - Let farmers know if their products are visible
+        # =================================================================
+        has_subscription = hasattr(farm, 'subscription') and farm.subscription is not None
+        subscription_status = farm.subscription.status if has_subscription else None
+        is_visible_in_search = (
+            farm.marketplace_enabled and
+            has_subscription and
+            subscription_status in ['trial', 'active']
+        )
+        
+        # Build visibility info
+        visibility_info = {
+            'is_visible_in_public_search': is_visible_in_search,
+            'marketplace_enabled': farm.marketplace_enabled,
+            'subscription_status': subscription_status,
+            'visibility_message': self._get_visibility_message(is_visible_in_search, subscription_status),
+        }
+        
+        # Get subscription details if exists
+        if has_subscription:
+            sub = farm.subscription
+            visibility_info['subscription'] = {
+                'status': sub.status,
+                'current_period_end': sub.current_period_end.isoformat() if sub.current_period_end else None,
+                'next_billing_date': sub.next_billing_date.isoformat() if sub.next_billing_date else None,
+                'trial_end': sub.trial_end.isoformat() if sub.trial_end else None,
+            }
         
         # Product statistics
         products = Product.objects.filter(farm=farm)
@@ -601,22 +633,71 @@ class MarketplaceDashboardView(FarmScopedMixin, APIView):
         recent_orders = orders.select_related('customer').order_by('-created_at')[:5]
         
         data = {
+            # Visibility status (most important - show at top)
+            'visibility': visibility_info,
+            # Product stats
             'total_products': total_products,
             'active_products': active_products,
             'out_of_stock_products': out_of_stock,
             'low_stock_products': low_stock,
+            # Order stats
             'total_orders': total_orders,
             'pending_orders': pending_orders,
             'completed_orders': completed_orders,
+            # Customer stats
             'total_customers': total_customers,
             'active_customers': active_customers,
+            # Revenue stats
             'total_revenue': completed_revenue,
             'revenue_this_month': month_revenue,
+            # Lists
             'top_selling_products': ProductListSerializer(top_products, many=True).data,
             'recent_orders': MarketplaceOrderListSerializer(recent_orders, many=True).data
         }
         
         return Response(data)
+    
+    def _get_visibility_message(self, is_visible, subscription_status):
+        """
+        Get user-friendly visibility message based on subscription status.
+        
+        This helps farmers understand why their products may or may not appear
+        in public searches, and what action they can take.
+        """
+        if is_visible:
+            if subscription_status == 'trial':
+                return "Your products are visible in public searches (trial period)"
+            return "Your products are visible in public searches"
+        
+        # Not visible - explain why
+        if not subscription_status:
+            return (
+                "Your products are NOT visible in public searches. "
+                "Activate marketplace subscription to appear in buyer searches and increase sales."
+            )
+        
+        if subscription_status == 'past_due':
+            return (
+                "Your products are NOT visible in public searches. "
+                "Your payment is overdue. Please renew to restore visibility."
+            )
+        
+        if subscription_status == 'suspended':
+            return (
+                "Your products are NOT visible in public searches. "
+                "Your subscription is suspended. Please contact support or renew."
+            )
+        
+        if subscription_status == 'cancelled':
+            return (
+                "Your products are NOT visible in public searches. "
+                "Your subscription was cancelled. Reactivate to appear in buyer searches."
+            )
+        
+        return (
+            "Your products are NOT visible in public searches. "
+            "Activate marketplace subscription to appear in buyer searches."
+        )
 
 
 class MarketplaceStatisticsView(FarmScopedMixin, generics.ListAPIView):

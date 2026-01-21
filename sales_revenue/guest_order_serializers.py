@@ -389,15 +389,75 @@ class POSSaleItemCreateSerializer(serializers.Serializer):
     )
     
     def validate_product_id(self, value):
+        """
+        Validate product for POS sale.
+        
+        BUSINESS RULE: The flow must be Production → Inventory → Sales
+        
+        Products can only be sold if:
+        1. They exist and belong to the farmer's farm
+        2. They are linked to a FarmInventory record (moved to inventory)
+        3. The inventory has available stock (quantity_available > 0)
+        4. Product status is 'active' (not discontinued, draft, or out_of_stock)
+        
+        This ensures:
+        - All sales data comes from a single source (inventory)
+        - Reconciliation is straightforward
+        - Stock tracking is accurate
+        """
         request = self.context.get('request')
         if not request or not hasattr(request.user, 'farm'):
             raise serializers.ValidationError("Unable to verify product ownership.")
         
+        farm = request.user.farm
+        
         try:
-            product = Product.objects.get(id=value, farm=request.user.farm, status='active')
+            # Get product belonging to this farm
+            product = Product.objects.get(id=value, farm=farm)
+            
+            # Check product status - must be active
+            if product.status != 'active':
+                status_messages = {
+                    'draft': "Product is still in draft. Publish it first before selling.",
+                    'out_of_stock': "Product is out of stock. Add inventory first.",
+                    'discontinued': "Product is discontinued and cannot be sold.",
+                }
+                raise serializers.ValidationError(
+                    status_messages.get(product.status, f"Product status '{product.status}' does not allow sales.")
+                )
+            
+            # Check if product is linked to inventory
+            if not hasattr(product, 'inventory_record') or product.inventory_record is None:
+                raise serializers.ValidationError(
+                    "Product is not in inventory. Move products to inventory before selling."
+                )
+            
+            # Check inventory has stock available
+            inventory = product.inventory_record
+            if inventory.quantity_available <= 0:
+                raise serializers.ValidationError(
+                    f"No stock available in inventory. Current stock: {inventory.quantity_available} {inventory.unit}."
+                )
+            
             return product
         except Product.DoesNotExist:
-            raise serializers.ValidationError("Product not found or unavailable.")
+            raise serializers.ValidationError(
+                "Product not found or does not belong to your farm."
+            )
+    
+    def validate(self, data):
+        """Validate quantity against available inventory."""
+        product = data.get('product_id')
+        quantity = data.get('quantity')
+        
+        if product and hasattr(product, 'inventory_record') and product.inventory_record:
+            available = product.inventory_record.quantity_available
+            if quantity > available:
+                raise serializers.ValidationError({
+                    'quantity': f"Requested quantity ({quantity}) exceeds available stock ({available})."
+                })
+        
+        return data
 
 
 class POSSaleItemSerializer(serializers.ModelSerializer):
@@ -413,7 +473,21 @@ class POSSaleItemSerializer(serializers.ModelSerializer):
 
 
 class POSSaleCreateSerializer(serializers.Serializer):
-    """Create a POS sale (quick sale entry for farmers)."""
+    """
+    Create a POS sale (quick sale entry for farmers).
+    
+    ATOMICITY & IDEMPOTENCY:
+    - Uses @transaction.atomic to ensure all-or-nothing
+    - Uses select_for_update() to lock inventory rows and prevent race conditions
+    - Supports optional idempotency_key to prevent duplicate submissions
+    - All stock checks are done inside the transaction with locks held
+    """
+    
+    # Idempotency key to prevent duplicate submissions
+    idempotency_key = serializers.CharField(
+        max_length=64, required=False, allow_blank=True,
+        help_text="Unique key to prevent duplicate submissions (e.g., UUID)"
+    )
     
     # Items
     items = POSSaleItemCreateSerializer(many=True, min_length=1)
@@ -443,6 +517,13 @@ class POSSaleCreateSerializer(serializers.Serializer):
     # Notes
     notes = serializers.CharField(required=False, allow_blank=True)
     
+    def __init__(self, *args, **kwargs):
+        """Ensure context is passed to nested serializers."""
+        super().__init__(*args, **kwargs)
+        # Pass the context to nested items serializer
+        if 'items' in self.fields:
+            self.fields['items'].context.update(self.context)
+    
     def validate(self, data):
         # Require due date for credit sales
         if data['payment_method'] == 'credit' and not data.get('credit_due_date'):
@@ -450,17 +531,86 @@ class POSSaleCreateSerializer(serializers.Serializer):
                 'credit_due_date': "Due date is required for credit sales."
             })
         
+        # Check idempotency key for duplicate prevention
+        idempotency_key = data.get('idempotency_key')
+        if idempotency_key:
+            request = self.context.get('request')
+            if request and hasattr(request.user, 'farm'):
+                # Check if a sale with this idempotency key already exists
+                existing_sale = POSSale.objects.filter(
+                    farm=request.user.farm,
+                    idempotency_key=idempotency_key
+                ).first()
+                if existing_sale:
+                    raise serializers.ValidationError({
+                        'idempotency_key': f"A sale with this key already exists: {existing_sale.sale_number}"
+                    })
+        
         return data
     
     @transaction.atomic
     def create(self, validated_data):
+        """
+        Create POS sale and deduct from inventory.
+        
+        FLOW: Production → Inventory → Sales
+        All sales must deduct from FarmInventory to maintain single source of truth.
+        
+        ATOMICITY GUARANTEES:
+        1. @transaction.atomic ensures all DB operations succeed or all rollback
+        2. select_for_update() locks inventory rows to prevent race conditions
+        3. Stock validation happens INSIDE the transaction with locks held
+        4. Optional idempotency_key prevents duplicate submissions
+        """
+        from sales_revenue.inventory_models import FarmInventory, StockMovementType
+        from django.db import IntegrityError
+        
         request = self.context['request']
         items_data = validated_data.pop('items')
+        idempotency_key = validated_data.pop('idempotency_key', None)
         
-        # Create sale
+        # STEP 1: Collect all inventory IDs and lock them FIRST (prevents deadlocks by consistent ordering)
+        inventory_ids = []
+        for item_data in items_data:
+            product = item_data['product_id']
+            if hasattr(product, 'inventory_record') and product.inventory_record:
+                inventory_ids.append(product.inventory_record_id)
+        
+        # Lock all inventory rows in a consistent order (by ID) to prevent deadlocks
+        inventory_ids = sorted(set(inventory_ids))
+        locked_inventories = {
+            inv.id: inv for inv in FarmInventory.objects.filter(
+                id__in=inventory_ids
+            ).select_for_update(nowait=False).order_by('id')
+        }
+        
+        # STEP 2: Re-validate stock levels with locks held (prevents TOCTOU race condition)
+        for item_data in items_data:
+            product = item_data['product_id']
+            quantity = item_data['quantity']
+            
+            if not hasattr(product, 'inventory_record') or product.inventory_record is None:
+                raise serializers.ValidationError({
+                    'items': f"Product '{product.name}' is not linked to inventory."
+                })
+            
+            inventory = locked_inventories.get(product.inventory_record_id)
+            if not inventory:
+                raise serializers.ValidationError({
+                    'items': f"Could not lock inventory for product '{product.name}'."
+                })
+            
+            if inventory.quantity_available < quantity:
+                raise serializers.ValidationError({
+                    'items': f"Insufficient stock for '{product.name}'. "
+                             f"Available: {inventory.quantity_available}, Requested: {quantity}."
+                })
+        
+        # STEP 3: Create sale with idempotency key
         sale = POSSale.objects.create(
             farm=request.user.farm,
             recorded_by=request.user,
+            idempotency_key=idempotency_key or None,
             payment_method=validated_data.get('payment_method', 'cash'),
             payment_reference=validated_data.get('payment_reference', ''),
             customer_name=validated_data.get('customer_name', ''),
@@ -471,7 +621,7 @@ class POSSaleCreateSerializer(serializers.Serializer):
             notes=validated_data.get('notes', ''),
         )
         
-        # Create items
+        # STEP 4: Create items and deduct from locked inventory
         subtotal = 0
         for item_data in items_data:
             product = item_data['product_id']
@@ -480,6 +630,7 @@ class POSSaleCreateSerializer(serializers.Serializer):
             line_total = unit_price * quantity
             subtotal += line_total
             
+            # Create sale item
             POSSaleItem.objects.create(
                 sale=sale,
                 product=product,
@@ -489,8 +640,18 @@ class POSSaleCreateSerializer(serializers.Serializer):
                 quantity=quantity,
                 line_total=line_total
             )
+            
+            # Deduct from locked inventory (the single source of truth)
+            inventory = locked_inventories[product.inventory_record_id]
+            inventory.remove_stock(
+                quantity=quantity,
+                movement_type=StockMovementType.SALE,
+                unit_price=unit_price,
+                notes=f"POS Sale {sale.sale_number}",
+                recorded_by=request.user
+            )
         
-        # Update totals
+        # STEP 5: Update totals
         sale.subtotal = subtotal
         sale.total_amount = subtotal - sale.discount_amount
         

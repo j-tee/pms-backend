@@ -2,14 +2,27 @@
 Public Marketplace Views
 
 These views power the public-facing marketplace where anyone can browse products
-from all farms without authentication. Order placement and inquiries require
-basic contact information but not a user account.
+WITHOUT authentication.
+
+VISIBILITY RULES (Jan 2026):
+============================================================================
+ALL farmers can use marketplace features (list products, track sales, analytics).
+ONLY farms with ACTIVE MARKETPLACE SUBSCRIPTIONS appear in public searches.
+
+This separation ensures:
+1. Accurate industry statistics (all farmers' data is tracked)
+2. Subscription incentive (only paying farmers get public visibility)
+============================================================================
+
+Subscription status filter applied to ALL public views:
+- farm__marketplace_enabled=True
+- farm__subscription__status__in=['trial', 'active']
 
 PUBLIC (No Authentication Required):
-- Browse all active products from all farms
-- View individual product details
-- View farm storefronts/profiles
-- Search and filter products by location (region, district, constituency)
+- Browse active products from SUBSCRIBED farms only
+- View product details from SUBSCRIBED farms only
+- View farm storefronts from SUBSCRIBED farms only
+- Search and filter by location (region, district, constituency)
 - Submit order inquiries (price negotiation)
 
 NOTE: Actual order creation and payment are handled separately.
@@ -38,7 +51,11 @@ from .marketplace_serializers import (
 
 class PublicProductListView(generics.ListAPIView):
     """
-    Browse all active products from all farms.
+    Browse active products from farms with active marketplace subscriptions.
+    
+    NOTE: All farmers can list products in the marketplace for data collection,
+    but ONLY farms with active marketplace activation appear in public searches.
+    This ensures accurate industry statistics while incentivizing subscriptions.
     
     Supports filtering by:
     - category: Product category UUID
@@ -68,10 +85,24 @@ class PublicProductListView(generics.ListAPIView):
     ordering = ['-created_at']
     
     def get_queryset(self):
-        """Return all active products from active farms."""
+        """
+        Return active products from farms with active marketplace subscriptions only.
+        
+        VISIBILITY RULES:
+        - Farm must have farm_status='Active'
+        - Farm must have marketplace_enabled=True
+        - Farm must have an active subscription (status='trial' or 'active')
+        
+        Farms without active subscriptions can still list products (for statistics),
+        but those products won't appear in public searches.
+        """
         queryset = Product.objects.filter(
             status='active',
-            farm__farm_status='Active'  # Only from active farms
+            farm__farm_status='Active',  # Only from active farms
+            # SUBSCRIPTION VISIBILITY FILTER:
+            # Only show products from farms with active marketplace subscriptions
+            farm__marketplace_enabled=True,
+            farm__subscription__status__in=['trial', 'active']
         ).select_related('category', 'farm').prefetch_related('images', 'farm__locations')
         
         # Apply filters from query params
@@ -128,6 +159,8 @@ class PublicProductDetailView(generics.RetrieveAPIView):
     """
     View detailed information about a single product.
     
+    Only shows products from farms with active marketplace subscriptions.
+    
     Returns full product details including:
     - Product info (name, description, price, stock)
     - Farm info (name, location, rating)
@@ -139,9 +172,13 @@ class PublicProductDetailView(generics.RetrieveAPIView):
     lookup_field = 'id'
     
     def get_queryset(self):
+        """Only return products from farms with active marketplace subscriptions."""
         return Product.objects.filter(
             status='active',
-            farm__farm_status='Active'
+            farm__farm_status='Active',
+            # SUBSCRIPTION VISIBILITY FILTER:
+            farm__marketplace_enabled=True,
+            farm__subscription__status__in=['trial', 'active']
         ).select_related('category', 'farm').prefetch_related('images', 'farm__locations')
 
 
@@ -171,7 +208,9 @@ class PublicLocationFiltersView(APIView):
     Get available location filters for the marketplace.
     
     Returns lists of regions, districts, and constituencies
-    that have active farms with products.
+    that have active farms with products and active subscriptions.
+    
+    NOTE: Only includes locations from farms with active marketplace subscriptions.
     
     GET /api/public/marketplace/locations/
     GET /api/public/marketplace/locations/?region=Greater Accra  (get districts for region)
@@ -180,10 +219,13 @@ class PublicLocationFiltersView(APIView):
     permission_classes = [AllowAny]
     
     def get(self, request):
-        # Get locations only from active farms with active products
+        # Get locations only from farms with active subscriptions and active products
         active_farm_ids = Farm.objects.filter(
             farm_status='Active',
-            marketplace_products__status='active'
+            marketplace_products__status='active',
+            # SUBSCRIPTION VISIBILITY FILTER:
+            marketplace_enabled=True,
+            subscription__status__in=['trial', 'active']
         ).distinct().values_list('id', flat=True)
         
         locations = FarmLocation.objects.filter(
@@ -237,9 +279,10 @@ class PublicLocationFiltersView(APIView):
 
 class PublicFarmListView(generics.ListAPIView):
     """
-    List all farms with active products.
+    List farms with active products and active marketplace subscriptions.
     
     Shows public farm information for marketplace browsing.
+    Only farms with active marketplace subscriptions appear in this list.
     
     Supports filtering by:
     - region: Farm region
@@ -251,10 +294,13 @@ class PublicFarmListView(generics.ListAPIView):
     serializer_class = PublicFarmSerializer
     
     def get_queryset(self):
-        # Only farms that have active products
+        # Only farms with active subscriptions and active products
         queryset = Farm.objects.filter(
             farm_status='Active',
-            marketplace_products__status='active'
+            marketplace_products__status='active',
+            # SUBSCRIPTION VISIBILITY FILTER:
+            marketplace_enabled=True,
+            subscription__status__in=['trial', 'active']
         ).distinct().prefetch_related('locations').annotate(
             average_rating=Avg('marketplace_products__average_rating'),
             product_count=Count('marketplace_products', filter=Q(marketplace_products__status='active'))
@@ -288,6 +334,8 @@ class PublicFarmProfileView(APIView):
     """
     View detailed farm storefront/profile.
     
+    Only shows farms with active marketplace subscriptions.
+    
     Returns:
     - Farm info (name, location, description, logo)
     - Featured products
@@ -297,8 +345,13 @@ class PublicFarmProfileView(APIView):
     permission_classes = [AllowAny]
     
     def get(self, request, farm_id):
+        # Only show profile for farms with active subscriptions
         farm = get_object_or_404(
-            Farm.objects.annotate(
+            Farm.objects.filter(
+                # SUBSCRIPTION VISIBILITY FILTER:
+                marketplace_enabled=True,
+                subscription__status__in=['trial', 'active']
+            ).annotate(
                 average_rating=Avg('marketplace_products__average_rating'),
                 review_count=Count('marketplace_products__review_count')
             ),
@@ -314,6 +367,7 @@ class PublicFarmProductsView(generics.ListAPIView):
     """
     List all products from a specific farm.
     
+    Only shows products if the farm has an active marketplace subscription.
     Same filtering options as PublicProductListView but scoped to one farm.
     """
     permission_classes = [AllowAny]
@@ -325,7 +379,10 @@ class PublicFarmProductsView(generics.ListAPIView):
         queryset = Product.objects.filter(
             farm_id=farm_id,
             status='active',
-            farm__farm_status='Active'
+            farm__farm_status='Active',
+            # SUBSCRIPTION VISIBILITY FILTER:
+            farm__marketplace_enabled=True,
+            farm__subscription__status__in=['trial', 'active']
         ).select_related('category', 'farm').prefetch_related('images', 'farm__locations')
         
         params = self.request.query_params
@@ -351,6 +408,8 @@ class PublicProductSearchView(generics.ListAPIView):
     """
     Advanced product search with multiple filters.
     
+    Only shows products from farms with active marketplace subscriptions.
+    
     Supports:
     - q: Text search (product name, description, tags, farm name)
     - category: Category UUID
@@ -368,7 +427,10 @@ class PublicProductSearchView(generics.ListAPIView):
     def get_queryset(self):
         queryset = Product.objects.filter(
             status='active',
-            farm__farm_status='Active'
+            farm__farm_status='Active',
+            # SUBSCRIPTION VISIBILITY FILTER:
+            farm__marketplace_enabled=True,
+            farm__subscription__status__in=['trial', 'active']
         ).select_related('category', 'farm').prefetch_related('farm__locations')
         
         params = self.request.query_params
@@ -469,6 +531,8 @@ class PublicMarketplaceHomeView(APIView):
     """
     Public marketplace home page data.
     
+    Only shows products and farms with active marketplace subscriptions.
+    
     Returns:
     - Featured products
     - Top categories
@@ -477,41 +541,74 @@ class PublicMarketplaceHomeView(APIView):
     """
     permission_classes = [AllowAny]
     
+    # Base filter for products from subscribed farms
+    SUBSCRIPTION_FILTER = {
+        'farm__marketplace_enabled': True,
+        'farm__subscription__status__in': ['trial', 'active']
+    }
+    
     def get(self, request):
-        # Featured products
+        # Featured products (from subscribed farms only)
         featured_products = Product.objects.filter(
             status='active',
             is_featured=True,
-            farm__farm_status='Active'
+            farm__farm_status='Active',
+            **self.SUBSCRIPTION_FILTER
         ).select_related('category', 'farm').order_by('-total_sold')[:8]
         
-        # Latest products
+        # Latest products (from subscribed farms only)
         latest_products = Product.objects.filter(
             status='active',
-            farm__farm_status='Active'
+            farm__farm_status='Active',
+            **self.SUBSCRIPTION_FILTER
         ).select_related('category', 'farm').order_by('-created_at')[:8]
         
-        # Best selling products
+        # Best selling products (from subscribed farms only)
         best_selling = Product.objects.filter(
             status='active',
-            farm__farm_status='Active'
+            farm__farm_status='Active',
+            **self.SUBSCRIPTION_FILTER
         ).select_related('category', 'farm').order_by('-total_sold')[:8]
         
-        # Categories with product counts
+        # Categories with product counts (counting only products from subscribed farms)
         categories = ProductCategory.objects.filter(
             is_active=True
         ).annotate(
-            product_count=Count('products', filter=Q(products__status='active'))
+            product_count=Count(
+                'products', 
+                filter=Q(
+                    products__status='active',
+                    products__farm__marketplace_enabled=True,
+                    products__farm__subscription__status__in=['trial', 'active']
+                )
+            )
         ).filter(product_count__gt=0).order_by('display_order')[:8]
         
-        # Top farms
+        # Top farms (only subscribed farms)
         top_farms = Farm.objects.filter(
             farm_status='Active',
-            marketplace_products__status='active'
+            marketplace_products__status='active',
+            # SUBSCRIPTION VISIBILITY FILTER:
+            marketplace_enabled=True,
+            subscription__status__in=['trial', 'active']
         ).distinct().annotate(
             product_count=Count('marketplace_products', filter=Q(marketplace_products__status='active')),
             avg_rating=Avg('marketplace_products__average_rating')
         ).order_by('-product_count')[:6]
+        
+        # Stats (only counting subscribed farms for public display)
+        subscribed_products_count = Product.objects.filter(
+            status='active',
+            farm__marketplace_enabled=True,
+            farm__subscription__status__in=['trial', 'active']
+        ).count()
+        
+        subscribed_farms_count = Farm.objects.filter(
+            farm_status='Active',
+            marketplace_products__status='active',
+            marketplace_enabled=True,
+            subscription__status__in=['trial', 'active']
+        ).distinct().count()
         
         return Response({
             'featured_products': PublicProductListSerializer(
@@ -526,11 +623,8 @@ class PublicMarketplaceHomeView(APIView):
             'categories': ProductCategorySerializer(categories, many=True).data,
             'top_farms': PublicFarmSerializer(top_farms, many=True).data,
             'stats': {
-                'total_products': Product.objects.filter(status='active').count(),
-                'total_farms': Farm.objects.filter(
-                    farm_status='Active',
-                    marketplace_products__status='active'
-                ).distinct().count(),
+                'total_products': subscribed_products_count,
+                'total_farms': subscribed_farms_count,
                 'total_categories': ProductCategory.objects.filter(is_active=True).count(),
             }
         })

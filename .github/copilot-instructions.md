@@ -95,10 +95,28 @@ Use Celery for I/O (SMS, email, reports) - never block API responses:
 
 ## Marketplace Rules
 
+**Access vs Visibility Separation** (Jan 2026):
+- **ALL farmers** can use marketplace features (list products, track sales, analytics)
+- **ONLY subscribed farmers** appear in public marketplace searches
+- This ensures accurate industry statistics while incentivizing subscriptions
+
+**Subscription Requirements**:
 - **Only ONE fee**: GHS 50/month Marketplace Activation Fee (no transaction commissions)
 - Payments happen OFF-PLATFORM (cash, MoMo to farmer) - platform only tracks sales
 - Use `PlatformSettings.get_settings()` - never hardcode fees
-- Check access with `@require_marketplace_activation` decorator
+
+**Public Search Visibility** (in `public_marketplace_views.py`):
+```python
+# Public views filter by subscription status:
+queryset = Product.objects.filter(
+    status='active',
+    farm__farm_status='Active',
+    farm__marketplace_enabled=True,
+    farm__subscription__status__in=['trial', 'active']  # VISIBILITY FILTER
+)
+```
+
+**Farmer Dashboard** shows visibility status in `MarketplaceDashboardView.visibility` field.
 
 ## Key Files
 

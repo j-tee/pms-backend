@@ -208,6 +208,10 @@ class TestPlatformSettingsModel:
     def test_singleton_pattern_creates_single_instance(self):
         """Verify only one PlatformSettings instance exists."""
         from sales_revenue.models import PlatformSettings
+        from django.core.cache import cache
+        
+        # Clear cache to ensure fresh state
+        cache.delete('platform_settings')
         
         settings1 = PlatformSettings.get_settings()
         settings2 = PlatformSettings.get_settings()

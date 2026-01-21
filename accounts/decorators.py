@@ -308,14 +308,31 @@ def require_verification(check_phone=True, check_email=False):
 
 def require_marketplace_activation(func):
     """
-    Decorator to require active marketplace activation (seller access).
+    Decorator to require active marketplace activation for PUBLIC VISIBILITY.
     
-    NOTE: Renamed from require_marketplace_subscription per monetization strategy.
-    Avoid "subscription" terminology - use "Marketplace Activation" or "Seller Access".
+    IMPORTANT - NEW POLICY (Jan 2026):
+    ============================================================================
+    This decorator is now ONLY needed for features that require public visibility.
     
-    Usage:
+    ALL farmers can:
+    - List products in the marketplace (for data collection/statistics)
+    - Track sales and manage orders
+    - Use marketplace analytics
+    
+    ONLY activated farmers get:
+    - Products visible in public marketplace searches
+    - Farm profile visible to buyers
+    - Appear in location filters and top farms lists
+    
+    This separation ensures accurate industry statistics (all farmers tracked)
+    while still incentivizing subscriptions (only paying farmers get visibility).
+    ============================================================================
+    
+    NOTE: Avoid "subscription" terminology in UI - use "Marketplace Activation".
+    
+    Usage (only for views that REQUIRE public visibility):
         @require_marketplace_activation
-        def create_product_listing(request):
+        def some_visibility_feature(request):
             ...
     """
     @wraps(func)
