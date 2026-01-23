@@ -244,6 +244,24 @@ class GuestOrder(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order_number = models.CharField(max_length=20, unique=True, editable=False)
     
+    # Content-based idempotency hash (auto-generated from order details)
+    # Used to detect duplicate orders within a time window
+    content_hash = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='SHA-256 hash of order content for duplicate detection'
+    )
+    
+    # Client-provided idempotency key (optional, for frontend-initiated duplicate prevention)
+    idempotency_key = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        help_text='Optional client-provided key for duplicate prevention'
+    )
+    
     # Farm receiving the order
     farm = models.ForeignKey(
         'farms.Farm',
@@ -337,6 +355,14 @@ class GuestOrder(models.Model):
             models.Index(fields=['order_number']),
             models.Index(fields=['status', 'expires_at']),
         ]
+        constraints = [
+            # Ensure idempotency_key is unique per farm (prevents duplicate submissions)
+            models.UniqueConstraint(
+                fields=['farm', 'idempotency_key'],
+                name='unique_guest_order_idempotency_key_per_farm',
+                condition=models.Q(idempotency_key__isnull=False)
+            )
+        ]
     
     def __str__(self):
         return f"Guest Order {self.order_number}"
@@ -351,6 +377,70 @@ class GuestOrder(models.Model):
         date_part = timezone.now().strftime('%Y%m%d')
         random_part = get_random_string(5, allowed_chars='0123456789ABCDEFGHJKLMNPQRSTUVWXYZ')
         return f"GO-{date_part}-{random_part}"
+    
+    @staticmethod
+    def generate_content_hash(phone_number: str, farm_id: str, items: list) -> str:
+        """
+        Generate a content-based hash for duplicate detection.
+        
+        The hash is based on:
+        - Normalized phone number
+        - Farm ID
+        - Sorted list of (product_id, quantity) tuples
+        
+        This allows backend to auto-detect duplicate orders without
+        requiring frontend to generate idempotency keys.
+        
+        Args:
+            phone_number: Customer phone (will be normalized)
+            farm_id: UUID of the farm
+            items: List of dicts with 'product_id' and 'quantity'
+        
+        Returns:
+            SHA-256 hash string (64 chars)
+        """
+        import hashlib
+        import json
+        
+        # Normalize phone
+        phone = GuestCustomer.normalize_phone(phone_number)
+        
+        # Sort items by product_id for consistent hashing
+        sorted_items = sorted(
+            [(str(item.get('product_id', item.get('product').id if hasattr(item.get('product'), 'id') else '')), 
+              item.get('quantity', 0)) 
+             for item in items],
+            key=lambda x: x[0]
+        )
+        
+        # Create hash input
+        hash_input = json.dumps({
+            'phone': phone,
+            'farm': str(farm_id),
+            'items': sorted_items,
+        }, sort_keys=True)
+        
+        return hashlib.sha256(hash_input.encode()).hexdigest()
+    
+    @classmethod
+    def find_duplicate(cls, content_hash: str, minutes: int = 10):
+        """
+        Find a duplicate order with the same content hash within a time window.
+        
+        Args:
+            content_hash: The content hash to search for
+            minutes: Time window in minutes (default 10)
+        
+        Returns:
+            GuestOrder instance if duplicate found, None otherwise
+        """
+        cutoff = timezone.now() - timedelta(minutes=minutes)
+        
+        return cls.objects.filter(
+            content_hash=content_hash,
+            created_at__gte=cutoff,
+            status__in=['pending_verification', 'pending_confirmation', 'confirmed']
+        ).first()
     
     def calculate_totals(self):
         """Recalculate order totals from items."""
@@ -367,21 +457,36 @@ class GuestOrder(models.Model):
         self.payment_confirmed_by = user
         self.save()
     
-    def cancel(self, reason, notes=''):
-        """Cancel the order."""
+    def cancel(self, reason, notes='', restore_stock=True):
+        """
+        Cancel the order.
+        
+        Args:
+            reason: Cancellation reason code
+            notes: Additional notes
+            restore_stock: If False, caller is responsible for stock restoration
+                          (use when caller has already locked products)
+        
+        NOTE: For atomic operations, pass restore_stock=False and handle
+        stock restoration in the calling code with proper locking.
+        """
         self.status = 'cancelled'
         self.cancellation_reason = reason
         self.cancellation_notes = notes
         self.cancelled_at = timezone.now()
         self.save()
         
-        # Restore stock for all items
-        for item in self.items.all():
-            item.product.restore_stock(item.quantity)
+        if restore_stock:
+            # Restore stock for all items (simple case without locking)
+            # WARNING: This can have race conditions if called without transaction
+            for item in self.items.all():
+                item.product.restore_stock(item.quantity)
         
-        # Update guest customer stats
-        self.guest_customer.cancelled_orders += 1
-        self.guest_customer.save(update_fields=['cancelled_orders'])
+        # Update guest customer stats (simple case)
+        # For atomic operations, use F() expressions in calling code
+        if restore_stock:  # Only if we're doing the simple non-atomic path
+            self.guest_customer.cancelled_orders += 1
+            self.guest_customer.save(update_fields=['cancelled_orders'])
 
 
 class GuestOrderItem(models.Model):
