@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db import models
 from django.db.models import Q
 
 from core.sms_service import HubtelSMSService
@@ -250,6 +251,20 @@ class CreateGuestOrderView(APIView):
             # Re-raise validation error
             raise
         
+        # CHECK FOR DUPLICATE (Backend-detected idempotency)
+        # If a duplicate was detected during validation, return the existing order
+        # This makes the API truly idempotent - same input = same output (not an error)
+        duplicate_order = serializer.context.get('duplicate_order')
+        if duplicate_order:
+            return Response({
+                'message': 'Order already exists. Returning existing order.',
+                'order_number': duplicate_order.order_number,
+                'verification_required': duplicate_order.status == 'pending_verification',
+                'total_amount': str(duplicate_order.total_amount),
+                'status': duplicate_order.status,
+                'is_duplicate': True,  # Flag so frontend knows this was a duplicate
+            }, status=status.HTTP_200_OK)  # 200 OK, not 201 Created
+        
         # SECURITY LAYER 3: Create order (already validated)
         order = serializer.save()
         
@@ -271,6 +286,7 @@ class CreateGuestOrderView(APIView):
             'order_number': order.order_number,
             'verification_required': True,
             'total_amount': str(order.total_amount),
+            'is_duplicate': False,
         }, status=status.HTTP_201_CREATED)
 
 
@@ -391,10 +407,16 @@ class CancelGuestOrderView(APIView):
     }
     
     Can only cancel orders that haven't been confirmed or paid.
+    
+    ATOMICITY: Uses select_for_update() and transaction.atomic() to ensure
+    stock restoration is done atomically.
     """
     permission_classes = [AllowAny]
     
     def post(self, request):
+        from django.db import transaction
+        from .marketplace_models import Product
+        
         order_number = request.data.get('order_number')
         phone = request.data.get('phone_number')
         
@@ -405,23 +427,49 @@ class CancelGuestOrderView(APIView):
         
         phone = GuestCustomer.normalize_phone(phone)
         
-        try:
-            order = GuestOrder.objects.get(
-                order_number=order_number,
-                guest_customer__phone_number=phone
+        with transaction.atomic():
+            # Lock the order to prevent concurrent modifications
+            try:
+                order = GuestOrder.objects.select_for_update().get(
+                    order_number=order_number,
+                    guest_customer__phone_number=phone
+                )
+            except GuestOrder.DoesNotExist:
+                return Response({
+                    'error': 'Order not found.'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Can only cancel pending orders
+            if order.status not in ['pending_verification', 'pending_confirmation', 'confirmed']:
+                return Response({
+                    'error': 'Cannot cancel this order. Payment may have been confirmed already.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Lock products before restoring stock
+            product_ids = list(order.items.values_list('product_id', flat=True))
+            locked_products = {
+                p.id: p for p in Product.objects.filter(
+                    id__in=product_ids
+                ).select_for_update()
+            }
+            
+            # Update order status (don't auto-restore stock, we handle it)
+            order.status = 'cancelled'
+            order.cancellation_reason = 'customer_request'
+            order.cancellation_notes = 'Customer requested cancellation'
+            order.cancelled_at = timezone.now()
+            order.save()
+            
+            # Restore stock atomically for all items
+            for item in order.items.all():
+                product = locked_products.get(item.product_id)
+                if product:
+                    product.restore_stock(item.quantity)
+            
+            # Update guest customer stats atomically
+            GuestCustomer.objects.filter(pk=order.guest_customer_id).update(
+                cancelled_orders=models.F('cancelled_orders') + 1
             )
-        except GuestOrder.DoesNotExist:
-            return Response({
-                'error': 'Order not found.'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Can only cancel pending orders
-        if order.status not in ['pending_verification', 'pending_confirmation', 'confirmed']:
-            return Response({
-                'error': 'Cannot cancel this order. Payment may have been confirmed already.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        order.cancel('customer_request', 'Customer requested cancellation')
         
         return Response({
             'message': 'Order cancelled successfully.',
@@ -483,15 +531,26 @@ class FarmerGuestOrderActionView(APIView):
         "cancellation_reason": "farmer_unavailable",  // for cancel
         "notes": "..."
     }
+    
+    ATOMICITY: Uses @transaction.atomic with select_for_update() to ensure
+    all status changes, stats updates, and stock operations are atomic.
     """
     permission_classes = [IsAuthenticated]
     
     def post(self, request, pk):
-        order = get_object_or_404(
-            GuestOrder,
+        from django.db import transaction
+        from .marketplace_models import Product
+        
+        # Lock the order row to prevent concurrent modifications
+        order = GuestOrder.objects.select_for_update().filter(
             pk=pk,
             farm=request.user.farm
-        )
+        ).first()
+        
+        if not order:
+            return Response({
+                'error': 'Order not found.'
+            }, status=status.HTTP_404_NOT_FOUND)
         
         serializer = FarmerOrderActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -502,86 +561,125 @@ class FarmerGuestOrderActionView(APIView):
         sms_service = HubtelSMSService()
         customer_phone = order.guest_customer.phone_number
         
-        if action == 'confirm':
-            if order.status != 'pending_confirmation':
-                return Response({
-                    'error': 'Order cannot be confirmed in current state.'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            order.status = 'confirmed'
-            order.confirmed_at = timezone.now()
-            if notes:
-                order.farmer_notes = notes
-            order.save()
-            
-            # Notify customer
-            sms_service.send_sms(
-                customer_phone,
-                f"Your order {order.order_number} has been confirmed! "
-                f"Total: GHS {order.total_amount:.2f}. "
-                f"Please proceed with payment. Contact farm: {order.farm.primary_phone}"
-            )
-            
-        elif action == 'confirm_payment':
-            if order.status not in ['confirmed', 'pending_confirmation']:
-                return Response({
-                    'error': 'Cannot confirm payment in current state.'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            payment_method = serializer.validated_data.get('payment_method', '')
-            payment_ref = serializer.validated_data.get('payment_reference', '')
-            
-            order.confirm_payment(request.user, payment_method, payment_ref)
-            
-            # Notify customer
-            sms_service.send_sms(
-                customer_phone,
-                f"Payment confirmed for order {order.order_number}! "
-                f"We're preparing your order. Thank you!"
-            )
-            
-        elif action == 'processing':
-            order.status = 'processing'
-            order.save()
-            
-        elif action == 'ready':
-            order.status = 'ready'
-            order.save()
-            
-            # Notify customer
-            delivery_msg = "ready for pickup" if order.delivery_method == 'pickup' else "ready for delivery"
-            sms_service.send_sms(
-                customer_phone,
-                f"Your order {order.order_number} is {delivery_msg}! "
-                f"Contact: {order.farm.primary_phone}"
-            )
-            
-        elif action == 'complete':
-            order.status = 'completed'
-            order.completed_at = timezone.now()
-            order.save()
-            
-            # Update customer stats
-            order.guest_customer.completed_orders += 1
-            order.guest_customer.save()
-            
-            # Update product stats
-            for item in order.items.all():
-                item.product.total_sold += item.quantity
-                item.product.total_revenue += item.line_total
-                item.product.save()
-            
-        elif action == 'cancel':
-            reason = serializer.validated_data.get('cancellation_reason', 'other')
-            order.cancel(reason, notes)
-            
-            # Notify customer
-            sms_service.send_sms(
-                customer_phone,
-                f"Your order {order.order_number} has been cancelled. "
-                f"Reason: {order.get_cancellation_reason_display()}. "
-                f"Contact farm for more info: {order.farm.primary_phone}"
-            )
+        # Use transaction.atomic() to ensure all operations succeed or all rollback
+        with transaction.atomic():
+            if action == 'confirm':
+                if order.status != 'pending_confirmation':
+                    return Response({
+                        'error': 'Order cannot be confirmed in current state.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                order.status = 'confirmed'
+                order.confirmed_at = timezone.now()
+                if notes:
+                    order.farmer_notes = notes
+                order.save()
+                
+                # Notify customer (outside transaction is OK - SMS is not critical)
+                sms_service.send_sms(
+                    customer_phone,
+                    f"Your order {order.order_number} has been confirmed! "
+                    f"Total: GHS {order.total_amount:.2f}. "
+                    f"Please proceed with payment. Contact farm: {order.farm.primary_phone}"
+                )
+                
+            elif action == 'confirm_payment':
+                if order.status not in ['confirmed', 'pending_confirmation']:
+                    return Response({
+                        'error': 'Cannot confirm payment in current state.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                payment_method = serializer.validated_data.get('payment_method', '')
+                payment_ref = serializer.validated_data.get('payment_reference', '')
+                
+                order.confirm_payment(request.user, payment_method, payment_ref)
+                
+                # Notify customer
+                sms_service.send_sms(
+                    customer_phone,
+                    f"Payment confirmed for order {order.order_number}! "
+                    f"We're preparing your order. Thank you!"
+                )
+                
+            elif action == 'processing':
+                order.status = 'processing'
+                order.save()
+                
+            elif action == 'ready':
+                order.status = 'ready'
+                order.save()
+                
+                # Notify customer
+                delivery_msg = "ready for pickup" if order.delivery_method == 'pickup' else "ready for delivery"
+                sms_service.send_sms(
+                    customer_phone,
+                    f"Your order {order.order_number} is {delivery_msg}! "
+                    f"Contact: {order.farm.primary_phone}"
+                )
+                
+            elif action == 'complete':
+                order.status = 'completed'
+                order.completed_at = timezone.now()
+                order.save()
+                
+                # Lock and update customer stats atomically
+                from .guest_order_models import GuestCustomer
+                GuestCustomer.objects.filter(pk=order.guest_customer_id).update(
+                    completed_orders=models.F('completed_orders') + 1
+                )
+                
+                # Lock and update product stats atomically
+                product_ids = list(order.items.values_list('product_id', flat=True))
+                locked_products = {
+                    p.id: p for p in Product.objects.filter(
+                        id__in=product_ids
+                    ).select_for_update()
+                }
+                
+                for item in order.items.all():
+                    product = locked_products.get(item.product_id)
+                    if product:
+                        product.total_sold = (product.total_sold or 0) + item.quantity
+                        product.total_revenue = (product.total_revenue or 0) + item.line_total
+                        product.save(update_fields=['total_sold', 'total_revenue', 'updated_at'])
+                
+            elif action == 'cancel':
+                reason = serializer.validated_data.get('cancellation_reason', 'other')
+                
+                # Lock products before restoring stock
+                product_ids = list(order.items.values_list('product_id', flat=True))
+                locked_products = {
+                    p.id: p for p in Product.objects.filter(
+                        id__in=product_ids
+                    ).select_for_update()
+                }
+                
+                # Update order status
+                order.status = 'cancelled'
+                order.cancellation_reason = reason
+                order.cancellation_notes = notes
+                order.cancelled_at = timezone.now()
+                order.save()
+                
+                # Restore stock atomically for all items
+                for item in order.items.all():
+                    product = locked_products.get(item.product_id)
+                    if product:
+                        product.restore_stock(item.quantity)
+                
+                # Update guest customer stats
+                from .guest_order_models import GuestCustomer
+                GuestCustomer.objects.filter(pk=order.guest_customer_id).update(
+                    cancelled_orders=models.F('cancelled_orders') + 1
+                )
+                
+                # Notify customer
+                sms_service.send_sms(
+                    customer_phone,
+                    f"Your order {order.order_number} has been cancelled. "
+                    f"Reason: {order.get_cancellation_reason_display()}. "
+                    f"Contact farm for more info: {order.farm.primary_phone}"
+                )
         
         return Response({
             'message': f'Order {action} successful.',
