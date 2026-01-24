@@ -460,11 +460,16 @@ class CancelGuestOrderView(APIView):
             order.cancelled_at = timezone.now()
             order.save()
             
-            # Restore stock atomically for all items
+            # Restore stock atomically for all items with audit trail
             for item in order.items.all():
                 product = locked_products.get(item.product_id)
                 if product:
-                    product.restore_stock(item.quantity)
+                    product.restore_stock(
+                        quantity=item.quantity,
+                        reference_record=item,
+                        notes=f"Guest order {order.order_number} cancelled by customer",
+                        recorded_by=None  # Guest cancellation - no user
+                    )
             
             # Update guest customer stats atomically
             GuestCustomer.objects.filter(pk=order.guest_customer_id).update(
@@ -661,11 +666,16 @@ class FarmerGuestOrderActionView(APIView):
                 order.cancelled_at = timezone.now()
                 order.save()
                 
-                # Restore stock atomically for all items
+                # Restore stock atomically for all items with audit trail
                 for item in order.items.all():
                     product = locked_products.get(item.product_id)
                     if product:
-                        product.restore_stock(item.quantity)
+                        product.restore_stock(
+                            quantity=item.quantity,
+                            reference_record=item,
+                            notes=f"Guest order {order.order_number} cancelled by farmer",
+                            recorded_by=request.user
+                        )
                 
                 # Update guest customer stats
                 from .guest_order_models import GuestCustomer

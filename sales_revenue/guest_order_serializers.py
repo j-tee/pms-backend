@@ -351,7 +351,7 @@ class GuestOrderCreateSerializer(serializers.Serializer):
             customer_notes=validated_data.get('customer_notes', ''),
         )
         
-        # STEP 4: Create order items and reduce stock from locked products
+        # STEP 4: Create order items and reduce stock from locked products with audit trail
         subtotal = 0
         for item_data in items_data:
             original_product = item_data['product_id']
@@ -360,7 +360,7 @@ class GuestOrderCreateSerializer(serializers.Serializer):
             line_total = locked_product.price * quantity
             subtotal += line_total
             
-            GuestOrderItem.objects.create(
+            order_item = GuestOrderItem.objects.create(
                 order=order,
                 product=locked_product,
                 product_name=locked_product.name,
@@ -371,8 +371,14 @@ class GuestOrderCreateSerializer(serializers.Serializer):
                 line_total=line_total
             )
             
-            # Reserve stock from locked product (safe - we hold the lock)
-            locked_product.reduce_stock(quantity)
+            # Reserve stock from locked product with full audit trail
+            locked_product.reduce_stock(
+                quantity=quantity,
+                reference_record=order_item,
+                unit_price=locked_product.price,
+                notes=f"Guest order {order.order_number} - {locked_product.name}",
+                recorded_by=None  # Guest order - no authenticated user
+            )
         
         # Update totals
         order.subtotal = subtotal

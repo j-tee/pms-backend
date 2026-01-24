@@ -150,7 +150,7 @@ def generate_farm_data():
     
     # Update farm settings for marketplace
     farm.marketplace_enabled = True
-    farm.subscription_type = 'government_subsidized'
+    farm.subscription_type = 'standard'
     farm.total_bird_capacity = 2500
     farm.save()
     print("✓ Updated farm settings (marketplace enabled)")

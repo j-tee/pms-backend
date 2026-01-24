@@ -443,6 +443,9 @@ class OrderStatusUpdateView(FarmScopedMixin, APIView):
     """
     
     def patch(self, request, pk):
+        from django.db import transaction
+        from sales_revenue.marketplace_models import Product
+        
         try:
             order = MarketplaceOrder.objects.get(pk=pk, farm=self.get_farm())
         except MarketplaceOrder.DoesNotExist:
@@ -465,33 +468,42 @@ class OrderStatusUpdateView(FarmScopedMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Handle status-specific logic
+        # Handle status-specific logic with atomic operations
         old_status = order.status
-        order.status = new_status
         
-        if new_status == 'confirmed' and not order.confirmed_at:
-            order.confirmed_at = timezone.now()
-        elif new_status == 'completed' and not order.completed_at:
-            order.completed_at = timezone.now()
-            # Update customer stats when order is completed
-            customer = order.customer
-            customer.total_orders = (customer.total_orders or 0) + 1
-            customer.total_purchases = (customer.total_purchases or Decimal('0')) + order.total_amount
-            customer.save(update_fields=['total_orders', 'total_purchases'])
-            # Update product stats when order is completed
-            for item in order.items.all():
-                product = item.product
-                product.total_sold = (product.total_sold or 0) + item.quantity
-                product.total_revenue = (product.total_revenue or Decimal('0')) + item.line_total
-                product.save(update_fields=['total_sold', 'total_revenue'])
-        elif new_status == 'cancelled':
-            order.cancelled_at = timezone.now()
-            order.cancellation_reason = request.data.get('reason', '')
-            # Restore stock for cancelled orders
-            for item in order.items.all():
-                item.product.restore_stock(item.quantity)
-        
-        order.save()
+        with transaction.atomic():
+            order.status = new_status
+            
+            if new_status == 'confirmed' and not order.confirmed_at:
+                order.confirmed_at = timezone.now()
+            elif new_status == 'completed' and not order.completed_at:
+                order.completed_at = timezone.now()
+                # Update customer stats when order is completed
+                customer = order.customer
+                customer.total_orders = (customer.total_orders or 0) + 1
+                customer.total_purchases = (customer.total_purchases or Decimal('0')) + order.total_amount
+                customer.save(update_fields=['total_orders', 'total_purchases'])
+                # Update product stats when order is completed
+                for item in order.items.all():
+                    product = item.product
+                    product.total_sold = (product.total_sold or 0) + item.quantity
+                    product.total_revenue = (product.total_revenue or Decimal('0')) + item.line_total
+                    product.save(update_fields=['total_sold', 'total_revenue'])
+            elif new_status == 'cancelled':
+                order.cancelled_at = timezone.now()
+                order.cancellation_reason = request.data.get('reason', '')
+                # Restore stock for cancelled orders with audit trail
+                for item in order.items.all():
+                    # Lock product for atomic operation
+                    locked_product = Product.objects.select_for_update().get(pk=item.product_id)
+                    locked_product.restore_stock(
+                        quantity=item.quantity,
+                        reference_record=item,
+                        notes=f"Order {order.order_number} cancelled - restoring stock",
+                        recorded_by=request.user
+                    )
+            
+            order.save()
         
         return Response({
             'message': f'Order status updated from {old_status} to {new_status}',
@@ -508,6 +520,9 @@ class OrderCancelView(FarmScopedMixin, APIView):
     """
     
     def post(self, request, pk):
+        from django.db import transaction
+        from sales_revenue.marketplace_models import Product
+        
         try:
             order = MarketplaceOrder.objects.get(pk=pk, farm=self.get_farm())
         except MarketplaceOrder.DoesNotExist:
@@ -522,15 +537,23 @@ class OrderCancelView(FarmScopedMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Cancel order
-        order.status = 'cancelled'
-        order.cancelled_at = timezone.now()
-        order.cancellation_reason = request.data.get('reason', 'Cancelled by farmer')
-        order.save()
-        
-        # Restore stock
-        for item in order.items.all():
-            item.product.restore_stock(item.quantity)
+        with transaction.atomic():
+            # Cancel order
+            order.status = 'cancelled'
+            order.cancelled_at = timezone.now()
+            order.cancellation_reason = request.data.get('reason', 'Cancelled by farmer')
+            order.save()
+            
+            # Restore stock with audit trail
+            for item in order.items.all():
+                # Lock product for atomic operation
+                locked_product = Product.objects.select_for_update().get(pk=item.product_id)
+                locked_product.restore_stock(
+                    quantity=item.quantity,
+                    reference_record=item,
+                    notes=f"Order {order.order_number} cancelled by farmer",
+                    recorded_by=request.user
+                )
         
         return Response({
             'message': 'Order cancelled successfully',

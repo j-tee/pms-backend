@@ -97,11 +97,7 @@ class PlatformRevenueService:
         
         # Farms with paid marketplace access
         paid_marketplace_farms = Farm.objects.filter(
-            subscription_type__in=['standard', 'verified']
-        ).count()
-        
-        subsidized_farms = Farm.objects.filter(
-            subscription_type='government_subsidized'
+            subscription_type='standard'
         ).count()
         
         # === TOTALS ===
@@ -121,7 +117,6 @@ class PlatformRevenueService:
             },
             'marketplace_activation': {
                 'paid_farms': paid_marketplace_farms,
-                'subsidized_farms': subsidized_farms,
                 'subscription_revenue': float(subscription_stats.get('monthly_revenue', 0))
             },
             'totals': {
@@ -320,15 +315,13 @@ class PlatformRevenueService:
         breakdown = {item['subscription_type']: item['count'] for item in subscription_breakdown}
         
         # Calculate potential revenue
-        paid_farms = breakdown.get('standard', 0) + breakdown.get('verified', 0)
+        paid_farms = breakdown.get('standard', 0)
         potential_monthly_revenue = paid_farms * activation_fee
         
         return {
             'breakdown': {
                 'none': breakdown.get('none', 0),
-                'government_subsidized': breakdown.get('government_subsidized', 0),
                 'standard': breakdown.get('standard', 0),
-                'verified': breakdown.get('verified', 0)
             },
             'pricing': {
                 'activation_fee_ghs': activation_fee

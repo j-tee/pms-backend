@@ -79,7 +79,6 @@ class MarketplaceAccessInfoView(APIView):
             'next_billing_date': subscription.next_billing_date if subscription else None,
             'monthly_fee': settings.marketplace_activation_fee,
             'trial_days': settings.marketplace_trial_days,
-            'is_government_subsidized': farm.government_subsidy_active,
             'features': [
                 'List products on public marketplace',
                 'Up to 20 product images',
@@ -475,17 +474,8 @@ class CancelSubscriptionView(APIView):
         if other_reason:
             full_reason = f"{reason}: {other_reason}"
         
-        # Cancel subscription
-        subscription.status = 'cancelled'
-        subscription.cancelled_at = timezone.now()
-        subscription.cancellation_reason = full_reason
-        subscription.cancelled_by = user
-        subscription.auto_renew = False
-        subscription.save()
-        
-        # Disable marketplace on farm
-        farm.marketplace_enabled = False
-        farm.save(update_fields=['marketplace_enabled', 'updated_at'])
+        # Cancel subscription using model method (handles farm sync)
+        subscription.cancel(reason=full_reason, cancelled_by=user)
         
         logger.info(f"Subscription cancelled: farm={farm.farm_name}, reason={reason}")
         

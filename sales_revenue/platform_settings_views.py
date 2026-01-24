@@ -174,9 +174,6 @@ class PlatformSettingsResetView(APIView):
             'marketplace_activation_fee': 50.00,
             'marketplace_trial_days': 14,
             'marketplace_grace_period_days': 5,
-            # Government Subsidy
-            'enable_government_subsidy': False,
-            'government_subsidy_percentage': 100.0,
             # Transaction Commission (SUSPENDED - farmers keep 100%)
             'enable_transaction_commission': False,
             # Advertising & Free Tier

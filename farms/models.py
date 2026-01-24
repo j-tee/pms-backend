@@ -588,16 +588,16 @@ class Farm(models.Model):
     # ============================================================================
     # SECTION 9C: MARKETPLACE ACTIVATION (Seller Access Fee)
     # NOTE: Avoid "subscription" terminology in UI/API - use "Marketplace Activation"
-    # NOTE: NO additional tiers like "verified seller" - farmers are fee-averse
+    # NOTE: NO additional tiers - farmers are fee-averse. ALL farmers pay GHS 50/month.
+    # NOTE: Government subsidy does NOT apply to marketplace - only to birds/feed/equipment.
     # ============================================================================
     
     MARKETPLACE_ACCESS_TYPE_CHOICES = [
         ('none', 'No Marketplace Access (Free Core Platform)'),
-        ('government_subsidized', 'Government-Subsidized Marketplace Access'),
         ('standard', 'Standard Marketplace Access (GHS 50/month)'),
     ]
     
-    # Keep field name for backward compatibility, but update choices
+    # Keep field name for backward compatibility
     subscription_type = models.CharField(
         max_length=30,
         choices=MARKETPLACE_ACCESS_TYPE_CHOICES,
@@ -613,22 +613,6 @@ class Farm(models.Model):
     product_images_count = models.PositiveIntegerField(
         default=0,
         help_text="Current number of product images (max 20 with activation)"
-    )
-    
-    # Government Subsidy Tracking
-    government_subsidy_active = models.BooleanField(
-        default=False,
-        help_text="Is farmer receiving government marketplace activation subsidy"
-    )
-    government_subsidy_start_date = models.DateField(
-        null=True,
-        blank=True,
-        help_text="When government marketplace subsidy started"
-    )
-    government_subsidy_end_date = models.DateField(
-        null=True,
-        blank=True,
-        help_text="When government marketplace subsidy expires"
     )
     
     # SECTION 10: CALCULATED METRICS
@@ -895,12 +879,15 @@ class Farm(models.Model):
         """
         Auto-determine subscription type based on registration source.
         Called automatically in save() method.
+        
+        NOTE: As of Jan 2026, government subsidy does NOT apply to marketplace.
+        All farmers (government or self-registered) must pay GHS 50/month
+        for marketplace access. Government subsidies are for birds/feed/equipment only.
         """
         if self.registration_source == 'government_initiative':
-            # Government farmers get subsidized marketplace if they opt in
-            if self.government_subsidy_active:
-                return 'government_subsidized'
-            return 'none'  # Core platform only until they opt into marketplace
+            # Government farmers start with 'none' subscription
+            # They can upgrade to marketplace subscription like any other farmer
+            return 'none'
         
         elif self.registration_source == 'self_registered':
             # Independent farmers default to no subscription (free core)
@@ -935,12 +922,38 @@ class Farm(models.Model):
     
     @property
     def has_marketplace_access(self):
-        """Check if farmer has active marketplace access (activation)"""
-        return self.marketplace_enabled and self.subscription_type in [
-            'government_subsidized',
-            'standard',
-            'verified'
-        ]
+        """
+        Check if farmer has active marketplace access.
+        
+        ALL farmers must pay for marketplace access (GHS 50/month).
+        No government subsidy for marketplace fees.
+        
+        Returns True if:
+        - marketplace_enabled=True AND
+        - Has active/trial Subscription
+        """
+        if not self.marketplace_enabled:
+            return False
+        
+        # Check actual Subscription status
+        try:
+            subscription = self.subscription
+            if subscription and subscription.status in ['trial', 'active']:
+                return True
+        except Exception:
+            # No subscription object exists
+            pass
+        
+        return False
+    
+    @property
+    def has_marketplace_access_legacy(self):
+        """
+        Legacy check - kept for backward compatibility.
+        Uses only subscription_type field (may be out of sync with Subscription status).
+        DEPRECATED: Use has_marketplace_access instead.
+        """
+        return self.marketplace_enabled and self.subscription_type == 'standard'
     
     @property
     def eligible_for_government_procurement(self):

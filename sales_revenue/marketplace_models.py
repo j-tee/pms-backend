@@ -207,21 +207,172 @@ class Product(models.Model):
             return False
         return self.stock_quantity <= self.low_stock_threshold
     
-    def reduce_stock(self, quantity):
-        """Reduce stock when an order is placed."""
-        if self.track_inventory:
-            self.stock_quantity = max(0, self.stock_quantity - quantity)
-            if self.stock_quantity == 0:
-                self.status = 'out_of_stock'
-            self.save(update_fields=['stock_quantity', 'status', 'updated_at'])
+    def reduce_stock(self, quantity, reference_record=None, unit_price=None, 
+                     notes='', recorded_by=None):
+        """
+        Reduce stock when an order is placed.
+        
+        ACCOUNTABILITY: Routes through FarmInventory when linked to ensure
+        full audit trail via StockMovement. If no inventory link exists,
+        auto-creates one for accountability.
+        
+        Args:
+            quantity: Amount to deduct
+            reference_record: The order/sale record for audit trail
+            unit_price: Sale price per unit (for revenue tracking)
+            notes: Additional context for audit log
+            recorded_by: User who initiated the action
+        """
+        if not self.track_inventory:
+            return
+        
+        from decimal import Decimal
+        quantity = Decimal(str(quantity))
+        
+        # Get or create linked FarmInventory for full accountability
+        inventory = self._get_or_create_inventory()
+        
+        if inventory:
+            # Route through FarmInventory for audit trail
+            from sales_revenue.inventory_models import StockMovementType
+            try:
+                inventory.remove_stock(
+                    quantity=quantity,
+                    movement_type=StockMovementType.SALE,
+                    reference_record=reference_record,
+                    unit_price=unit_price or self.price,
+                    notes=notes or f"Sale of {self.name}",
+                    recorded_by=recorded_by
+                )
+                # FarmInventory.save() will sync back to Product via sync_marketplace_product()
+            except ValueError as e:
+                # Insufficient stock in inventory - update Product directly as fallback
+                self._reduce_stock_direct(quantity)
+        else:
+            # Fallback: no inventory system, update Product directly
+            self._reduce_stock_direct(quantity)
     
-    def restore_stock(self, quantity):
-        """Restore stock when an order is cancelled."""
-        if self.track_inventory:
-            self.stock_quantity += quantity
-            if self.status == 'out_of_stock' and self.stock_quantity > 0:
-                self.status = 'active'
-            self.save(update_fields=['stock_quantity', 'status', 'updated_at'])
+    def _reduce_stock_direct(self, quantity):
+        """Direct stock reduction without audit trail (fallback only)."""
+        from decimal import Decimal
+        quantity = int(Decimal(str(quantity)))
+        self.stock_quantity = max(0, self.stock_quantity - quantity)
+        if self.stock_quantity == 0:
+            self.status = 'out_of_stock'
+        self.save(update_fields=['stock_quantity', 'status', 'updated_at'])
+    
+    def restore_stock(self, quantity, reference_record=None, notes='', recorded_by=None):
+        """
+        Restore stock when an order is cancelled.
+        
+        ACCOUNTABILITY: Routes through FarmInventory when linked to ensure
+        full audit trail via StockMovement.
+        
+        Args:
+            quantity: Amount to restore
+            reference_record: The order/sale record for audit trail
+            notes: Additional context for audit log
+            recorded_by: User who initiated the action
+        """
+        if not self.track_inventory:
+            return
+        
+        from decimal import Decimal
+        quantity = Decimal(str(quantity))
+        
+        # Get linked FarmInventory for audit trail
+        inventory = self._get_linked_inventory()
+        
+        if inventory:
+            # Route through FarmInventory for audit trail
+            from sales_revenue.inventory_models import StockMovementType
+            inventory.add_stock(
+                quantity=quantity,
+                movement_type=StockMovementType.RETURN,
+                source_record=reference_record,
+                notes=notes or f"Stock restored for {self.name}",
+                recorded_by=recorded_by
+            )
+            # FarmInventory.save() will sync back to Product via sync_marketplace_product()
+        else:
+            # Fallback: no inventory system, update Product directly
+            self._restore_stock_direct(quantity)
+    
+    def _restore_stock_direct(self, quantity):
+        """Direct stock restoration without audit trail (fallback only)."""
+        from decimal import Decimal
+        quantity = int(Decimal(str(quantity)))
+        self.stock_quantity += quantity
+        if self.status == 'out_of_stock' and self.stock_quantity > 0:
+            self.status = 'active'
+        self.save(update_fields=['stock_quantity', 'status', 'updated_at'])
+    
+    def _get_linked_inventory(self):
+        """Get linked FarmInventory if exists."""
+        if hasattr(self, 'inventory_record') and self.inventory_record:
+            return self.inventory_record
+        return None
+    
+    def _get_or_create_inventory(self):
+        """
+        Get or create FarmInventory record for this product.
+        
+        Ensures every marketplace product has an inventory record for
+        complete accountability and audit trail.
+        """
+        from sales_revenue.inventory_models import FarmInventory, InventoryCategory
+        
+        # Check if already linked
+        if hasattr(self, 'inventory_record') and self.inventory_record:
+            return self.inventory_record
+        
+        # Determine inventory category based on product category
+        category = self._determine_inventory_category()
+        
+        # Get or create inventory record
+        inventory, created = FarmInventory.objects.get_or_create(
+            farm=self.farm,
+            marketplace_product=self,
+            defaults={
+                'category': category,
+                'product_name': self.name,
+                'sku': self.sku or '',
+                'unit': self.unit,
+                'quantity_available': self.stock_quantity,
+                'unit_cost': self.price,
+                'low_stock_threshold': self.low_stock_threshold,
+            }
+        )
+        
+        if created:
+            # Log the auto-creation for transparency
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"Auto-created FarmInventory for Product {self.id} ({self.name}) "
+                f"on farm {self.farm_id} with initial stock {self.stock_quantity}"
+            )
+        
+        return inventory
+    
+    def _determine_inventory_category(self):
+        """Determine inventory category based on product attributes."""
+        from sales_revenue.inventory_models import InventoryCategory
+        
+        name_lower = self.name.lower()
+        category_name = self.category.name.lower() if self.category else ''
+        
+        # Check eggs first
+        if 'egg' in name_lower or 'egg' in category_name:
+            return InventoryCategory.EGGS
+        # Check processed BEFORE chicks (because "chicken" contains "chick")
+        elif any(word in name_lower for word in ['processed', 'dressed', 'meat', 'frozen', 'chicken']):
+            return InventoryCategory.PROCESSED
+        # Check chicks (day-old chicks)
+        elif 'chick' in name_lower or 'doc' in name_lower:
+            return InventoryCategory.CHICKS
+        else:
+            return InventoryCategory.BIRDS  # Default for live birds
     
     # ==========================================
     # PROCESSING BATCH TRACEABILITY

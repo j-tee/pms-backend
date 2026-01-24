@@ -19,70 +19,84 @@ def check_expired_activations():
     Check for expired marketplace activations and update farm status.
     
     Scheduled via Celery Beat to run every 6 hours.
-    Handles:
-    - Government subsidy expirations
-    - Self-funded activation expirations (if implemented)
-    - Grace period handling
-    """
-    from farms.models import Farm
-    from sales_revenue.models import PlatformSettings
     
-    logger.info("Starting marketplace activation expiration check...")
+    NOTE: Government subsidy logic has been REMOVED (Jan 2025).
+    All farmers must pay the standard GHS 50/month marketplace fee.
+    Government subsidies are for birds/equipment/feed, NOT marketplace fees.
+    
+    This task now only handles subscription-based expirations via the
+    Subscription model's status field.
+    """
+    from subscriptions.models import Subscription
+    
+    logger.info("Starting marketplace subscription expiration check...")
     
     today = timezone.now().date()
-    settings = PlatformSettings.get_settings()
-    grace_days = settings.marketplace_grace_period_days
-    
     expired_count = 0
-    grace_period_count = 0
+    past_due_count = 0
     
-    # Check government subsidy expirations
-    farms_with_gov_subsidy = Farm.objects.filter(
-        government_subsidy_active=True,
-        government_subsidy_end_date__isnull=False
-    )
+    # Check for subscriptions that need status updates
+    # The Subscription model handles its own expiration logic
+    # This task triggers a sweep to catch any missed expirations
     
-    for farm in farms_with_gov_subsidy:
-        end_date = farm.government_subsidy_end_date
-        
-        if end_date < today:
-            days_past_expiry = (today - end_date).days
+    # Find active subscriptions past their billing date
+    overdue_subscriptions = Subscription.objects.filter(
+        status='active',
+        next_billing_date__lt=today
+    ).select_related('farm')
+    
+    for subscription in overdue_subscriptions:
+        with transaction.atomic():
+            subscription.status = 'past_due'
+            subscription.save(update_fields=['status', 'updated_at'])
+            past_due_count += 1
+            logger.info(f"Subscription {subscription.id} marked as past_due")
+    
+    # Find past_due subscriptions past grace period (7 days default)
+    grace_days = 7
+    grace_cutoff = today - timedelta(days=grace_days)
+    
+    expired_subscriptions = Subscription.objects.filter(
+        status='past_due',
+        next_billing_date__lt=grace_cutoff
+    ).select_related('farm', 'farm__user')
+    
+    for subscription in expired_subscriptions:
+        with transaction.atomic():
+            # Suspend the subscription
+            subscription.status = 'suspended'
+            subscription.save(update_fields=['status', 'updated_at'])
             
-            if days_past_expiry > grace_days:
-                # Past grace period - deactivate marketplace
-                with transaction.atomic():
-                    farm.government_subsidy_active = False
-                    farm.marketplace_enabled = False
-                    farm.subscription_type = 'none'
-                    farm.save(update_fields=[
-                        'government_subsidy_active',
-                        'marketplace_enabled',
-                        'subscription_type'
-                    ])
-                    expired_count += 1
-                    logger.info(f"Expired marketplace for farm {farm.id} (past grace period)")
-                    
-                    # Send notification to farmer
-                    if farm.owner and farm.owner.phone_number:
-                        from core.tasks import send_sms_async
-                        send_sms_async.delay(
-                            str(farm.owner.phone_number),
-                            f"Your YEA marketplace access has expired. "
-                            f"Visit your dashboard to reactivate. Contact support for assistance."
-                        )
-            else:
-                grace_period_count += 1
-                logger.info(
-                    f"Farm {farm.id} in grace period ({days_past_expiry}/{grace_days} days)"
+            # Update farm
+            if subscription.farm:
+                subscription.farm.marketplace_enabled = False
+                subscription.farm.subscription_type = 'none'
+                subscription.farm.save(update_fields=[
+                    'marketplace_enabled',
+                    'subscription_type',
+                    'updated_at'
+                ])
+            
+            expired_count += 1
+            logger.info(f"Subscription {subscription.id} suspended (past grace period)")
+            
+            # Send notification to farmer
+            farm = subscription.farm
+            if farm and farm.user and hasattr(farm.user, 'phone'):
+                from core.tasks import send_sms_async
+                send_sms_async.delay(
+                    str(farm.user.phone),
+                    f"Your YEA marketplace subscription has been suspended. "
+                    f"Visit your dashboard to reactivate. Contact support for assistance."
                 )
     
     logger.info(
-        f"Activation check complete. Expired: {expired_count}, In grace period: {grace_period_count}"
+        f"Subscription check complete. Past due: {past_due_count}, Suspended: {expired_count}"
     )
     return {
         'status': 'success',
-        'expired': expired_count,
-        'in_grace_period': grace_period_count,
+        'past_due': past_due_count,
+        'suspended': expired_count,
         'timestamp': timezone.now().isoformat()
     }
 
@@ -90,16 +104,19 @@ def check_expired_activations():
 @shared_task
 def send_expiration_warnings():
     """
-    Send warnings to farmers whose marketplace access is expiring soon.
+    Send warnings to farmers whose marketplace subscriptions are expiring soon.
     
     Sends notifications at:
     - 7 days before expiration
     - 3 days before expiration
     - 1 day before expiration
-    """
-    from farms.models import Farm
     
-    logger.info("Sending marketplace expiration warnings...")
+    NOTE: Government subsidy logic has been REMOVED (Jan 2025).
+    This task now checks Subscription.next_billing_date instead.
+    """
+    from subscriptions.models import Subscription
+    
+    logger.info("Sending marketplace subscription expiration warnings...")
     
     today = timezone.now().date()
     warning_days = [7, 3, 1]
@@ -108,20 +125,20 @@ def send_expiration_warnings():
     for days in warning_days:
         expiry_date = today + timedelta(days=days)
         
-        # Find farms expiring on this date
-        expiring_farms = Farm.objects.filter(
-            government_subsidy_active=True,
-            government_subsidy_end_date=expiry_date,
-            marketplace_enabled=True
-        ).select_related('owner')
+        # Find subscriptions expiring on this date
+        expiring_subscriptions = Subscription.objects.filter(
+            status='active',
+            next_billing_date=expiry_date
+        ).select_related('farm', 'farm__user')
         
-        for farm in expiring_farms:
-            if farm.owner and farm.owner.phone_number:
+        for subscription in expiring_subscriptions:
+            farm = subscription.farm
+            if farm and farm.user and hasattr(farm.user, 'phone'):
                 from core.tasks import send_sms_async
                 send_sms_async.delay(
-                    str(farm.owner.phone_number),
-                    f"YEA Poultry: Your marketplace access expires in {days} day(s). "
-                    f"Contact your extension officer or visit the portal to renew."
+                    str(farm.user.phone),
+                    f"YEA Poultry: Your marketplace subscription expires in {days} day(s). "
+                    f"Visit your dashboard to renew and maintain visibility in buyer searches."
                 )
                 warnings_sent[days] += 1
     

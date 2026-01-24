@@ -86,7 +86,7 @@ def complete_ecosystem(db):
             primary_constituency='Ayawaso West' if i < 4 else ('Ablekuma Central' if i < 7 else 'Kumasi Central'),
             farm_status='Active' if i < 8 else 'Inactive',
             total_bird_capacity=1000 * (i + 1),
-            subscription_type='government_subsidized' if i < 5 else 'standard',
+            subscription_type='standard' if i < 5 else 'none',
             marketplace_enabled=i < 6,
             ghana_card_number=f'GHA-100000{i:03d}-{i % 10}',
             tin=f'C000100{i:04d}',

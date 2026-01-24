@@ -126,7 +126,7 @@ def sample_farm(db, farmer_user):
         farm_status='OPERATIONAL',
         total_bird_capacity=1000,
         current_bird_count=450,  # Set current birds
-        subscription_type='government_subsidized',
+        subscription_type='standard',
         marketplace_enabled=True,
         date_of_birth='1990-01-01',
         years_in_poultry=2,
@@ -250,7 +250,7 @@ def multiple_farms(db):
             primary_constituency='Ayawaso West' if i < 3 else 'Ablekuma Central',
             farm_status='OPERATIONAL',
             total_bird_capacity=1000,
-            subscription_type='government_subsidized',
+            subscription_type='standard',
             ghana_card_number=f'GHA-200000{100+i:03d}-{i % 10}',
             primary_phone=f'+23320100{100+i:03d}',
             tin=f'C000200{100+i:03d}',

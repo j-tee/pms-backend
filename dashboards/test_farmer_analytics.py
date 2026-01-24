@@ -59,7 +59,7 @@ def farmer_with_farm(db, farmer_user):
         primary_constituency='Ayawaso West',
         farm_status='OPERATIONAL',
         total_bird_capacity=2000,
-        subscription_type='government_subsidized',
+        subscription_type='standard',
         marketplace_enabled=True,
         date_of_birth='1990-01-01',
         years_in_poultry=2,

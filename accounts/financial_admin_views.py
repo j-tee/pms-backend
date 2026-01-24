@@ -342,7 +342,7 @@ class ActiveSubscribersView(APIView):
     
     Query Parameters:
         - status: active, trial, grace_period, expired
-        - tier: standard, verified, government_subsidized
+        - tier: standard, none
         - search: Search by farm name, farmer name
         - page: Page number (default: 1)
         - page_size: Items per page (default: 20)
@@ -359,9 +359,7 @@ class ActiveSubscribersView(APIView):
         status_filter = request.query_params.get('status')
         if status_filter:
             if status_filter == 'active':
-                farms = farms.filter(
-                    Q(subscription__status='active') | Q(government_subsidy_active=True)
-                )
+                farms = farms.filter(subscription__status='active')
             elif status_filter == 'trial':
                 farms = farms.filter(subscription__status='trial')
             elif status_filter == 'grace_period':
@@ -402,10 +400,7 @@ class ActiveSubscribersView(APIView):
             subscription = getattr(farm, 'subscription', None)
             
             # Determine subscription status
-            if farm.government_subsidy_active:
-                sub_status = 'active'
-                tier_name = 'government_subsidized'
-            elif subscription:
+            if subscription:
                 sub_status = subscription.status
                 tier_name = farm.subscription_type
             else:
@@ -418,10 +413,6 @@ class ActiveSubscribersView(APIView):
             if subscription and subscription.current_period_end:
                 expires_at = subscription.current_period_end.isoformat()
                 delta = subscription.current_period_end - timezone.now().date()
-                days_remaining = max(0, delta.days)
-            elif farm.government_subsidy_end_date:
-                expires_at = farm.government_subsidy_end_date.isoformat()
-                delta = farm.government_subsidy_end_date - timezone.now().date()
                 days_remaining = max(0, delta.days)
             
             # Calculate total paid
@@ -468,20 +459,18 @@ class ActiveSubscribersView(APIView):
         grace_period = Subscription.objects.filter(status='past_due').count()
         expired = Subscription.objects.filter(status__in=['suspended', 'cancelled']).count()
         
-        # By tier from Farm model
+        # By tier from Farm model - only 'none' and 'standard' now
         standard = Farm.objects.filter(subscription_type='standard', marketplace_enabled=True).count()
-        verified = Farm.objects.filter(subscription_type='verified', marketplace_enabled=True).count()
-        government = Farm.objects.filter(government_subsidy_active=True).count()
+        none_tier = Farm.objects.filter(subscription_type='none', marketplace_enabled=True).count()
         
         return {
-            'total_active': active_subs + government,
+            'total_active': active_subs,
             'total_trial': trial_subs,
             'total_grace_period': grace_period,
             'total_expired': expired,
             'by_tier': {
                 'standard': standard,
-                'verified': verified,
-                'government_subsidized': government,
+                'none': none_tier,
             }
         }
 
