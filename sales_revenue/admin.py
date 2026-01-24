@@ -181,14 +181,7 @@ class PlatformSettingsAdmin(admin.ModelAdmin):
                 'marketplace_trial_days',
                 'marketplace_grace_period_days',
             ),
-            'description': 'Configure marketplace activation fee (seller access). Avoid using "subscription" terminology.'
-        }),
-        ('Government Subsidy', {
-            'fields': (
-                'enable_government_subsidy',
-                'government_subsidy_percentage',
-            ),
-            'description': 'Configure government subsidy for enrolled farmers'
+            'description': 'Configure marketplace activation fee (seller access). All farmers pay GHS 50/month - no subsidies.'
         }),
         ('Transaction Commission (SUSPENDED)', {
             'fields': (

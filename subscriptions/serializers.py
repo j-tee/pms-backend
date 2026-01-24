@@ -210,7 +210,7 @@ class MarketplaceAccessInfoSerializer(serializers.Serializer):
     """
     Serializer for marketplace access information
     
-    Returns current status and pricing info
+    Returns current status and pricing info.
     """
     has_marketplace_access = serializers.BooleanField()
     subscription_type = serializers.CharField()
@@ -219,7 +219,6 @@ class MarketplaceAccessInfoSerializer(serializers.Serializer):
     next_billing_date = serializers.DateField(required=False)
     monthly_fee = serializers.DecimalField(max_digits=10, decimal_places=2)
     trial_days = serializers.IntegerField()
-    is_government_subsidized = serializers.BooleanField()
     features = serializers.ListField(child=serializers.CharField())
 
 

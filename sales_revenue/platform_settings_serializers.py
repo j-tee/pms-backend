@@ -2,6 +2,10 @@
 Platform Settings Serializers
 
 Serializers for super admin platform configuration management.
+
+NOTE: Government subsidy fields have been REMOVED as of Jan 2026.
+Government subsidies are for birds/feed/equipment, NOT marketplace access.
+All farmers pay GHS 50/month equally for marketplace access.
 """
 
 from rest_framework import serializers
@@ -41,9 +45,6 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             'marketplace_activation_fee',
             'marketplace_trial_days',
             'marketplace_grace_period_days',
-            # Government Subsidy
-            'enable_government_subsidy',
-            'government_subsidy_percentage',
             # Transaction Commission (SUSPENDED)
             'enable_transaction_commission',
             # Advertising & Free Tier
@@ -78,9 +79,6 @@ class MarketplaceMonetizationSerializer(serializers.ModelSerializer):
             'marketplace_activation_fee',
             'marketplace_trial_days',
             'marketplace_grace_period_days',
-            # Government Subsidy
-            'enable_government_subsidy',
-            'government_subsidy_percentage',
             # Transaction Commission (SUSPENDED)
             'enable_transaction_commission',
             # Commission Tiers (for transaction commission if ever enabled)

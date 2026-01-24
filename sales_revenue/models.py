@@ -154,19 +154,9 @@ class PlatformSettings(models.Model):
         help_text="Grace period after payment due before suspension (days)"
     )
     
-    # Government Subsidy Settings
-    enable_government_subsidy = models.BooleanField(
-        default=False,
-        help_text="Allow government-subsidized marketplace access for enrolled farmers"
-    )
-    
-    government_subsidy_percentage = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        default=Decimal('100.00'),
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
-        help_text="Percentage of marketplace fee covered by government (0-100)"
-    )
+    # NOTE: Government Subsidy for Marketplace REMOVED (Jan 2026)
+    # Government subsidy is for birds/feed/equipment, NOT marketplace fees.
+    # All farmers pay GHS 50/month equally for marketplace access.
     
     # NOTE: Verified Seller Tier REMOVED - Ghanaian farmers are averse to additional fees.
     # The only fee is the GHS 50/month Marketplace Activation Fee.

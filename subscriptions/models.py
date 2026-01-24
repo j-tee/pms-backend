@@ -217,8 +217,12 @@ class Subscription(models.Model):
         self.suspension_date = timezone.now().date()
         self.save()
         
-        # TODO: Send suspension notification
-        # TODO: Disable farm marketplace listings
+        # Disable farm marketplace access
+        if self.farm:
+            self.farm.marketplace_enabled = False
+            # Keep subscription_type as 'standard' to indicate they WERE subscribed
+            # but set status-based checks to handle visibility
+            self.farm.save(update_fields=['marketplace_enabled', 'updated_at'])
     
     def reactivate(self):
         """Reactivate suspended subscription after payment"""
@@ -236,7 +240,28 @@ class Subscription(models.Model):
         # Enable farm marketplace access
         if self.farm:
             self.farm.marketplace_enabled = True
-            self.farm.save(update_fields=['marketplace_enabled', 'updated_at'])
+            self.farm.subscription_type = 'standard'
+            self.farm.save(update_fields=['marketplace_enabled', 'subscription_type', 'updated_at'])
+    
+    def cancel(self, reason="User cancelled", cancelled_by=None):
+        """
+        Cancel subscription by user request.
+        
+        Unlike suspend (which keeps subscription_type as 'standard' for potential reactivation),
+        cancel fully resets the farm's subscription state.
+        """
+        self.status = 'cancelled'
+        self.cancelled_at = timezone.now()
+        self.cancellation_reason = reason
+        self.cancelled_by = cancelled_by
+        self.auto_renew = False
+        self.save()
+        
+        # Fully disable marketplace access and reset subscription_type
+        if self.farm:
+            self.farm.marketplace_enabled = False
+            self.farm.subscription_type = 'none'
+            self.farm.save(update_fields=['marketplace_enabled', 'subscription_type', 'updated_at'])
 
 
 class SubscriptionPayment(models.Model):

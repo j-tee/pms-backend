@@ -352,8 +352,10 @@ class OrderCreateSerializer(serializers.Serializer):
     def create(self, validated_data):
         """Create order with items."""
         from django.db import transaction
+        from sales_revenue.marketplace_models import Product
         
         farm = self.context['request'].user.farm
+        user = self.context['request'].user
         items_data = validated_data.pop('items')
         
         with transaction.atomic():
@@ -363,12 +365,12 @@ class OrderCreateSerializer(serializers.Serializer):
                 **validated_data
             )
             
-            # Create order items and reduce stock
+            # Create order items and reduce stock with audit trail
             for item_data in items_data:
                 product = item_data['product']
                 quantity = item_data['quantity']
                 
-                OrderItem.objects.create(
+                order_item = OrderItem.objects.create(
                     order=order,
                     product=product,
                     product_name=product.name,
@@ -379,8 +381,15 @@ class OrderCreateSerializer(serializers.Serializer):
                     line_total=product.price * quantity
                 )
                 
-                # Reduce stock
-                product.reduce_stock(quantity)
+                # Lock product and reduce stock with full audit trail
+                locked_product = Product.objects.select_for_update().get(pk=product.pk)
+                locked_product.reduce_stock(
+                    quantity=quantity,
+                    reference_record=order_item,
+                    unit_price=product.price,
+                    notes=f"Order {order.order_number} - {product.name}",
+                    recorded_by=user
+                )
             
             # Calculate totals
             order.calculate_totals()

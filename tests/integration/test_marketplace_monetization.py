@@ -231,14 +231,6 @@ class TestPlatformSettingsModel:
         """Verify default grace period is 5 days."""
         assert platform_settings.marketplace_grace_period_days == 5
     
-    def test_government_subsidy_disabled_by_default(self, platform_settings):
-        """Verify government subsidy is disabled by default."""
-        assert platform_settings.enable_government_subsidy is False
-    
-    def test_government_subsidy_default_percentage_is_100(self, platform_settings):
-        """Verify default government subsidy covers 100%."""
-        assert platform_settings.government_subsidy_percentage == Decimal('100.00')
-    
     def test_transaction_commission_disabled_by_default(self, platform_settings):
         """Verify transaction commission (Phase 2) is disabled by default."""
         assert platform_settings.enable_transaction_commission is False
@@ -275,15 +267,6 @@ class TestPlatformSettingsModel:
         with pytest.raises(ValidationError):
             platform_settings.full_clean()
     
-    def test_subsidy_percentage_max_100(self, platform_settings):
-        """Test subsidy percentage cannot exceed 100%."""
-        from django.core.exceptions import ValidationError
-        
-        platform_settings.government_subsidy_percentage = Decimal('150.00')
-        with pytest.raises(ValidationError):
-            platform_settings.full_clean()
-
-
 # =============================================================================
 # PLATFORM SETTINGS API TESTS
 # =============================================================================
@@ -299,7 +282,6 @@ class TestPlatformSettingsAPI:
         
         assert response.status_code == status.HTTP_200_OK
         assert 'marketplace_activation_fee' in response.data
-        assert 'enable_government_subsidy' in response.data
     
     def test_yea_official_cannot_access_admin_settings(self, api_client, yea_official_user, platform_settings):
         """YEA Official cannot access admin platform settings (SUPER_ADMIN only)."""
@@ -357,15 +339,12 @@ class TestPlatformSettingsAPI:
             '/api/admin/platform-settings/monetization/',
             {
                 'marketplace_activation_fee': '65.00',
-                'enable_government_subsidy': True,
-                'government_subsidy_percentage': '50.00'
             },
             format='json'
         )
         
         assert response.status_code == status.HTTP_200_OK
         assert Decimal(response.data['marketplace_activation_fee']) == Decimal('65.00')
-        assert response.data['enable_government_subsidy'] is True
     
     def test_farmer_cannot_update_settings(self, api_client, farmer_user, platform_settings):
         """Farmers cannot update platform settings."""
@@ -466,36 +445,53 @@ class TestPlatformSettingsReset:
 # =============================================================================
 
 class TestFarmMarketplaceAccess:
-    """Test farm marketplace access tiers using mocks."""
+    """
+    Test farm marketplace access tiers using mocks.
+    
+    NOTE: As of Jan 2025, 'government_subsidized' is DEPRECATED.
+    All farmers must pay the standard GHS 50/month marketplace fee.
+    Access is now determined by having an active Subscription object.
+    
+    These tests verify the NEW policy where only 'standard' with valid
+    subscription grants access.
+    """
     
     def test_has_marketplace_access_none(self, mock_farm_no_marketplace):
         """Farm with 'none' tier has no marketplace access."""
         # Test logic: subscription_type='none' means no access
         farm = mock_farm_no_marketplace
-        # Simulate the has_marketplace_access property logic
-        has_access = farm.subscription_type in ['government_subsidized', 'standard', 'verified']
+        # Only 'standard' with valid subscription grants access
+        has_access = farm.subscription_type == 'standard'
         assert has_access is False
     
     def test_has_marketplace_access_standard(self, mock_farm_with_marketplace):
-        """Farm with 'standard' tier has marketplace access."""
+        """Farm with 'standard' tier has marketplace access (when subscription active)."""
         farm = mock_farm_with_marketplace
         farm.subscription_type = 'standard'
-        has_access = farm.subscription_type in ['government_subsidized', 'standard', 'verified']
+        # Standard type with active subscription grants access
+        has_access = farm.subscription_type == 'standard'
         assert has_access is True
     
-    def test_has_marketplace_access_government_subsidized(self, mock_farm_with_marketplace):
-        """Farm with 'government_subsidized' tier has marketplace access."""
+    def test_has_marketplace_access_government_subsidized_deprecated(self, mock_farm_with_marketplace):
+        """
+        Farm with 'government_subsidized' tier NO LONGER has marketplace access (DEPRECATED).
+        
+        As of Jan 2025, government subsidies are for birds/equipment/feed only.
+        Farms with legacy 'government_subsidized' type must pay the standard fee.
+        """
         farm = mock_farm_with_marketplace
-        farm.subscription_type = 'government_subsidized'
-        has_access = farm.subscription_type in ['government_subsidized', 'standard', 'verified']
-        assert has_access is True
+        farm.subscription_type = 'government_subsidized'  # Legacy value
+        # Government subsidized no longer grants access
+        has_access = farm.subscription_type == 'standard'
+        assert has_access is False
     
     def test_has_marketplace_access_verified(self, mock_farm_with_marketplace):
-        """Farm with 'verified' tier has marketplace access."""
+        """Farm with 'verified' tier - treated as 'none' (legacy value)."""
         farm = mock_farm_with_marketplace
-        farm.subscription_type = 'verified'
-        has_access = farm.subscription_type in ['government_subsidized', 'standard', 'verified']
-        assert has_access is True
+        farm.subscription_type = 'verified'  # Legacy value
+        # Only 'standard' grants access now
+        has_access = farm.subscription_type == 'standard'
+        assert has_access is False
 
 
 # =============================================================================
@@ -659,24 +655,30 @@ class TestSalesPolicyCanCreateSale:
         
         assert can_create is False
     
-    def test_government_subsidized_can_create_sale_logic(self):
-        """Government subsidized farms can create sales (logic test)."""
+    def test_government_subsidized_cannot_create_sale_deprecated(self):
+        """
+        Government subsidized farms can NO LONGER create sales without paying (DEPRECATED).
+        
+        As of Jan 2025, 'government_subsidized' subscription_type is deprecated.
+        Farms with this legacy value are treated as having NO marketplace access.
+        """
         farm = Mock()
         farm.marketplace_enabled = True
-        farm.subscription_type = 'government_subsidized'
+        farm.subscription_type = 'government_subsidized'  # Legacy - no longer grants access
         
         user = Mock()
         user.role = 'FARMER'
         farm.user = user
         
+        # Only 'standard' type grants access now
         can_create = (
             user.role == 'FARMER' and
             farm.user == user and
             farm.marketplace_enabled and
-            farm.subscription_type != 'none'
+            farm.subscription_type == 'standard'  # Must be standard with valid subscription
         )
         
-        assert can_create is True
+        assert can_create is False
 
 
 # =============================================================================
