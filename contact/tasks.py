@@ -35,12 +35,12 @@ Our support team will review your inquiry and respond within 24-48 hours.
 
 Your reference number: {message.ticket_id}
 
-For urgent matters, please call us at +233 (0) 123-456-789 during business hours:
-Monday - Friday: 8:00 AM - 6:00 PM
-Saturday: 9:00 AM - 2:00 PM
+For urgent matters, please call us at +233 (0)506534737 or +233 (0)3344991 during business hours:
+Monday - Friday: 8:00 AM - 5:00 PM GMT
 
 Best regards,
 YEA PMS Support Team
+Alpha Logique Technologies
 
 ---
 This is an automated message. Please do not reply directly to this email.

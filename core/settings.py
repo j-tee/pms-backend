@@ -644,9 +644,12 @@ GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
 # =============================================================================
 
 # Contact form email configuration
-CONTACT_EMAIL_TO = os.getenv('CONTACT_EMAIL_TO', 'support@yeapms.com')
+# CONTACT_EMAIL_TO: Where contact form submissions are sent (staff notification)
+# CONTACT_EMAIL_FROM: The "from" address for automated emails
+# CONTACT_EMAIL_REPLY_TO: The "reply-to" address in auto-reply emails
+CONTACT_EMAIL_TO = os.getenv('CONTACT_EMAIL_TO', 'alphalogiquetechnologies@gmail.com')
 CONTACT_EMAIL_FROM = os.getenv('CONTACT_EMAIL_FROM', 'noreply@yeapms.com')
-CONTACT_EMAIL_REPLY_TO = os.getenv('CONTACT_EMAIL_REPLY_TO', 'support@yeapms.com')
+CONTACT_EMAIL_REPLY_TO = os.getenv('CONTACT_EMAIL_REPLY_TO', 'alphalogiquetechnologies@gmail.com')
 
 # Rate limiting for contact form
 CONTACT_FORM_RATE_LIMIT_PER_HOUR = int(os.getenv('CONTACT_FORM_RATE_LIMIT_PER_HOUR', 5))
