@@ -17,6 +17,7 @@ urlpatterns = [
     path('terms-of-service/', views.TermsOfServiceView.as_view(), name='terms-of-service'),
     path('faq/', views.FAQView.as_view(), name='faq'),
     path('contact/', views.ContactInfoView.as_view(), name='contact-info'),
+    path('contact-us/', views.ContactInfoView.as_view(), name='contact-us'),  # Alias for contact
     
     # List all published public pages
     path('pages/', views.PublicPageListView.as_view(), name='public-page-list'),
