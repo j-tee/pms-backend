@@ -199,6 +199,59 @@ class TermsOfServiceView(generics.RetrieveAPIView):
         )
 
 
+class FAQView(generics.RetrieveAPIView):
+    """
+    Dedicated endpoint for FAQ page.
+    Public access, no auth required.
+    """
+    serializer_class = ContentPagePublicSerializer
+    permission_classes = [AllowAny]
+    
+    def get_object(self):
+        """Get the FAQ page."""
+        return get_object_or_404(
+            ContentPage,
+            page_type='faq',
+            status='published',
+            is_deleted=False
+        )
+
+
+class ContactInfoView(generics.RetrieveAPIView):
+    """
+    Dedicated endpoint for Contact Info page.
+    Public access, no auth required.
+    """
+    serializer_class = ContentPagePublicSerializer
+    permission_classes = [AllowAny]
+    
+    def get_object(self):
+        """Get the Contact Info page."""
+        return get_object_or_404(
+            ContentPage,
+            page_type='contact_info',
+            status='published',
+            is_deleted=False
+        )
+
+
+class PublicPageListView(generics.ListAPIView):
+    """
+    List all published public pages.
+    Useful for building navigation/footer links.
+    Public access, no auth required.
+    """
+    serializer_class = ContentPagePublicSerializer
+    permission_classes = [AllowAny]
+    
+    def get_queryset(self):
+        """Get all published, non-deleted pages."""
+        return ContentPage.objects.filter(
+            status='published',
+            is_deleted=False
+        ).order_by('page_type')
+
+
 class CompanyProfileView(generics.RetrieveUpdateAPIView):
     """
     Company profile management.
