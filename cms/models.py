@@ -9,6 +9,9 @@ from django.utils import timezone
 
 User = get_user_model()
 
+# Import Help models for easier access
+from .help_models import HelpCategory, HelpArticle, HelpArticleFeedback, PopularSearch
+
 
 class ContentPage(models.Model):
     """

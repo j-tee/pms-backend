@@ -523,12 +523,12 @@ We'd love to hear from you!
 - **Phone:** +233 (0)506534737 / +233 (0)3344991
 - **Address:** Accra, Ghana
 
-For technical support, visit our [Contact page](/contact) or check the [FAQ](/faq)."""
+For technical support, visit our [Contact page](/contact-us) or check the [FAQ](/faq)."""
     },
 
     'contact_info': {
         'title': 'Contact Us',
-        'slug': 'contact',
+        'slug': 'contact-us',
         'meta_description': 'Contact the YEA Poultry Management System support team - Email, phone, and address information.',
         'meta_keywords': 'contact, support, help, YEA PMS, customer service, Ghana',
         'excerpt': 'Get in touch with our support team for assistance.',
