@@ -53,6 +53,10 @@ from contact.admin_urls import urlpatterns as contact_admin_urls
 from cms.urls import urlpatterns as cms_public_urls
 from cms.admin_urls import urlpatterns as cms_admin_urls
 
+# Import Help Files URL patterns
+from cms.help_urls import urlpatterns as help_public_urls
+from cms.help_admin_urls import urlpatterns as help_admin_urls
+
 # Import Procurement URL patterns
 from procurement.urls import farmer_urlpatterns as procurement_farmer_urls
 from procurement.admin_urls import urlpatterns as procurement_admin_urls
@@ -90,7 +94,9 @@ urlpatterns = [
     path('api/contact/', include((contact_public_urls, 'contact'))),  # Public contact form
     path('api/admin/', include((contact_admin_urls, 'contact_admin'))),  # Admin contact management
     path('api/cms/', include((cms_admin_urls, 'cms_admin'))),  # CMS management (SUPER_ADMIN only)
+    path('api/cms/help/', include((help_admin_urls, 'help_admin'))),  # Help Files management (SUPER_ADMIN only)
     path('api/public/cms/', include((cms_public_urls, 'cms_public'))),  # Public content pages (About Us, etc.)
+    path('api/public/help/', include((help_public_urls, 'help_public'))),  # Public help center / knowledge base
     path('api/public/data-subscriptions/', include((institutional_public_urls, 'institutional_public'))),  # Institutional data subscriptions landing
     path('api/institutional/', include((institutional_api_urls, 'institutional'))),  # Institutional data API
     path('api/admin/institutional/', include((institutional_admin_urls, 'institutional_admin'))),  # Admin institutional management
