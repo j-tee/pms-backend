@@ -147,13 +147,21 @@ jobs:
               fi
             fi
             
-            # Seed help content (idempotent - only creates if not exists)
+            # Seed help content (updates existing content)
             echo "📚 Seeding help center content..."
-            python manage.py seed_help_content || true
+            python manage.py seed_help_content
+            
+            # Verify help content was updated
+            echo "✅ Verifying help content..."
+            python manage.py shell -c "from cms.help_models import HelpArticle; a = HelpArticle.objects.get(slug='creating-your-account'); print('Article content starts with:', a.content[:100])"
             
             # Seed legal pages (Privacy Policy, Terms of Service)
             echo "📜 Seeding legal pages..."
             python manage.py seed_legal_pages || true
+            
+            # Clear Django cache
+            echo "🧹 Clearing cache..."
+            python manage.py shell -c "from django.core.cache import cache; cache.clear(); print('Cache cleared')" || true
             
             # Collect static files
             echo "📁 Collecting static files..."
