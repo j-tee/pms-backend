@@ -153,8 +153,8 @@ How you get an account depends on your role in the system.
 
 | User Type | How to Get Account |
 |-----------|-------------------|
-| **Farmers** | Self-registration OR Field Officer registration |
-| **Buyers** | Self-registration (browse marketplace) |
+| **Farmers** | Apply online OR Field Officer registration |
+| **Buyers** | Browse marketplace (no account needed) OR create account for order tracking |
 | **Extension Officers** | Email invitation from Administrator |
 | **Veterinary Officers** | Email invitation from Administrator |
 | **YEA Officials** | Email invitation from Administrator |
@@ -162,38 +162,45 @@ How you get an account depends on your role in the system.
 
 ---
 
-## For Farmers: Self-Registration
+## For Farmers: Online Application
 
-### Step 1: Go to the Registration Page
+### Step 1: Start Your Application
 
-Click on **"Sign Up"** or **"Register"** on the homepage.
+On the homepage, click the **"Apply Now"** button to begin your farm application.
 
 ### Step 2: Enter Your Information
 
 Fill in the required details:
 - **First Name** - Your legal first name
 - **Last Name** - Your legal surname
-- **Phone Number** - Your active mobile number (used for login)
+- **Phone Number** - Your active mobile number (used for login and SMS updates)
 - **Email** (optional) - For notifications and updates
+- **Ghana Card Number** - Your national ID
 - **Password** - Create a strong password
 
 ### Step 3: Verify Your Phone
 
 You'll receive an SMS with a 6-digit verification code. Enter this code to verify your phone number.
 
-### Step 4: Complete Your Profile
+### Step 4: Complete Farm Details
 
-After verification, complete your profile:
-- Select your Region
-- Select your District
-- Select your Constituency
+Provide your farm information:
+- Farm name and location (Region, District, Constituency)
+- Production type (Layers, Broilers, or Both)
+- Housing type and bird capacity
+- Current bird count
+
+### Step 5: Submit Application
+
+Review your information and submit. You'll receive a confirmation SMS with your application number.
 
 ### What Happens Next?
 
-After creating your account, you'll need to:
-1. **Log in** to your new account
-2. **Complete farm registration** (submit your farm details)
-3. **Wait for approval** from YEA officials in your constituency
+1. **Application submitted** - You'll get an application reference number
+2. **Review period** - YEA officials in your constituency will review your application
+3. **Track progress** - Use the **"Track Application"** button on the homepage to check status
+4. **Approval notification** - You'll receive an SMS when approved
+5. **Access granted** - Log in and start using all farmer features!
 
 ---
 
@@ -211,7 +218,7 @@ Extension Officers can register farmers during field visits. This is faster beca
 
 ## For Staff & Officials: Email Invitation
 
-YEA staff members and officials don't self-register. Instead:
+YEA staff members and officials don't apply online. Instead:
 
 ### Step 1: Receive Email Invitation
 
@@ -230,7 +237,7 @@ The link takes you to a page where you'll:
 ### Step 3: First Login
 
 After setting your password:
-1. Go to the login page
+1. Go to the login page and click **"Login"**
 2. Enter your email and new password
 3. You're ready to start working!
 
@@ -247,6 +254,7 @@ After setting your password:
 
 ### Phone number already registered?
 - You may already have an account - try logging in
+- Use **"Track Application"** to check existing application status
 - Contact support if you need help accessing your existing account
 
 ### Didn't receive staff invitation email?
@@ -261,7 +269,7 @@ After setting your password:
 ### Forgot your password?
 - Use the "Forgot Password" link on the login page
 - A reset code will be sent to your phone or email''',
-                        'keywords': 'register, sign up, create account, new user, phone verification, invitation, staff, email',
+                        'keywords': 'apply, application, create account, new user, phone verification, invitation, staff, email, track application',
                         'target_audience': 'all',
                         'is_featured': True,
                     },
