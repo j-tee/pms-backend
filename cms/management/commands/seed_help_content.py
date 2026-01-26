@@ -34,7 +34,7 @@ class Command(BaseCommand):
         categories_data = self.get_categories_data()
         
         for cat_data in categories_data:
-            category, created = HelpCategory.objects.get_or_create(
+            category, created = HelpCategory.objects.update_or_create(
                 slug=cat_data['slug'],
                 defaults={
                     'name': cat_data['name'],
@@ -48,11 +48,11 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f'  Created category: {category.name}')
             else:
-                self.stdout.write(f'  Category exists: {category.name}')
+                self.stdout.write(f'  Updated category: {category.name}')
             
             # Create articles for this category
             for article_data in cat_data.get('articles', []):
-                article, art_created = HelpArticle.objects.get_or_create(
+                article, art_created = HelpArticle.objects.update_or_create(
                     slug=article_data['slug'],
                     defaults={
                         'category': category,
@@ -69,7 +69,7 @@ class Command(BaseCommand):
                 if art_created:
                     self.stdout.write(f'    Created article: {article.title}')
                 else:
-                    self.stdout.write(f'    Article exists: {article.title}')
+                    self.stdout.write(f'    Updated article: {article.title}')
         
         # Summary
         total_categories = HelpCategory.objects.count()
