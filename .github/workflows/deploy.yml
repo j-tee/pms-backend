@@ -151,9 +151,21 @@ jobs:
             echo "📚 Seeding help center content..."
             python manage.py seed_help_content
             
-            # Verify help content was updated
-            echo "✅ Verifying help content..."
-            python manage.py shell -c "from cms.help_models import HelpArticle; a = HelpArticle.objects.get(slug='creating-your-account'); print('Article content starts with:', a.content[:100])"
+            # Verify help content was updated - check for "Apply Now" in the content
+            echo "✅ Verifying help content update..."
+            python manage.py shell -c "
+from cms.help_models import HelpArticle
+a = HelpArticle.objects.get(slug='creating-your-account')
+print('Article title:', a.title)
+print('Content length:', len(a.content))
+if 'Apply Now' in a.content:
+    print('✅ SUCCESS: Article contains \"Apply Now\"')
+elif 'Sign Up' in a.content:
+    print('❌ FAIL: Article still has old \"Sign Up\" content')
+else:
+    print('⚠️ WARNING: Neither found')
+print('First 500 chars:', a.content[:500])
+"
             
             # Seed legal pages (Privacy Policy, Terms of Service)
             echo "📜 Seeding legal pages..."
