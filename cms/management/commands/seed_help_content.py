@@ -144,43 +144,103 @@ We're here to help you succeed in your poultry farming journey!''',
                     {
                         'slug': 'creating-your-account',
                         'title': 'Creating Your Account',
-                        'summary': 'Step-by-step guide to registering for a new account on the YEA Poultry platform.',
+                        'summary': 'Different ways to get an account on the YEA Poultry platform depending on your role.',
                         'content': '''# Creating Your Account
 
-Follow these steps to create your account on the YEA Poultry Management System.
+How you get an account depends on your role in the system.
 
-## Step 1: Go to the Registration Page
+## Who Needs an Account?
+
+| User Type | How to Get Account |
+|-----------|-------------------|
+| **Farmers** | Self-registration OR Field Officer registration |
+| **Buyers** | Self-registration (browse marketplace) |
+| **Extension Officers** | Email invitation from Administrator |
+| **Veterinary Officers** | Email invitation from Administrator |
+| **YEA Officials** | Email invitation from Administrator |
+| **Administrators** | Email invitation from higher-level Admin |
+
+---
+
+## For Farmers: Self-Registration
+
+### Step 1: Go to the Registration Page
 
 Click on **"Sign Up"** or **"Register"** on the homepage.
 
-## Step 2: Enter Your Information
+### Step 2: Enter Your Information
 
 Fill in the required details:
-- **Full Name** - Your legal name as on your Ghana Card
+- **First Name** - Your legal first name
+- **Last Name** - Your legal surname
 - **Phone Number** - Your active mobile number (used for login)
 - **Email** (optional) - For notifications and updates
-- **Ghana Card Number** - Your national ID number
 - **Password** - Create a strong password
 
-## Step 3: Verify Your Phone
+### Step 3: Verify Your Phone
 
-You'll receive an SMS with a verification code. Enter this code to verify your phone number.
+You'll receive an SMS with a 6-digit verification code. Enter this code to verify your phone number.
 
-## Step 4: Complete Your Profile
+### Step 4: Complete Your Profile
 
-After verification, you'll be prompted to:
+After verification, complete your profile:
 - Select your Region
 - Select your District
 - Select your Constituency
 
-## What Happens Next?
+### What Happens Next?
 
-- **Farmers**: You'll be guided to register your farm
-- **Buyers**: You can start browsing the marketplace immediately
+After creating your account, you'll need to:
+1. **Log in** to your new account
+2. **Complete farm registration** (submit your farm details)
+3. **Wait for approval** from YEA officials in your constituency
+
+---
+
+## For Farmers: Field Officer Registration
+
+Extension Officers can register farmers during field visits. This is faster because:
+- ✅ Immediate account creation
+- ✅ Pre-approved status (no waiting period)
+- ✅ No separate farm application needed
+- ✅ Extension officer automatically assigned to your farm
+
+**You will receive an SMS** with your login credentials (username and temporary password).
+
+---
+
+## For Staff & Officials: Email Invitation
+
+YEA staff members and officials don't self-register. Instead:
+
+### Step 1: Receive Email Invitation
+
+Your administrator will create your account and you'll receive an **email invitation** containing:
+- Welcome message
+- Your assigned role
+- A secure activation link
+- Link expiry information (usually 7 days)
+
+### Step 2: Click the Activation Link
+
+The link takes you to a page where you'll:
+- Set your password
+- Complete your profile information
+
+### Step 3: First Login
+
+After setting your password:
+1. Go to the login page
+2. Enter your email and new password
+3. You're ready to start working!
+
+> **Note**: The invitation link expires after 7 days. If it expires, ask your administrator to resend the invitation.
+
+---
 
 ## Troubleshooting
 
-### Didn't receive SMS?
+### Didn't receive SMS verification code?
 - Check your phone number is correct
 - Wait 60 seconds and request a new code
 - Make sure your phone has network coverage
@@ -189,10 +249,19 @@ After verification, you'll be prompted to:
 - You may already have an account - try logging in
 - Contact support if you need help accessing your existing account
 
+### Didn't receive staff invitation email?
+- Check your spam/junk folder
+- Verify your administrator used the correct email address
+- Ask your administrator to resend the invitation
+
+### Invitation link expired?
+- Contact your administrator to send a new invitation
+- Invitation links are valid for 7 days
+
 ### Forgot your password?
 - Use the "Forgot Password" link on the login page
-- A reset code will be sent to your phone''',
-                        'keywords': 'register, sign up, create account, new user, phone verification',
+- A reset code will be sent to your phone or email''',
+                        'keywords': 'register, sign up, create account, new user, phone verification, invitation, staff, email',
                         'target_audience': 'all',
                         'is_featured': True,
                     },
