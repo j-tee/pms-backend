@@ -147,6 +147,14 @@ jobs:
               fi
             fi
             
+            # Seed help content (idempotent - only creates if not exists)
+            echo "📚 Seeding help center content..."
+            python manage.py seed_help_content || true
+            
+            # Seed legal pages (Privacy Policy, Terms of Service)
+            echo "📜 Seeding legal pages..."
+            python manage.py seed_legal_pages || true
+            
             # Collect static files
             echo "📁 Collecting static files..."
             python manage.py collectstatic --no-input --clear
